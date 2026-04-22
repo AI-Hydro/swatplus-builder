@@ -1,0 +1,391 @@
+"""Run the SWAT+ engine binary on a prepared ``TxtInOut/`` directory.
+
+The SWAT+ engine has a single, quirky convention that drives this module's
+design:
+
+* **No CLI arguments.** The engine reads ``file.cio`` from its current
+  working directory and writes every output file alongside it. We therefore
+  spawn it with ``cwd = txtinout_dir`` and an empty args list.
+* **OMP-parallel.** Control is via the ``OMP_NUM_THREADS`` env var; the
+  binary itself exposes no ``--threads`` flag.
+* **Noisy stderr on failure, rich ``diagnostics.out`` on success.** We
+  capture the tail of both so agents can triage a crash without reading
+  megabytes of text.
+
+Locating the binary
+-------------------
+
+:func:`locate_binary` resolves, in order:
+
+1. ``settings.swatplus_exe`` — explicit config override.
+2. ``$SWATPLUS_EXE`` — env var (CI / notebook override).
+3. ``shutil.which()`` over a platform-aware candidate list
+   (``swatplus_exe``, ``swatplus``, plus ``.exe`` variants on Windows).
+
+No download is performed — the engine is a large native binary and users
+typically install it once via the official SWAT+ installer (see
+``docs/ROADMAP.md``). We fail fast with an actionable message if nothing
+is found.
+
+Typical agent flow
+------------------
+
+.. code-block:: python
+
+    from swatplus_builder.editor.api import write_files
+    from swatplus_builder.run.swatplus import run
+
+    wr = write_files(project_db)
+    run_result = run(wr.txtinout_dir, threads=4, timeout_s=1800)
+    assert run_result.success
+    print(run_result.summary.get("mean_q_at_outlet"))
+"""
+
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+from ..config import DEFAULT_SETTINGS, Settings
+from ..errors import SwatBuilderExternalError, SwatBuilderInputError
+from ..types import SwatPlusProject, SwatPlusRun
+
+__all__ = [
+    "BINARY_CANDIDATES",
+    "locate_binary",
+    "run",
+    "run_project",
+]
+
+BINARY_CANDIDATES: tuple[str, ...] = (
+    # Order matters: first hit wins. Conventional names before SWAT+-Editor-
+    # specific ones, POSIX before Windows.
+    "swatplus_exe",
+    "swatplus",
+    "swatplus_exe.exe",
+    "swatplus.exe",
+)
+"""Filenames we try, in order, when scanning ``$PATH`` for the engine."""
+
+_DIAGNOSTICS_TAIL_BYTES: int = 4000
+_STDOUT_TAIL_BYTES: int = 4000
+_STDERR_TAIL_BYTES: int = 4000
+
+# Output files we surface in ``SwatPlusRun.paths`` for convenience. This is a
+# *whitelist of interesting names*, not an exhaustive list — the full
+# enumeration lives in ``SwatPlusRun.output_files``.
+_WELL_KNOWN_OUTPUTS: tuple[str, ...] = (
+    "diagnostics.out",
+    "basin_wb_aa.txt",
+    "basin_nb_aa.txt",
+    "basin_ls_aa.txt",
+    "basin_pw_aa.txt",
+    "channel_sd_aa.txt",
+    "channel_sdmorph_aa.txt",
+    "lsunit_wb_aa.txt",
+    "hru_wb_aa.txt",
+    "aquifer_aa.txt",
+    "crop_yld_aa.txt",
+)
+
+
+# ---------------------------------------------------------------------------
+# Binary resolution
+# ---------------------------------------------------------------------------
+
+
+def locate_binary(settings: Settings = DEFAULT_SETTINGS) -> Path:
+    """Find the SWAT+ engine binary.
+
+    Resolution order: ``settings.swatplus_exe`` > ``$SWATPLUS_EXE`` env var >
+    :func:`shutil.which` over :data:`BINARY_CANDIDATES`.
+
+    Args:
+        settings: Runtime settings; ``settings.swatplus_exe`` takes priority.
+
+    Returns:
+        Absolute path to an existing, executable file.
+
+    Raises:
+        SwatBuilderExternalError: binary could not be located.
+    """
+    # 1. explicit override via settings
+    if settings.swatplus_exe is not None:
+        p = Path(settings.swatplus_exe).expanduser().resolve()
+        if not p.is_file():
+            raise SwatBuilderExternalError(
+                f"settings.swatplus_exe does not point at an existing file: {p}",
+                swatplus_exe=str(p),
+                source="settings",
+            )
+        return p
+
+    # 2. env var
+    env_override = os.environ.get("SWATPLUS_EXE")
+    if env_override:
+        p = Path(env_override).expanduser().resolve()
+        if not p.is_file():
+            raise SwatBuilderExternalError(
+                f"$SWATPLUS_EXE points at a non-existent file: {p}",
+                swatplus_exe=str(p),
+                source="env",
+            )
+        return p
+
+    # 3. PATH scan
+    for name in BINARY_CANDIDATES:
+        hit = shutil.which(name)
+        if hit:
+            return Path(hit).resolve()
+
+    raise SwatBuilderExternalError(
+        "SWAT+ engine not found. Install it (see docs/ROADMAP.md) and "
+        "either export SWATPLUS_EXE=<path>, pass settings.swatplus_exe=<path>, "
+        "or place one of the engine filenames on $PATH.",
+        candidates=list(BINARY_CANDIDATES),
+        path=os.environ.get("PATH", ""),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Execution
+# ---------------------------------------------------------------------------
+
+
+def run(
+    txtinout_dir: Path | str,
+    *,
+    threads: int = 1,
+    timeout_s: float | None = None,
+    project: SwatPlusProject | None = None,
+    binary: Path | str | None = None,
+    settings: Settings = DEFAULT_SETTINGS,
+) -> SwatPlusRun:
+    """Execute the SWAT+ engine in ``txtinout_dir`` and collect its outputs.
+
+    Args:
+        txtinout_dir: Directory containing ``file.cio`` and friends. Must
+            already exist; this is produced by
+            :func:`swatplus_builder.editor.api.write_files`.
+        threads: Number of OMP threads. Passed as ``OMP_NUM_THREADS``. The
+            engine is only lightly threaded; ``1-4`` is a reasonable range.
+            Values ``< 1`` are clamped to ``1``.
+        timeout_s: Kill the child after this many seconds, or ``None`` to
+            wait forever. A timeout raises
+            :class:`~swatplus_builder.errors.SwatBuilderExternalError`.
+        project: Optional originating :class:`SwatPlusProject` — included
+            verbatim in the return value when supplied, so downstream tools
+            can stitch results back to their source.
+        binary: Override the resolved engine binary. If ``None``, we call
+            :func:`locate_binary`.
+        settings: Runtime overrides (used only if ``binary is None``).
+
+    Returns:
+        :class:`SwatPlusRun` carrying exit code, runtime, binary path,
+        output file enumeration, and tail slices of stdout/stderr/diagnostics.
+
+    Raises:
+        SwatBuilderInputError: ``txtinout_dir`` doesn't exist or is missing
+            ``file.cio``.
+        SwatBuilderExternalError: binary couldn't be located, the process
+            timed out, or the engine exited non-zero (diagnostics tail is
+            attached as ``.context["diagnostics_tail"]``).
+    """
+    txtinout = Path(txtinout_dir).expanduser().resolve()
+    if not txtinout.is_dir():
+        raise SwatBuilderInputError(
+            f"txtinout_dir does not exist or is not a directory: {txtinout}",
+            txtinout_dir=str(txtinout),
+        )
+    cio = txtinout / "file.cio"
+    if not cio.is_file():
+        raise SwatBuilderInputError(
+            f"txtinout_dir is missing file.cio: {txtinout}. Did you run "
+            "editor.api.write_files() first?",
+            txtinout_dir=str(txtinout),
+        )
+
+    exe = (
+        Path(binary).expanduser().resolve()
+        if binary is not None
+        else locate_binary(settings)
+    )
+    if not exe.is_file():
+        raise SwatBuilderExternalError(
+            f"resolved SWAT+ binary does not exist: {exe}",
+            binary=str(exe),
+        )
+
+    threads = max(int(threads), 1)
+    env = _build_env(threads, exe)
+    cmd = [str(exe)]
+
+    start = time.monotonic()
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd=str(txtinout),
+            env=env,
+            timeout=timeout_s,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise SwatBuilderExternalError(
+            f"SWAT+ engine timed out after {timeout_s}s",
+            cmd=cmd,
+            txtinout_dir=str(txtinout),
+            timeout_s=timeout_s,
+        ) from exc
+    elapsed = time.monotonic() - start
+
+    stdout_tail = (proc.stdout or "")[-_STDOUT_TAIL_BYTES:]
+    stderr_tail = (proc.stderr or "")[-_STDERR_TAIL_BYTES:]
+    diagnostics_tail = _read_diagnostics_tail(txtinout)
+    output_files = _enumerate_output_files(txtinout)
+    paths = _collect_well_known_paths(txtinout, output_files)
+    # Summary population is best-effort: never fail a successful run
+    # because of a parse hiccup on optional AA files. The producer
+    # (``output.summary.build_run_summary``) already swallows parse
+    # errors internally; the outer try/except is a belt-and-braces
+    # guarantee against an ill-formed file type we haven't seen yet.
+    try:
+        from ..output.summary import build_run_summary
+
+        summary = build_run_summary(txtinout) if proc.returncode == 0 else {}
+    except Exception:  # pragma: no cover — defensive, should not trip
+        summary = {}
+
+    if proc.returncode != 0:
+        raise SwatBuilderExternalError(
+            f"SWAT+ engine exited {proc.returncode}",
+            cmd=cmd,
+            txtinout_dir=str(txtinout),
+            binary=str(exe),
+            returncode=proc.returncode,
+            runtime_seconds=round(elapsed, 3),
+            threads=threads,
+            stderr_tail=stderr_tail,
+            stdout_tail=stdout_tail,
+            diagnostics_tail=diagnostics_tail,
+        )
+
+    return SwatPlusRun(
+        project=project,
+        binary=exe,
+        txtinout_dir=txtinout,
+        command=cmd,
+        exit_code=proc.returncode,
+        runtime_seconds=round(elapsed, 3),
+        success=True,
+        output_dir=txtinout,
+        output_files=output_files,
+        diagnostics_tail=diagnostics_tail,
+        stdout_tail=stdout_tail,
+        stderr_tail=stderr_tail,
+        paths=paths,
+        summary=summary,
+    )
+
+
+def run_project(
+    project: SwatPlusProject,
+    *,
+    threads: int = 1,
+    timeout_s: float | None = None,
+    settings: Settings = DEFAULT_SETTINGS,
+) -> SwatPlusRun:
+    """Convenience wrapper: run the engine on ``project.txtinout_dir``.
+
+    This is what :func:`swatplus_builder.tools.run_swat` calls. It exists so
+    that the agent-facing tool signature stays ``(project, ...)`` while the
+    primitive :func:`run` keeps a directory-first signature suited to
+    notebook use and CLI parity.
+    """
+    return run(
+        project.txtinout_dir,
+        threads=threads,
+        timeout_s=timeout_s,
+        project=project,
+        settings=settings,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
+def _build_env(threads: int, exe: Path | None = None) -> dict[str, str]:
+    """Child environment: mostly inherited, with OpenMP tuned.
+
+    On macOS the SWAT+ engine ships with ``libiomp5.dylib`` bundled
+    alongside the binary (as in the Mac installer's ``swat_exe/`` dir).
+    We prepend the binary's own directory to ``DYLD_FALLBACK_LIBRARY_PATH``
+    and ``DYLD_LIBRARY_PATH`` so dyld finds it without any manual
+    ``install_name_tool`` patching. This is safe on non-macOS (the env
+    vars are simply unused).
+    """
+    env = dict(os.environ)
+    env["OMP_NUM_THREADS"] = str(threads)
+    if sys.platform == "darwin":
+        bin_dir = str(exe.parent) if exe is not None else ""
+        # Prepend binary dir to both library paths for maximum robustness
+        for key in ("DYLD_LIBRARY_PATH", "DYLD_FALLBACK_LIBRARY_PATH"):
+            existing = env.get(key, "")
+            parts = [p for p in [bin_dir, existing] if p]
+            env[key] = ":".join(parts) if parts else ""
+    return env
+
+
+def _read_diagnostics_tail(txtinout: Path) -> str:
+    """Return the last ``_DIAGNOSTICS_TAIL_BYTES`` of ``diagnostics.out``.
+
+    Returns ``""`` if the file does not exist, is empty, or can't be decoded.
+    """
+    diag = txtinout / "diagnostics.out"
+    if not diag.is_file():
+        return ""
+    try:
+        size = diag.stat().st_size
+        with diag.open("rb") as fh:
+            if size > _DIAGNOSTICS_TAIL_BYTES:
+                fh.seek(-_DIAGNOSTICS_TAIL_BYTES, os.SEEK_END)
+            data = fh.read()
+        return data.decode("utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def _enumerate_output_files(txtinout: Path) -> list[Path]:
+    """List ``*.out`` and ``*.txt`` files in the TxtInOut directory.
+
+    The engine writes every output alongside its inputs, so we take the
+    union and let the consumer disambiguate. Sorted for stable output.
+    """
+    files: list[Path] = []
+    for ext in ("*.out", "*.txt"):
+        files.extend(txtinout.glob(ext))
+    # Dedup in case of .txt files that are also inputs — not expected, but
+    # cheap to be safe.
+    return sorted(set(files))
+
+
+def _collect_well_known_paths(
+    txtinout: Path, output_files: list[Path]
+) -> dict[str, Path]:
+    """Build a ``name -> Path`` map for the diagnostics + annual-avg outputs."""
+    by_name = {p.name: p for p in output_files}
+    paths: dict[str, Path] = {}
+    for name in _WELL_KNOWN_OUTPUTS:
+        hit = by_name.get(name)
+        if hit is not None:
+            # Strip the ``.txt`` / ``.out`` to keep the keys agent-friendly.
+            key = name.rsplit(".", 1)[0]
+            paths[key] = hit
+    return paths

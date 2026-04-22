@@ -1,0 +1,83 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.python-version
+.ipynb_checkpoints/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Test / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Docs build
+site/
+_site/
+
+# Data / caches (no large blobs in git)
+data/
+bin/
+*.sqlite
+*.sqlite-journal
+*.tif
+*.tiff
+*.gpkg
+*.shp
+*.shx
+*.dbf
+*.prj
+*.cpg
+*.qpj
+*.nc
+*.nc4
+*.zip
+reference_dbs/
+TxtInOut/
+watershed_data/
+output/
+scratch/
+cache/
+marsh_creek_output/
+soil_benchmark/
+_e2e_runs/
+diagnostics.out
+simulation.out
+area_calc.out
+files_out.out
+erosion.txt
+
+# Local working docs (authoritative docs live elsewhere)
+docs/DECISIONS.md
+docs/PROGRESS.md
+docs/TROUBLESHOOTING_AND_WORKFLOW.md
+
+# Allow small test fixtures explicitly
+!tests/fixtures/**/*.sqlite
+!tests/fixtures/**/*.tif
+!tests/fixtures/**/*.gpkg
+!tests/fixtures/**/*.shp
+!tests/fixtures/**/*.dbf
+!tests/fixtures/**/*.prj
+!tests/fixtures/**/*.shx
+!tests/fixtures/**/*.cpg
+
+# Vendored code is tracked (this IS the package), but caches inside are not
+src/swatplus_builder/editor/vendored/**/__pycache__/
+src/swatplus_builder/editor/vendored/**/*.pyc

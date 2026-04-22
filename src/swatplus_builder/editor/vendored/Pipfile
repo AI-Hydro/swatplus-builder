@@ -1,0 +1,13 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+peewee = "*"
+flask-cors = "*"
+pyinstaller = "*"
+flask = "*"
+
+[dev-packages]
+pyinstaller = "*"
