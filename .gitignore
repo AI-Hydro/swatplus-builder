@@ -68,6 +68,9 @@ docs/DECISIONS.md
 docs/PROGRESS.md
 docs/TROUBLESHOOTING_AND_WORKFLOW.md
 
+# Local-only notes (never commit)
+local-docs/
+
 # Allow small test fixtures explicitly
 !tests/fixtures/**/*.sqlite
 !tests/fixtures/**/*.tif
