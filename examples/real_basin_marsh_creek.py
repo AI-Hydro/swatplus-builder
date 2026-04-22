@@ -291,6 +291,99 @@ def main(outdir: Path, run_engine: bool = False):
     _section("11/11 Engine Run")
     subprocess_successful = False
     if run_engine:
+        # Ensure daily channel outputs exist for evaluation.
+        # Editor defaults may set nyskip=1 (skip first year) and daily=off.
+        prt = wf.txtinout_dir / "print.prt"
+        if prt.is_file():
+            lines = prt.read_text(encoding="utf-8", errors="replace").splitlines()
+            out: list[str] = []
+            for i, line in enumerate(lines):
+                # Line 3 is the numeric control row under the header.
+                if i == 2:
+                    parts = line.split()
+                    if parts:
+                        parts[0] = "0"  # nyskip
+                        line = " ".join(parts) + "  "
+                # Object table rows: "<object> <daily> <monthly> <yearly> <avann>"
+                if line.strip().startswith("channel_sd"):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        parts[1] = "y"
+                        line = " ".join(parts) + "  "
+                out.append(line)
+            prt.write_text("\n".join(out) + "\n", encoding="utf-8")
+
+        # Rev61 (mac) can segfault in `climate_control.f90` if WGN inputs are
+        # missing. The editor expects `weather-wgn.cli` to exist and
+        # `weather-sta.cli` to reference a WGN name. We synthesize a single
+        # WGN generator collocated with the unified station.
+        weather_sta = wf.txtinout_dir / "weather-sta.cli"
+        weather_wgn = wf.txtinout_dir / "weather-wgn.cli"
+        if weather_sta.is_file() and not weather_wgn.is_file():
+            rows = weather_sta.read_text(encoding="utf-8", errors="replace").splitlines()
+            # Header + one station row in our unified-forcing workflow.
+            if len(rows) >= 3:
+                sta_parts = rows[2].split()
+                sta_name = sta_parts[0]
+
+                # Extract station coordinates from the .pcp header (line 3).
+                pcp_path = wf.txtinout_dir / f"{sta_name}.pcp"
+                lat = lon = elev = 0.0
+                if pcp_path.is_file():
+                    pcp_lines = pcp_path.read_text(encoding="utf-8", errors="replace").splitlines()
+                    if len(pcp_lines) >= 3:
+                        meta = pcp_lines[2].split()
+                        if len(meta) >= 5:
+                            lat, lon, elev = float(meta[2]), float(meta[3]), float(meta[4])
+
+                wgn_name = "wgn1"
+                # Patch station row: set the "wgn" column to wgn1.
+                # weather-sta.cli columns are:
+                # name wgn pcp tmp slr hmd wnd pet atmo_dep
+                if len(sta_parts) >= 2:
+                    sta_parts[1] = wgn_name
+                    rows[2] = " ".join(sta_parts) + "  "
+                    weather_sta.write_text("\n".join(rows) + "\n", encoding="utf-8")
+
+                # Write a minimal weather-wgn.cli with 12 months of values.
+                # Column order matches editor's `fileio/climate.py`.
+                import datetime as _dt
+
+                now = _dt.datetime.now().replace(microsecond=0).isoformat(sep=" ")
+                wgn_lines: list[str] = []
+                wgn_lines.append(
+                    f"weather-wgn.cli: written by swatplus-builder on {now}"
+                )
+                wgn_lines.append(
+                    "name                           lat        lon       elev   rain_yrs"
+                )
+                wgn_lines.append(
+                    f"{wgn_name:<25s}{lat:10.3f}{lon:10.3f}{elev:10.3f}{30:10d}"
+                )
+                wgn_lines.append(
+                    "tmp_max_ave tmp_min_ave tmp_max_sd tmp_min_sd    pcp_ave     pcp_sd   pcp_skew    wet_dry    wet_wet   pcp_days   pcp_hhr    slr_ave    dew_ave    wnd_ave"
+                )
+                # These are generic mid-latitude CONUS-ish values; they only
+                # need to be well-formed for the engine.
+                monthly = [
+                    (-1.0, -9.0, 6.0, 6.0, 70.0, 30.0, 1.0, 0.30, 0.50, 12.0, 0.10, 10.0, -6.0, 3.0),
+                    ( 1.0, -8.0, 6.0, 6.0, 60.0, 28.0, 1.0, 0.30, 0.50, 11.0, 0.10, 12.0, -5.0, 3.0),
+                    ( 7.0, -3.0, 6.0, 6.0, 80.0, 35.0, 1.0, 0.32, 0.52, 12.0, 0.10, 14.0, -1.0, 3.0),
+                    (14.0,  3.0, 6.0, 6.0, 90.0, 40.0, 1.0, 0.35, 0.55, 12.0, 0.10, 16.0,  4.0, 3.0),
+                    (20.0,  8.0, 6.0, 6.0, 95.0, 45.0, 1.0, 0.35, 0.55, 12.0, 0.10, 18.0,  9.0, 3.0),
+                    (25.0, 13.0, 6.0, 6.0, 90.0, 45.0, 1.0, 0.33, 0.53, 11.0, 0.10, 20.0, 14.0, 3.0),
+                    (28.0, 16.0, 6.0, 6.0, 95.0, 48.0, 1.0, 0.32, 0.52, 11.0, 0.10, 21.0, 16.0, 3.0),
+                    (27.0, 15.0, 6.0, 6.0, 85.0, 45.0, 1.0, 0.32, 0.52, 10.0, 0.10, 19.0, 15.0, 3.0),
+                    (22.0, 10.0, 6.0, 6.0, 80.0, 40.0, 1.0, 0.33, 0.53, 10.0, 0.10, 16.0, 10.0, 3.0),
+                    (15.0,  4.0, 6.0, 6.0, 75.0, 35.0, 1.0, 0.34, 0.54, 11.0, 0.10, 13.0,  5.0, 3.0),
+                    ( 8.0, -1.0, 6.0, 6.0, 80.0, 35.0, 1.0, 0.34, 0.54, 12.0, 0.10, 11.0, -1.0, 3.0),
+                    ( 2.0, -7.0, 6.0, 6.0, 75.0, 33.0, 1.0, 0.32, 0.52, 12.0, 0.10, 10.0, -6.0, 3.0),
+                ]
+                for vals in monthly:
+                    wgn_lines.append(" ".join(f"{v:10.3f}" for v in vals))
+
+                weather_wgn.write_text("\n".join(wgn_lines) + "\n", encoding="utf-8")
+
         from swatplus_builder.run.swatplus import run as run_engine_fn
         # threads=1 requested for stability in benchmark
         r = run_engine_fn(wf.txtinout_dir, threads=1, timeout_s=1800.0)

@@ -28,6 +28,17 @@ _MUAGGATT_OPTIONAL_COLS: tuple[str, ...] = (
 _AGG_LAYER_BREAKS_MM: tuple[float, ...] = (300.0, 1000.0, 1500.0)
 _AGG_MIN_LAYERS: int = 2
 
+
+def _abfs_parts(href: str) -> tuple[str, str]:
+    """Split `abfs://<container>/<path>` into (container, path)."""
+    if not href.startswith("abfs://"):
+        raise ValueError(f"not an abfs href: {href!r}")
+    rest = href.removeprefix("abfs://")
+    if "/" not in rest:
+        raise ValueError(f"abfs href missing path: {href!r}")
+    container, path = rest.split("/", 1)
+    return (container, path)
+
 @dataclass(frozen=True)
 class GnatsgoFetchOptions:
     """Tunable knobs for Planetary Computer fetching."""
@@ -100,22 +111,24 @@ def fetch_aggregated_profiles(
         cols = list(_MUAGGATT_COLS + _MUAGGATT_OPTIONAL_COLS)
 
         # Planetary Computer gNATSGO tables are directory-style parquet datasets:
-        # `.../muaggatt.parquet/part.*.parquet`. Pandas+adlfs may `HEAD` the
-        # directory marker and 404. Use PyArrow Dataset with an Azure filesystem
-        # built from STAC `table:storage_options`.
+        # `.../muaggatt.parquet/part.*.parquet`. Some fsspec paths try to `HEAD`
+        # the directory marker and 404. Build the Azure filesystem directly from
+        # STAC `table:storage_options` and point PyArrow at the dataset prefix.
         try:
-            import fsspec  # type: ignore
+            import adlfs  # type: ignore
             import pyarrow.dataset as ds  # type: ignore
             import pyarrow.fs as pafs  # type: ignore
 
-            fs, path = fsspec.core.url_to_fs(href, **storage_options)
+            container, prefix = _abfs_parts(href)
+            fs = adlfs.AzureBlobFileSystem(**storage_options)
             arrow_fs = pafs.PyFileSystem(pafs.FSSpecHandler(fs))
 
-            dataset = ds.dataset(path, filesystem=arrow_fs, format="parquet")
+            dataset_path = f"{container}/{prefix}"
+            dataset = ds.dataset(dataset_path, filesystem=arrow_fs, format="parquet")
             filter_expr = ds.field("mukey").isin(sorted(mukey_set))
             df = dataset.to_table(columns=cols, filter=filter_expr).to_pandas()
         except Exception as exc:
-            log.debug("pyarrow dataset read failed (%s); using pandas fallback", exc)
+            log.debug("abfs dataset read failed (%s); using pandas fallback", exc)
             df = pd.read_parquet(href, columns=cols, storage_options=storage_options)
         
         # filter
