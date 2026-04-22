@@ -98,7 +98,25 @@ def fetch_aggregated_profiles(
         storage_options = asset.extra_fields.get("table:storage_options", {})
         
         cols = list(_MUAGGATT_COLS + _MUAGGATT_OPTIONAL_COLS)
-        df = pd.read_parquet(href, columns=cols, storage_options=storage_options)
+
+        # Planetary Computer gNATSGO tables are directory-style parquet datasets:
+        # `.../muaggatt.parquet/part.*.parquet`. Pandas+adlfs may `HEAD` the
+        # directory marker and 404. Use PyArrow Dataset with an Azure filesystem
+        # built from STAC `table:storage_options`.
+        try:
+            import fsspec  # type: ignore
+            import pyarrow.dataset as ds  # type: ignore
+            import pyarrow.fs as pafs  # type: ignore
+
+            fs, path = fsspec.core.url_to_fs(href, **storage_options)
+            arrow_fs = pafs.PyFileSystem(pafs.FSSpecHandler(fs))
+
+            dataset = ds.dataset(path, filesystem=arrow_fs, format="parquet")
+            filter_expr = ds.field("mukey").isin(sorted(mukey_set))
+            df = dataset.to_table(columns=cols, filter=filter_expr).to_pandas()
+        except Exception as exc:
+            log.debug("pyarrow dataset read failed (%s); using pandas fallback", exc)
+            df = pd.read_parquet(href, columns=cols, storage_options=storage_options)
         
         # filter
         mask = df["mukey"].isin(mukey_set)
