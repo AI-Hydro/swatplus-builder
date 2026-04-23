@@ -39,6 +39,7 @@ def test_calibrate_cli_runs_and_writes_artifacts(tmp_path: Path) -> None:
     assert "swat calibrate" in res.stdout
     assert "samples=3" in res.stdout
     assert (tmp_path / "calib_artifacts" / "runs").exists()
+    assert (tmp_path / "calib_artifacts" / "calibration_reports" / "history.csv").exists()
 
 
 def test_calibrate_cli_rejects_invalid_objective(tmp_path: Path) -> None:
@@ -61,4 +62,3 @@ def test_calibrate_cli_rejects_invalid_objective(tmp_path: Path) -> None:
     )
     assert res.exit_code == 2
     assert "invalid objectives" in res.stdout
-

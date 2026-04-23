@@ -374,12 +374,17 @@ def cmd_calibrate(
     engine_version: str = typer.Option(
         "unknown", "--engine-version", help="Engine version string for content hashing."
     ),
+    report_dir: str = typer.Option(
+        None,
+        "--report-dir",
+        help="Optional calibration report directory (defaults to <artifacts-root>/calibration_reports).",
+    ),
 ) -> None:
     """Run calibration sampling with artifact persistence (alpha skeleton)."""
     from datetime import date
     from pathlib import Path as _P
 
-    from .calibration import CalibrationRequest, run_calibration
+    from .calibration import CalibrationRequest, run_calibration, write_calibration_reports
     from .params import get_parameter
 
     allowed = {"nse", "log_nse", "pbias", "kge"}
@@ -440,6 +445,10 @@ def cmd_calibrate(
         artifacts_root=_P(artifacts_root),
         objective_fn=_objective,
     )
+    rep = write_calibration_reports(
+        results,
+        _P(report_dir) if report_dir is not None else _P(artifacts_root) / "calibration_reports",
+    )
     cache_hits = sum(1 for r in results if r.cache_hit)
     best_nse = max(
         (r.metrics.get("nse") for r in results if isinstance(r.metrics.get("nse"), (int, float))),
@@ -447,7 +456,8 @@ def cmd_calibrate(
     )
     rprint(
         f"[green]complete[/green] samples={len(results)} cache_hits={cache_hits} "
-        f"best_nse={'' if best_nse is None else f'{float(best_nse):.3f}'}"
+        f"best_nse={'' if best_nse is None else f'{float(best_nse):.3f}'} "
+        f"report={rep['outdir']}"
     )
 
 
