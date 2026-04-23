@@ -49,16 +49,22 @@ Kick off Phase 3B with schema-first artifact-store design and PR decomposition b
 - [2026-04-23] [pre-commit] — Added `PHASE_3A_CLOSEOUT.md` with explicit mapping to Roadmap §3A.5 exit criteria, deviations, and Phase 3B lessons.
 - [2026-04-23] [`c1e138a`] — Closed Phase 3A formally with `PHASE_3A_CLOSEOUT.md`.
 - [2026-04-23] [pre-commit] — Added `PHASE_3B_PLAN.md` mapping Roadmap §3B.1–3B.5 to isolated PRs with tests, risks, and scope boundaries.
+- [2026-04-23] [pre-commit] — Implemented PR-3B-01 foundations:
+  - added typed artifact schemas (`config`, `metadata`, `metrics`, `provenance`) in `src/swatplus_builder/artifacts/models.py`,
+  - added deterministic canonical JSON + content-hash utilities in `src/swatplus_builder/artifacts/hashing.py`,
+  - added tests for schema validation and hash determinism:
+    - `tests/test_artifact_models.py`
+    - `tests/test_artifact_hashing.py`.
 
 ## In Flight
 
 - [2026-04-23] — Phase 3B implementation kickoff:
-  - begin PR-3B-01 artifact schema models + deterministic hash core.
+  - finalize PR-3B-01 commit and proceed to PR-3B-02 (`ArtifactStore` local backend).
 
 ## Next Up
 
-- [1] Implement PR-3B-01: typed artifact schemas + content-hash determinism tests.
-- [2] Implement PR-3B-02: local `ArtifactStore` + caching short-circuit.
+- [1] Implement PR-3B-02: local `ArtifactStore` + caching short-circuit.
+- [2] Implement PR-3B-03: `swat validate` runner with artifact writes and aggregate summary.
 - [3] Normalize roadmap doc-location references (`docs/ROADMAP.md` vs `ROADMAP.md`) without losing historical docs.
 
 ## Open Questions / Blockers
