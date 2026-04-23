@@ -298,6 +298,56 @@ def cmd_run(
         rprint(f"  [cyan]{key}[/cyan] → {path.name}")
 
 
+@app.command("validate")
+def cmd_validate(
+    basins: str = typer.Option(..., "--basins", help="Path to curated basin JSON spec."),
+    artifacts_root: str = typer.Option(
+        "tests/_artifacts/validation",
+        "--artifacts-root",
+        help="Root directory for artifact store (contains runs/<content_hash>/...).",
+    ),
+    runs_root: str = typer.Option(
+        "tests/_artifacts/validation_work",
+        "--runs-root",
+        help="Root directory for per-basin working run directories.",
+    ),
+    engine_version: str = typer.Option(
+        "unknown",
+        "--engine-version",
+        help="Engine version string included in content hashing.",
+    ),
+) -> None:
+    """Run benchmark validation for a basin suite and write artifacts/reports."""
+    from pathlib import Path as _P
+    from .validation.runner import load_basin_specs, run_validation
+
+    basins_path = _P(basins).expanduser().resolve()
+    if not basins_path.exists():
+        rprint(f"[red]error:[/red] basins file not found: {basins_path}")
+        raise typer.Exit(2)
+
+    try:
+        specs = load_basin_specs(basins_path)
+    except Exception as exc:
+        rprint(f"[red]error:[/red] failed to parse basin specs: {exc}")
+        raise typer.Exit(2) from exc
+
+    rprint(f"[bold]swat validate[/bold] → {len(specs)} basins")
+    results, report_dir = run_validation(
+        basins=specs,
+        artifacts_root=_P(artifacts_root),
+        runs_root=_P(runs_root),
+        engine_version=engine_version,
+    )
+
+    ok = sum(1 for r in results if r.status in {"success", "cached"})
+    cache_hits = sum(1 for r in results if r.cache_hit)
+    rprint(
+        f"[green]complete[/green] success={ok}/{len(results)}  cache_hits={cache_hits}  "
+        f"report={report_dir}"
+    )
+
+
 @app.command("build")
 def cmd_build(
     dem: str = typer.Option(..., "--dem"),

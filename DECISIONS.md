@@ -46,6 +46,20 @@ Status: Accepted
 
 ---
 
+[2026-04-23] `swat validate` uses an injectable executor with orchestrator default in alpha
+Context: Phase 3B.2-3B.3 requires a working validation runner now, but full production basin execution is still evolving and must remain testable without network-heavy real runs.
+Decision: Implement `run_validation(..., executor=...)` with a typed executor contract. Default executor calls existing `orchestrate.run_pipeline`; tests inject deterministic executors for cache/report assertions.
+Alternatives considered:
+- Hard-wire validation to real full E2E execution path only — rejected because it makes CI/tests brittle and slow.
+- Ship `swat validate` without execution integration (schema-only) — rejected because Phase 3B requires end-to-end benchmark runner behavior.
+Consequences:
+- `swat validate` is usable immediately and supports deterministic tests.
+- Real-execution behavior can be upgraded by swapping default executor without breaking runner interface.
+- Content-addressed cache behavior is verifiable independent of external data availability.
+Status: Accepted
+
+---
+
 [2026-04-23] Scope NSE floor assertion to structural CI basin in Phase 3A.1
 Context: Phase 3A.1 calls for an NSE floor gate (`NSE > -1`) to catch silent regressions. During real multi-basin gate validation, routing/connectivity assertions passed but several uncalibrated basins showed strongly negative NSE (order 10^2-10^3), which would hard-fail CI independent of routing correctness.
 Decision: Keep mandatory NSE floor assertion on the known structural regression basin (`03339000`) where the outlet-selection/routing path is the target behavior under test; require finite NSE on all other fast CI basins while preserving strict routing assertions (engine success, terminal flow > 0, alignment exists, outlet auto-detection behavior).

@@ -89,6 +89,9 @@ swat run       -w runs/marsh_creek/
 
 # Launch MCP server
 swat-mcp
+
+# Benchmark validation over a basin suite JSON
+swat validate --basins basins/curated_v1.json
 ```
 
 ---

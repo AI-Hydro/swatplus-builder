@@ -60,16 +60,23 @@ Kick off Phase 3B with schema-first artifact-store design and PR decomposition b
   - implemented `write/read/exists/query/lineage` operations on `<root>/runs/<content_hash>/...`,
   - added integration tests in `tests/test_artifact_store.py`.
 - [2026-04-23] [pre-commit] — Recorded storage-backend decision in `DECISIONS.md` (local FS v1 with pluggable interface).
+- [2026-04-23] [pre-commit] — Implemented PR-3B-03 validation runner + CLI:
+  - added `src/swatplus_builder/validation/runner.py` with basin spec loading, execution loop, artifact writes, cache-hit short-circuit via `LocalArtifactStore.exists(hash)`, and summary report generation (`summary.csv`, `summary.md`),
+  - added `swat validate --basins <file>` command in `src/swatplus_builder/cli.py`,
+  - added tests:
+    - `tests/test_validation_runner.py`
+    - `tests/test_cli_validate.py`.
+- [2026-04-23] [pre-commit] — Recorded runner-executor decision in `DECISIONS.md` (injectable executor with orchestrator default during alpha).
 
 ## In Flight
 
 - [2026-04-23] — Phase 3B implementation kickoff:
-  - finalize PR-3B.2 commit and begin PR-3B.3 (`swat validate` runner).
+  - finalize PR-3B.3 commit and begin PR-3B.3/3B.4 curated basin suite + benchmark-report hardening.
 
 ## Next Up
 
-- [1] Implement PR-3B-03: `swat validate` runner with artifact writes and aggregate summary.
-- [2] Wire content-addressed caching short-circuit into run orchestration path using `LocalArtifactStore.exists(hash)`.
+- [1] Implement PR-3B-04: add `basins/curated_v1.json` with schema validation.
+- [2] Implement PR-3B-05: benchmark report expansion (cross-basin summary + comparison plots + closeout).
 - [3] Normalize roadmap doc-location references (`docs/ROADMAP.md` vs `ROADMAP.md`) without losing historical docs.
 
 ## Open Questions / Blockers
