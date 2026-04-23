@@ -97,3 +97,32 @@ class ArtifactProvenance(BaseModel):
     proposal_source: str | None = Field(default=None)
     agent_context: AgentContext | None = Field(default=None)
 
+
+class ArtifactRecord(BaseModel):
+    """In-memory representation of one artifact record."""
+
+    content_hash: str = Field(..., min_length=8)
+    config: RunConfig
+    metadata: ArtifactMetadata
+    metrics: ArtifactMetrics | None = Field(default=None)
+    provenance: ArtifactProvenance | None = Field(default=None)
+
+
+class ArtifactSummary(BaseModel):
+    """Lightweight listing payload used by `ArtifactStore.query()`."""
+
+    content_hash: str = Field(..., min_length=8)
+    basin_id: str = Field(..., min_length=1)
+    simulation_start: date = Field(...)
+    simulation_end: date = Field(...)
+    soil_mode: Literal["high_fidelity", "fallback", "synthetic"] | None = Field(default=None)
+    nse: float | None = Field(default=None)
+    parent_run: str | None = Field(default=None)
+
+
+class ArtifactQuery(BaseModel):
+    """Optional filters for artifact query/list operations."""
+
+    basin_id: str | None = Field(default=None)
+    soil_mode: Literal["high_fidelity", "fallback", "synthetic"] | None = Field(default=None)
+    nse_min: float | None = Field(default=None)

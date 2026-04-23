@@ -32,6 +32,20 @@ Status: Accepted
 
 ---
 
+[2026-04-23] Artifact store v1 uses a local filesystem backend rooted at `<root>/runs`
+Context: Phase 3B.1-3B.2 requires a complete artifact schema and store API now, while cloud backends are explicitly future work. We needed a stable path contract that supports immediate caching and benchmark reproducibility.
+Decision: Implement `LocalArtifactStore` as the default backend with layout `<root>/runs/<content_hash>/...`, and define an abstract `ArtifactStore` interface (`write/read/exists/query/lineage`) for future S3/cloud adapters.
+Alternatives considered:
+- Implement cloud backend immediately — rejected as out of scope for Phase 3B and a timeline risk.
+- Hardcode filesystem logic without an interface — rejected because it would make backend evolution and testing harder.
+Consequences:
+- Phase 3B can ship complete artifact behavior immediately on local disk.
+- Future backend additions can conform to the same API without changing callers.
+- Content-addressed cache checks (`exists(hash)`) are now straightforward to wire into run orchestration.
+Status: Accepted
+
+---
+
 [2026-04-23] Scope NSE floor assertion to structural CI basin in Phase 3A.1
 Context: Phase 3A.1 calls for an NSE floor gate (`NSE > -1`) to catch silent regressions. During real multi-basin gate validation, routing/connectivity assertions passed but several uncalibrated basins showed strongly negative NSE (order 10^2-10^3), which would hard-fail CI independent of routing correctness.
 Decision: Keep mandatory NSE floor assertion on the known structural regression basin (`03339000`) where the outlet-selection/routing path is the target behavior under test; require finite NSE on all other fast CI basins while preserving strict routing assertions (engine success, terminal flow > 0, alignment exists, outlet auto-detection behavior).

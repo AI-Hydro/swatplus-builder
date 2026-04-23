@@ -55,16 +55,21 @@ Kick off Phase 3B with schema-first artifact-store design and PR decomposition b
   - added tests for schema validation and hash determinism:
     - `tests/test_artifact_models.py`
     - `tests/test_artifact_hashing.py`.
+- [2026-04-23] [pre-commit] — Implemented PR-3B-02 local artifact storage:
+  - added `ArtifactStore` interface and `LocalArtifactStore` backend in `src/swatplus_builder/artifacts/store.py`,
+  - implemented `write/read/exists/query/lineage` operations on `<root>/runs/<content_hash>/...`,
+  - added integration tests in `tests/test_artifact_store.py`.
+- [2026-04-23] [pre-commit] — Recorded storage-backend decision in `DECISIONS.md` (local FS v1 with pluggable interface).
 
 ## In Flight
 
 - [2026-04-23] — Phase 3B implementation kickoff:
-  - finalize PR-3B-01 commit and proceed to PR-3B-02 (`ArtifactStore` local backend).
+  - finalize PR-3B.2 commit and begin PR-3B.3 (`swat validate` runner).
 
 ## Next Up
 
-- [1] Implement PR-3B-02: local `ArtifactStore` + caching short-circuit.
-- [2] Implement PR-3B-03: `swat validate` runner with artifact writes and aggregate summary.
+- [1] Implement PR-3B-03: `swat validate` runner with artifact writes and aggregate summary.
+- [2] Wire content-addressed caching short-circuit into run orchestration path using `LocalArtifactStore.exists(hash)`.
 - [3] Normalize roadmap doc-location references (`docs/ROADMAP.md` vs `ROADMAP.md`) without losing historical docs.
 
 ## Open Questions / Blockers
