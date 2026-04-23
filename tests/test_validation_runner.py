@@ -55,8 +55,11 @@ def test_run_validation_uses_cache_on_second_run(tmp_path: Path) -> None:
     )
     assert calls["n"] == 2
     assert all(not r.cache_hit for r in first)
+    assert all(r.passed is True for r in first)
     assert (report_dir_1 / "summary.csv").exists()
     assert (report_dir_1 / "summary.md").exists()
+    assert (report_dir_1 / "benchmark_report.md").exists()
+    assert (report_dir_1 / "benchmark_summary.json").exists()
 
     second, _report_dir_2 = run_validation(
         basins=basins,
@@ -69,4 +72,4 @@ def test_run_validation_uses_cache_on_second_run(tmp_path: Path) -> None:
     assert calls["n"] == 2, "executor should not run on cache hit"
     assert all(r.cache_hit for r in second)
     assert all(r.status == "cached" for r in second)
-
+    assert all(r.passed is True for r in second)

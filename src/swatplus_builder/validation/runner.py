@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import csv
 import json
+import math
+import statistics
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -54,6 +56,8 @@ class ValidationRunResult(BaseModel):
     nse: float | None = None
     kge: float | None = None
     pbias: float | None = None
+    expected_nse_min: float | None = None
+    passed: bool | None = None
     error: str | None = None
 
 
@@ -96,6 +100,7 @@ def run_validation(
     executor: Executor | None = None,
     engine_version: str = "unknown",
     builder_git_sha: str | None = None,
+    default_nse_min: float = -1.0,
 ) -> tuple[list[ValidationRunResult], Path]:
     """Run/collect validation artifacts for a basin list.
 
@@ -129,6 +134,12 @@ def run_validation(
 
         if store.exists(content_hash):
             rec = store.read(content_hash)
+            nse = rec.metrics.nse if rec.metrics else None
+            expected_nse = (
+                float(spec.expected_nse_min)
+                if spec.expected_nse_min is not None
+                else default_nse_min
+            )
             results.append(
                 ValidationRunResult(
                     basin_id=spec.resolved_basin_id,
@@ -137,9 +148,11 @@ def run_validation(
                     status="cached",
                     cache_hit=True,
                     run_dir=str(run_dir),
-                    nse=rec.metrics.nse if rec.metrics else None,
+                    nse=nse,
                     kge=rec.metrics.kge if rec.metrics else None,
                     pbias=rec.metrics.pbias if rec.metrics else None,
+                    expected_nse_min=expected_nse,
+                    passed=(nse is not None and nse >= expected_nse),
                 )
             )
             continue
@@ -175,6 +188,11 @@ def run_validation(
                     provenance=provenance,
                 )
             )
+            expected_nse = (
+                float(spec.expected_nse_min)
+                if spec.expected_nse_min is not None
+                else default_nse_min
+            )
             results.append(
                 ValidationRunResult(
                     basin_id=spec.resolved_basin_id,
@@ -186,9 +204,16 @@ def run_validation(
                     nse=metrics.nse,
                     kge=metrics.kge,
                     pbias=metrics.pbias,
+                    expected_nse_min=expected_nse,
+                    passed=(metrics.nse is not None and metrics.nse >= expected_nse),
                 )
             )
         except Exception as exc:
+            expected_nse = (
+                float(spec.expected_nse_min)
+                if spec.expected_nse_min is not None
+                else default_nse_min
+            )
             results.append(
                 ValidationRunResult(
                     basin_id=spec.resolved_basin_id,
@@ -197,6 +222,8 @@ def run_validation(
                     status="failed",
                     cache_hit=False,
                     run_dir=str(run_dir),
+                    expected_nse_min=expected_nse,
+                    passed=False,
                     error=str(exc),
                 )
             )
@@ -210,6 +237,8 @@ def run_validation(
 def _write_report_files(report_dir: Path, results: list[ValidationRunResult]) -> None:
     csv_path = report_dir / "summary.csv"
     md_path = report_dir / "summary.md"
+    benchmark_path = report_dir / "benchmark_report.md"
+    benchmark_json = report_dir / "benchmark_summary.json"
 
     with csv_path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(
@@ -224,6 +253,8 @@ def _write_report_files(report_dir: Path, results: list[ValidationRunResult]) ->
                 "kge",
                 "pbias",
                 "run_dir",
+                "expected_nse_min",
+                "passed",
                 "error",
             ],
         )
@@ -238,17 +269,111 @@ def _write_report_files(report_dir: Path, results: list[ValidationRunResult]) ->
         f"- Basins: `{len(results)}`",
         f"- Success: `{sum(1 for r in results if r.status in {'success', 'cached'})}`",
         "",
-        "| Basin | USGS | Status | Cache | NSE | KGE | PBIAS |",
-        "|---|---|---|---:|---:|---:|---:|",
+        "| Basin | USGS | Status | Cache | NSE | KGE | PBIAS | Pass |",
+        "|---|---|---|---:|---:|---:|---:|---:|",
     ]
     for r in results:
         lines.append(
             f"| {r.basin_id} | {r.usgs_id} | {r.status} | {str(r.cache_hit).lower()} | "
             f"{'' if r.nse is None else f'{r.nse:.3f}'} | "
             f"{'' if r.kge is None else f'{r.kge:.3f}'} | "
-            f"{'' if r.pbias is None else f'{r.pbias:.3f}'} |"
+            f"{'' if r.pbias is None else f'{r.pbias:.3f}'} | "
+            f"{'' if r.passed is None else ('yes' if r.passed else 'no')} |"
         )
     md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    aggregate = _aggregate_results(results)
+    benchmark_json.write_text(json.dumps(aggregate, indent=2) + "\n", encoding="utf-8")
+
+    report_lines = [
+        "# Benchmark Report",
+        "",
+        f"- Generated: `{datetime.now(timezone.utc).isoformat()}`",
+        f"- Basins evaluated: `{aggregate['basin_count']}`",
+        f"- Successful/cached runs: `{aggregate['success_count']}`",
+        f"- Fail count: `{aggregate['fail_count']}`",
+        f"- Pass count (NSE floor): `{aggregate['pass_count']}`",
+        "",
+        "## Cross-Basin Summary",
+        "",
+        f"- Median NSE: `{_fmt(aggregate.get('nse_median'))}`",
+        f"- NSE p10/p90: `{_fmt(aggregate.get('nse_p10'))}` / `{_fmt(aggregate.get('nse_p90'))}`",
+        f"- Median KGE: `{_fmt(aggregate.get('kge_median'))}`",
+        f"- Median PBIAS: `{_fmt(aggregate.get('pbias_median'))}`",
+        "",
+        "## Output Artifacts",
+        "",
+        "- `summary.csv`",
+        "- `summary.md`",
+        "- `benchmark_summary.json`",
+    ]
+    benchmark_path.write_text("\n".join(report_lines) + "\n", encoding="utf-8")
+    _write_comparison_plot(report_dir, results)
+
+
+def _aggregate_results(results: list[ValidationRunResult]) -> dict[str, float | int | None]:
+    nse_vals = [r.nse for r in results if isinstance(r.nse, (float, int)) and math.isfinite(r.nse)]
+    kge_vals = [r.kge for r in results if isinstance(r.kge, (float, int)) and math.isfinite(r.kge)]
+    pbias_vals = [r.pbias for r in results if isinstance(r.pbias, (float, int)) and math.isfinite(r.pbias)]
+
+    out: dict[str, float | int | None] = {
+        "basin_count": len(results),
+        "success_count": sum(1 for r in results if r.status in {"success", "cached"}),
+        "fail_count": sum(1 for r in results if r.status == "failed"),
+        "pass_count": sum(1 for r in results if r.passed is True),
+        "nse_median": _median(nse_vals),
+        "nse_p10": _quantile(nse_vals, 0.1),
+        "nse_p90": _quantile(nse_vals, 0.9),
+        "kge_median": _median(kge_vals),
+        "pbias_median": _median(pbias_vals),
+    }
+    return out
+
+
+def _median(values: list[float]) -> float | None:
+    if not values:
+        return None
+    return float(statistics.median(values))
+
+
+def _quantile(values: list[float], q: float) -> float | None:
+    if not values:
+        return None
+    vals = sorted(values)
+    idx = int(round((len(vals) - 1) * q))
+    return float(vals[idx])
+
+
+def _fmt(value: float | int | None) -> str:
+    if value is None:
+        return "n/a"
+    return f"{float(value):.3f}"
+
+
+def _write_comparison_plot(report_dir: Path, results: list[ValidationRunResult]) -> None:
+    try:
+        import matplotlib.pyplot as plt
+    except Exception:
+        return
+
+    labels = [r.basin_id for r in results]
+    nse_vals = [r.nse if r.nse is not None else float("nan") for r in results]
+    kge_vals = [r.kge if r.kge is not None else float("nan") for r in results]
+
+    fig, ax = plt.subplots(figsize=(10, 4))
+    x = list(range(len(labels)))
+    ax.plot(x, nse_vals, marker="o", label="NSE")
+    ax.plot(x, kge_vals, marker="s", label="KGE")
+    ax.axhline(-1.0, linestyle="--", linewidth=1.0, color="gray", label="NSE floor")
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, rotation=45, ha="right")
+    ax.set_ylabel("Metric")
+    ax.set_title("Cross-basin Metric Comparison")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(report_dir / "comparison_metrics.png", dpi=200, bbox_inches="tight")
+    fig.savefig(report_dir / "comparison_metrics.pdf", bbox_inches="tight")
+    plt.close(fig)
 
 
 def _default_executor(spec: BasinSpec, run_dir: Path) -> ExecutorResult:
@@ -276,4 +401,3 @@ def _default_executor(spec: BasinSpec, run_dir: Path) -> ExecutorResult:
         "soil_mode": str(summary.get("soil_mode", "high_fidelity")),
     }
     return ExecutorResult(status=str(summary.get("status", "success")).lower(), metrics=metrics, metadata=metadata)
-

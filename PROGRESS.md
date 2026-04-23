@@ -70,16 +70,20 @@ Kick off Phase 3B with schema-first artifact-store design and PR decomposition b
 - [2026-04-23] [pre-commit] — Implemented PR-3B-04 curated basin suite:
   - added `basins/curated_v1.json` with six representative basins and required metadata (`bbox`, simulation window, expected NSE floor, notes),
   - added schema-validation regression test `tests/test_curated_basins.py`.
+- [2026-04-23] [pre-commit] — Implemented PR-3B-05 benchmark-report expansion:
+  - upgraded validation outputs with pass/fail accounting and cross-basin aggregation statistics (median/quantiles),
+  - added benchmark artifacts in `validation_reports/`: `benchmark_report.md`, `benchmark_summary.json`, and comparison plot outputs (`comparison_metrics.png/.pdf` when matplotlib is available),
+  - expanded `tests/test_validation_runner.py` coverage for benchmark artifacts and pass-state persistence.
 
 ## In Flight
 
 - [2026-04-23] — Phase 3B implementation kickoff:
-  - finalize PR-3B.4 commit and begin PR-3B.5 benchmark report hardening.
+  - finalize PR-3B.5 commit and run `swat validate` against curated suite for Phase 3B evidence.
 
 ## Next Up
 
-- [1] Implement PR-3B-05: benchmark report expansion (cross-basin summary + comparison plots + closeout).
-- [2] Run `swat validate` against curated suite and capture evidence for Phase 3B exit criteria.
+- [1] Run `swat validate` against curated suite and capture evidence for Phase 3B exit criteria.
+- [2] Draft `PHASE_3B_CLOSEOUT.md` with explicit mapping to 3B.5.
 - [3] Normalize roadmap doc-location references (`docs/ROADMAP.md` vs `ROADMAP.md`) without losing historical docs.
 
 ## Open Questions / Blockers
