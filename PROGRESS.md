@@ -2,11 +2,11 @@
 
 ## Active Phase
 
-Phase 3B — Artifact System & Validation Layer (Closeout Complete)
+Phase 3C — Calibration (Kickoff)
 
 ## Current Sprint Focus
 
-Finalize Phase 3B closeout evidence and prepare Phase 3C kickoff planning.
+Kick off Phase 3C with registry-first calibration foundations and mergeable Track 1/Track 2 decomposition.
 
 ## Completed Since Last Update
 
@@ -79,16 +79,18 @@ Finalize Phase 3B closeout evidence and prepare Phase 3C kickoff planning.
   - second run with identical config: `cache_hits=6`,
   - artifacts persisted under `tests/_artifacts/validation_curated/validation_reports/`.
 - [2026-04-23] [pre-commit] — Added `PHASE_3B_CLOSEOUT.md` with explicit 3B.5 exit-criteria evidence and verification commands.
+- [2026-04-23] [`f407200`] — Closed Phase 3B formally with cached curated-suite validation evidence and benchmark outputs.
+- [2026-04-23] [pre-commit] — Added `PHASE_3C_PLAN.md` mapping 3C.1–3C.7 to isolated PRs with risks and tests.
 
 ## In Flight
 
-- [2026-04-23] — Phase 3B implementation kickoff:
-  - phase transition prep for Phase 3C kickoff (`PHASE_3C_PLAN.md`).
+- [2026-04-23] — Phase 3C implementation kickoff:
+  - begin PR-3C-01 parameter registry core implementation.
 
 ## Next Up
 
-- [1] Kick off Phase 3C with `PHASE_3C_PLAN.md` mapped to Track 1/Track 2 PR slices.
-- [2] Implement Phase 3C parameter registry foundation (typed parameter schema + validations).
+- [1] Implement PR-3C-01 parameter registry foundation (typed parameter schema + validations).
+- [2] Implement PR-3C-02 SpotPy adapter skeleton with artifact-write enforcement.
 - [3] Normalize roadmap doc-location references (`docs/ROADMAP.md` vs `ROADMAP.md`) without losing historical docs.
 
 ## Open Questions / Blockers
