@@ -152,7 +152,7 @@ def run_validation(
                     kge=rec.metrics.kge if rec.metrics else None,
                     pbias=rec.metrics.pbias if rec.metrics else None,
                     expected_nse_min=expected_nse,
-                    passed=(nse is not None and nse >= expected_nse),
+                    passed=(None if nse is None else nse >= expected_nse),
                 )
             )
             continue
@@ -205,7 +205,7 @@ def run_validation(
                     kge=metrics.kge,
                     pbias=metrics.pbias,
                     expected_nse_min=expected_nse,
-                    passed=(metrics.nse is not None and metrics.nse >= expected_nse),
+                    passed=(None if metrics.nse is None else metrics.nse >= expected_nse),
                 )
             )
         except Exception as exc:

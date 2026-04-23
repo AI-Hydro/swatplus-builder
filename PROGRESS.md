@@ -2,11 +2,11 @@
 
 ## Active Phase
 
-Phase 3B — Artifact System & Validation Layer
+Phase 3B — Artifact System & Validation Layer (Closeout Complete)
 
 ## Current Sprint Focus
 
-Kick off Phase 3B with schema-first artifact-store design and PR decomposition before implementation.
+Finalize Phase 3B closeout evidence and prepare Phase 3C kickoff planning.
 
 ## Completed Since Last Update
 
@@ -74,16 +74,21 @@ Kick off Phase 3B with schema-first artifact-store design and PR decomposition b
   - upgraded validation outputs with pass/fail accounting and cross-basin aggregation statistics (median/quantiles),
   - added benchmark artifacts in `validation_reports/`: `benchmark_report.md`, `benchmark_summary.json`, and comparison plot outputs (`comparison_metrics.png/.pdf` when matplotlib is available),
   - expanded `tests/test_validation_runner.py` coverage for benchmark artifacts and pass-state persistence.
+- [2026-04-23] [pre-commit] — Executed curated-suite validation end-to-end:
+  - first run: `cache_hits=0`,
+  - second run with identical config: `cache_hits=6`,
+  - artifacts persisted under `tests/_artifacts/validation_curated/validation_reports/`.
+- [2026-04-23] [pre-commit] — Added `PHASE_3B_CLOSEOUT.md` with explicit 3B.5 exit-criteria evidence and verification commands.
 
 ## In Flight
 
 - [2026-04-23] — Phase 3B implementation kickoff:
-  - finalize PR-3B.5 commit and run `swat validate` against curated suite for Phase 3B evidence.
+  - phase transition prep for Phase 3C kickoff (`PHASE_3C_PLAN.md`).
 
 ## Next Up
 
-- [1] Run `swat validate` against curated suite and capture evidence for Phase 3B exit criteria.
-- [2] Draft `PHASE_3B_CLOSEOUT.md` with explicit mapping to 3B.5.
+- [1] Kick off Phase 3C with `PHASE_3C_PLAN.md` mapped to Track 1/Track 2 PR slices.
+- [2] Implement Phase 3C parameter registry foundation (typed parameter schema + validations).
 - [3] Normalize roadmap doc-location references (`docs/ROADMAP.md` vs `ROADMAP.md`) without losing historical docs.
 
 ## Open Questions / Blockers
