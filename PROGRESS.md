@@ -81,16 +81,22 @@ Kick off Phase 3C with registry-first calibration foundations and mergeable Trac
 - [2026-04-23] [pre-commit] — Added `PHASE_3B_CLOSEOUT.md` with explicit 3B.5 exit-criteria evidence and verification commands.
 - [2026-04-23] [`f407200`] — Closed Phase 3B formally with cached curated-suite validation evidence and benchmark outputs.
 - [2026-04-23] [pre-commit] — Added `PHASE_3C_PLAN.md` mapping 3C.1–3C.7 to isolated PRs with risks and tests.
+- [2026-04-23] [pre-commit] — Implemented PR-3C-01 parameter registry foundation:
+  - added `src/swatplus_builder/params/registry.py` with typed parameter metadata (`Parameter`, `ParameterScope`, `AdjustmentType`),
+  - populated canonical initial parameter set from roadmap Phase 3C table,
+  - added bounds + scope validation helpers (`validate_value`, `validate_assignment`),
+  - exposed import surface via `src/swatplus_builder/params/__init__.py`.
+- [2026-04-23] [pre-commit] — Added registry validation tests in `tests/test_parameter_registry.py`.
 
 ## In Flight
 
 - [2026-04-23] — Phase 3C implementation kickoff:
-  - begin PR-3C-01 parameter registry core implementation.
+  - finalize PR-3C-01 and begin PR-3C-02 SpotPy adapter skeleton.
 
 ## Next Up
 
-- [1] Implement PR-3C-01 parameter registry foundation (typed parameter schema + validations).
-- [2] Implement PR-3C-02 SpotPy adapter skeleton with artifact-write enforcement.
+- [1] Implement PR-3C-02 SpotPy adapter skeleton with artifact-write enforcement.
+- [2] Implement PR-3C-03 `swat calibrate` CLI with multi-objective parsing.
 - [3] Normalize roadmap doc-location references (`docs/ROADMAP.md` vs `ROADMAP.md`) without losing historical docs.
 
 ## Open Questions / Blockers
