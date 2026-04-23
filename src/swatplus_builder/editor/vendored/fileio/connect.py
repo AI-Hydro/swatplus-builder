@@ -53,10 +53,14 @@ def write_row(file, con, index, con_to_index, con_outs, con_out_id_dict, using_g
 	for out in con_outs:
 		obj_id = out.obj_id
 
-		elem_table = table_mapper.obj_typs.get(out.obj_typ, None)
-		if elem_table is not None:
-			obj_id = con_out_id_dict[out.obj_typ].index(out.obj_id) + 1
-			#obj_id = elem_table.select().where(elem_table.id <= out.obj_id).count()
+		# 'out' (Outlet_con) is the connection object itself; its obj_id is
+		# already a sequential 1-based outlet index.  Do NOT re-index it via
+		# the elem-table lookup below or the Fortran engine will get index 0.
+		if out.obj_typ != 'out':
+			elem_table = table_mapper.obj_typs.get(out.obj_typ, None)
+			if elem_table is not None:
+				obj_id = con_out_id_dict[out.obj_typ].index(out.obj_id) + 1
+				#obj_id = elem_table.select().where(elem_table.id <= out.obj_id).count()
 
 		file.write(utils.code_pad(out.obj_typ))
 		file.write(utils.int_pad(obj_id))
@@ -327,3 +331,45 @@ class Delratio_con(BaseFileModel):
 
 	def write(self):
 		write_con_table(self.file_name, self.get_meta_line(), db.Delratio_con, db.Delratio_con_out, "dlr", dr.Delratio_del)
+
+
+class Outlet_con(BaseFileModel):
+	"""Writer for outlet.con.
+
+	Outlet_con rows differ from other con tables: they have no associated
+	'parameter object' (like Channel_cha or Aquifer_aqu).  The ``out``
+	column on the DB model is a plain integer (not a FK to a param table),
+	so we use it directly as the element index.
+	"""
+	def __init__(self, file_name, version=None, swat_version=None):
+		self.file_name = file_name
+		self.version = version
+		self.swat_version = swat_version
+
+	def read(self):
+		raise NotImplementedError('Reading not implemented yet.')
+
+	def write(self):
+		con_table = db.Outlet_con
+		con_out_table = db.Outlet_con_out
+
+		if con_table.select().count() == 0:
+			return
+
+		with open(self.file_name, 'w') as file:
+			file.write(self.get_meta_line())
+			write_header(file, "out", con_out_table.select().count() > 0)
+
+			con_out_types = con_out_table.select(con_out_table.obj_typ).distinct()
+			con_out_id_dict = {}
+			for out_typ in con_out_types:
+				obj_table = table_mapper.obj_typs.get(out_typ.obj_typ, None)
+				if obj_table is not None and out_typ.obj_typ != 'out':
+					con_out_id_dict[out_typ.obj_typ] = [o.id for o in obj_table.select(obj_table.id).order_by(obj_table.id)]
+
+			i = 1
+			for con in con_table.select().order_by(con_table.id):
+				# con.out is the 1-based outlet index (plain int, not a FK row)
+				con_to_index = con.out
+				write_row(file, con, i, con_to_index, con.con_outs.order_by(con_out_table.order), con_out_id_dict)
+				i += 1

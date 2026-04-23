@@ -353,6 +353,12 @@ class WriteFiles(ExecutableApi):
 			connect.Delratio_con(os.path.join(self.__dir, delratio_con_file), self.__version, self.__swat_version).write()
 
 		prog += prog_step
+		outlet_con_file = files[11].strip()
+		if outlet_con_file != NULL_FILE:
+			self.update_file_status(prog, outlet_con_file)
+			connect.Outlet_con(os.path.join(self.__dir, outlet_con_file), self.__version, self.__swat_version).write()
+
+		prog += prog_step
 		chandeg_con_file = files[12].strip()
 		if chandeg_con_file != NULL_FILE:
 			self.update_file_status(prog, chandeg_con_file)

@@ -317,6 +317,22 @@ def setup_project(
 
     ev = editor_version or _default_editor_version()
 
+    # The vendored editor only rebuilds GIS-derived connect/object rows when
+    # `project_config.imported_gis = 0`. If callers switch mode (LTE <-> standard)
+    # without clearing that flag, the DB can retain stale object families
+    # (e.g., chandeg_* while is_lte=0), which yields disconnected runtime routing.
+    current_is_lte_raw = _read_project_config_field(project_db, "is_lte")
+    current_imported_raw = _read_project_config_field(project_db, "imported_gis")
+    if current_is_lte_raw is not None and current_imported_raw is not None:
+        try:
+            current_is_lte = int(str(current_is_lte_raw)) == 1
+            current_imported = int(str(current_imported_raw)) == 1
+        except (TypeError, ValueError):
+            current_is_lte = is_lte
+            current_imported = False
+        if current_imported and current_is_lte != is_lte:
+            _set_project_config_field(project_db, "imported_gis", "0")
+
     # When --datasets_db_file is passed, the editor skips the code path that
     # reads project_name from project_config (see vendored
     # actions/setup_project.py:44-52, compared with the `do_gis` branch at

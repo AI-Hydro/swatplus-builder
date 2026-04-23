@@ -280,7 +280,7 @@ def main(outdir: Path, run_engine: bool = False):
     # 10. Editor
     _section("10/11 SWAT+ Editor Operations")
     t0 = time.time()
-    setup_project(db_path, is_lte=False, timeout=300.0)
+    setup_project(db_path, is_lte=True, timeout=300.0)
     txtinout_dir = project_dir / "Scenarios" / "Default" / "TxtInOut"
     write_observed(weather_bundle, txtinout_dir)
     import_weather_observed(db_path, txtinout_dir, timeout=300.0)
@@ -291,27 +291,58 @@ def main(outdir: Path, run_engine: bool = False):
     _section("11/11 Engine Run")
     subprocess_successful = False
     if run_engine:
-        # Ensure daily channel outputs exist for evaluation.
-        # Editor defaults may set nyskip=1 (skip first year) and daily=off.
+        # Patch print.prt: set nyskip=0, dates matching the simulation period,
+        # and enable daily channel outputs.
+        from datetime import datetime as _dt
+        d_start = _dt.strptime(SIM_START, "%Y-%m-%d")
+        d_end   = _dt.strptime(SIM_END,   "%Y-%m-%d")
+        start_jday, start_year = d_start.timetuple().tm_yday, d_start.year
+        end_jday,   end_year   = d_end.timetuple().tm_yday,   d_end.year
+
         prt = wf.txtinout_dir / "print.prt"
         if prt.is_file():
             lines = prt.read_text(encoding="utf-8", errors="replace").splitlines()
             out: list[str] = []
             for i, line in enumerate(lines):
-                # Line 3 is the numeric control row under the header.
                 if i == 2:
-                    parts = line.split()
-                    if parts:
-                        parts[0] = "0"  # nyskip
-                        line = " ".join(parts) + "  "
-                # Object table rows: "<object> <daily> <monthly> <yearly> <avann>"
-                if line.strip().startswith("channel_sd"):
-                    parts = line.split()
-                    if len(parts) >= 2:
-                        parts[1] = "y"
-                        line = " ".join(parts) + "  "
+                    # Rewrite control row with correct nyskip=0 and dates
+                    line = (
+                        f"{'0':<12}{start_jday:<11}{start_year:<11}"
+                        f"{end_jday:<11}{end_year:<11}{'1':<10}"
+                    )
+                elif line.strip().startswith("channel ") or line.strip().startswith("channel_sd"):
+                    # Enable daily output
+                    line = line.replace(" n ", " y ", 1)
                 out.append(line)
             prt.write_text("\n".join(out) + "\n", encoding="utf-8")
+
+        # Patch time.sim to match the simulation period.
+        time_sim = wf.txtinout_dir / "time.sim"
+        if time_sim.is_file():
+            ts_lines = time_sim.read_text(encoding="utf-8", errors="replace").splitlines()
+            if len(ts_lines) >= 3:
+                ts_lines[2] = (
+                    f"{start_jday:>10}{start_year:>10}"
+                    f"{end_jday:>10}{end_year:>10}{'0':>10}"
+                )
+                time_sim.write_text("\n".join(ts_lines) + "\n", encoding="utf-8")
+
+        # Keep standard channel routing off (`rte_cha=0`) in this LTE workflow.
+        codes_bsn = wf.txtinout_dir / "codes.bsn"
+        if codes_bsn.is_file():
+            lines = codes_bsn.read_text(encoding="utf-8", errors="replace").splitlines()
+            if len(lines) >= 3:
+                header = lines[1].split()
+                values = lines[2].split()
+                if "rte_cha" in header:
+                    idx = header.index("rte_cha")
+                    if idx < len(values):
+                        values[idx] = "0"
+                        # Rebuild: first 2 cols are string (16-wide), rest are int (10-wide)
+                        lines[2] = f"{values[0]:<16}{values[1]:<16}" + "".join(
+                            f"{('0' if j == idx else v):>10}" for j, v in enumerate(values[2:], start=2)
+                        )
+                        codes_bsn.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
         # Rev61 (mac) can segfault in `climate_control.f90` if WGN inputs are
         # missing. The editor expects `weather-wgn.cli` to exist and
@@ -319,7 +350,7 @@ def main(outdir: Path, run_engine: bool = False):
         # WGN generator collocated with the unified station.
         weather_sta = wf.txtinout_dir / "weather-sta.cli"
         weather_wgn = wf.txtinout_dir / "weather-wgn.cli"
-        if weather_sta.is_file() and not weather_wgn.is_file():
+        if weather_sta.is_file():
             rows = weather_sta.read_text(encoding="utf-8", errors="replace").splitlines()
             # Header + one station row in our unified-forcing workflow.
             if len(rows) >= 3:
@@ -341,8 +372,7 @@ def main(outdir: Path, run_engine: bool = False):
                 # weather-sta.cli columns are:
                 # name wgn pcp tmp slr hmd wnd pet atmo_dep
                 if len(sta_parts) >= 2:
-                    sta_parts[1] = wgn_name
-                    rows[2] = " ".join(sta_parts) + "  "
+                    rows[2] = rows[2].replace("null", wgn_name, 1)
                     weather_sta.write_text("\n".join(rows) + "\n", encoding="utf-8")
 
                 # Write a minimal weather-wgn.cli with 12 months of values.
@@ -403,8 +433,12 @@ def main(outdir: Path, run_engine: bool = False):
     plots_dir, outputs_dir, reports_dir = outdir/"plots", outdir/"outputs", outdir/"reports"
     for d in [plots_dir, outputs_dir, reports_dir]: d.mkdir(parents=True, exist_ok=True)
 
+    import json
     q_obs = fetch_usgs_daily_q(STATION_ID, SIM_START, SIM_END, outputs_dir / "obs_q.csv")
-    eval_result = evaluate_run(wf.txtinout_dir / "channel_sd_day.txt", q_obs, outlet_gis_id=1, out_alignment_csv=outputs_dir / "alignment.csv")
+    sim_path = wf.txtinout_dir / "channel_day.txt"
+    if not sim_path.exists():
+        sim_path = wf.txtinout_dir / "channel_sd_day.txt"
+    eval_result = evaluate_run(sim_path, q_obs, outlet_gis_id=1, out_alignment_csv=outputs_dir / "alignment.csv")
     reports_dir.joinpath("metrics.json").write_text(json.dumps(eval_result[1], indent=2))
     
     plot_res = generate_all_plots(

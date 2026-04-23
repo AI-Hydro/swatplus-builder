@@ -271,13 +271,25 @@ def _build_channel_rows(
 
     rows: list[ChannelRow] = []
     for c in chans_gdf.itertuples():
+        link_id = 0
         try:
             link_id = int(getattr(c, "link_id", 0))
-            sub_id = int(getattr(c, "sub_id", 0))
         except (TypeError, ValueError):
-            # Edge-of-watershed channel that sjoin couldn't map to any
-            # subbasin.  Skip it so the project DB stays consistent.
-            continue
+            link_id = 0
+
+        raw_sub_id = getattr(c, "sub_id", 0)
+        try:
+            sub_id = int(raw_sub_id)
+        except (TypeError, ValueError):
+            sub_id = 0
+
+        # Some raster->vector joins can leave channel sub_id unset (0/NaN).
+        # In our delineation graph, link_id and subbasin id are aligned, so
+        # recover the subbasin assignment when possible instead of dropping
+        # the channel and breaking network connectivity.
+        if sub_id <= 0 and link_id in sub_area_by_id:
+            sub_id = link_id
+
         if link_id <= 0 or sub_id <= 0:
             log.warning(
                 "channel row missing link_id/sub_id; skipping: %r", c
@@ -433,18 +445,52 @@ def _build_routing_rows(
 
     # --- HRU → CH (tot, 100%) ---
     # Map HRU.lsu (== subbasin id) to channel.
+    # Also collect unique LSU ids for the LSU→CH block below.
+    lsu_to_ch: dict[int, int] = {}
+    outlet_subbasin = int(points[0].subbasin) if points else None
+    outlet_ch_id = (
+        channel_by_sub.get(outlet_subbasin)
+        if outlet_subbasin is not None
+        else None
+    )
     for hru in hru_rows:
         sub_id = hru.lsu  # MVP: lsu id == sub id
         ch_id = channel_by_sub.get(sub_id)
         if ch_id is None:
+            # Edge case: one LSU may lose its channel during raster->vector
+            # cleanup. Keep routing connected by falling back to the outlet
+            # channel instead of emitting an un-routed HRU (which can crash
+            # SWAT+ hyd_connect initialization).
+            if outlet_ch_id is None:
+                log.warning(
+                    "HRU %s has lsu %s with no channel and no outlet fallback; routing row skipped",
+                    hru.id, hru.lsu,
+                )
+                continue
             log.warning(
-                "HRU %s has lsu %s with no channel; routing row skipped",
-                hru.id, hru.lsu,
+                "HRU %s has lsu %s with no channel; routing to outlet channel %s",
+                hru.id,
+                hru.lsu,
+                outlet_ch_id,
             )
-            continue
+            ch_id = outlet_ch_id
         routing.append(
             RoutingRow(
                 sourceid=hru.id, sourcecat="HRU", hyd_typ="tot",
+                sinkid=ch_id, sinkcat="CH", percent=100.0,
+            )
+        )
+        lsu_to_ch[sub_id] = ch_id
+
+    # --- LSU → CH (tot, 100%) ---
+    # The SWAT+ Editor's import_gis.insert_connections() queries gis_routing
+    # for sourcecat='LSU' to populate rout_unit_con_out.  Without these rows
+    # rout_unit.con gets out_tot=0 for every RTU, so no water ever enters
+    # the stream network and the engine segfaults on travel-time calculation.
+    for lsu_id, ch_id in sorted(lsu_to_ch.items()):
+        routing.append(
+            RoutingRow(
+                sourceid=lsu_id, sourcecat="LSU", hyd_typ="tot",
                 sinkid=ch_id, sinkcat="CH", percent=100.0,
             )
         )

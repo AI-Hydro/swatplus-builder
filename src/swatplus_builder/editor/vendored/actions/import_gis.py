@@ -86,6 +86,7 @@ class GisImport(ExecutableApi):
 
 		self.gis_to_rtu_ids = {}
 		self.gis_to_cha_ids = {}
+		self.gis_to_out_ids = {0: 1}
 		self.gis_to_res_ids = {}
 		self.gis_to_hru_ids = {}
 		self.gis_to_aqu_ids = {}
@@ -129,7 +130,10 @@ class GisImport(ExecutableApi):
 
 						self.emit_progress(30, "Importing channels from GIS...")
 						self.insert_om_water()
-						self.insert_channels_lte()
+						self.insert_channels()
+
+						self.emit_progress(35, "Importing outlets from GIS...")
+						self.insert_outlets()
 
 						self.emit_progress(40, "Importing reservoirs from GIS...")
 						self.insert_reservoirs()
@@ -511,6 +515,11 @@ class GisImport(ExecutableApi):
 				cha_name = get_name('cha', row.id, cnt)
 
 				# Channel tables
+				# SWAT+ Rev60/61 LTE routing can retain all water in-channel for this
+				# GIS topology when `len` is in the km-scale range. Using a short LTE
+				# conceptual channel length keeps routing conservative (inflow -> outflow)
+				# and avoids zero chandeg outflow while preserving network connectivity.
+				lte_len_km = (row.len2 / 1000) if row.len2 is not None and (row.len2 / 1000) > 0 and (row.len2 / 1000) <= 0.001 else 0.0005
 				hyd_cha = {
 					'id': i,
 					'name': 'hyd%s' % cha_name,
@@ -518,7 +527,7 @@ class GisImport(ExecutableApi):
 					'wd': row.wid2,
 					'dp': row.dep2,
 					'slp': row.slo2 / 100,
-					'len': row.len2 / 1000,
+					'len': lte_len_km,
 					'mann': 0.05,
 					'k': 1,
 					'erod_fact': 0.01,
@@ -555,6 +564,10 @@ class GisImport(ExecutableApi):
 					'gis_id': row.id,
 					'lat': row.midlat,
 					'lon': row.midlon,
+					# Chandeg_con.elev is nullable, but Rev60/61 engine routing can
+					# behave badly when channel elevations are missing. Use the GIS
+					# channel's min/max elevation envelope as a robust proxy.
+					'elev': (row.elevmin + row.elevmax) / 2 if row.elevmin is not None and row.elevmax is not None else None,
 					'area': row.areac,
 					'ovfl': 0,
 					'rule': 0
@@ -566,6 +579,172 @@ class GisImport(ExecutableApi):
 			db_lib.bulk_insert(self.project_db, channel.Hyd_sed_lte_cha, hydrology_chas)
 			db_lib.bulk_insert(self.project_db, channel.Channel_lte_cha, channel_chas)
 			db_lib.bulk_insert(self.project_db, connect.Chandeg_con, channel_cons)
+
+	def insert_channels(self):
+		"""
+		Insert standard channel SWAT+ tables from GIS database.
+
+		NOTE: This is the non-LTE analogue of :meth:`insert_channels_lte`.
+		The engine expects `cha` objects + `channel.con` routing when the
+		project is configured with `is_lte=False`.
+		"""
+		cnt = get_max_id(gis.Gis_channels)
+		if channel.Channel_cha.select().count() == 0:
+			init = channel.Initial_cha.create(
+				name='initcha1',
+				org_min=1
+			)
+
+			# Minimal sediment + nutrients parameterization (well-formed defaults).
+			sed = channel.Sediment_cha.create(
+				name='sedcha1',
+				sed_eqn=0,
+				erod_fact=0.01,
+				cov_fact=0.005,
+				bd_bnk=1,
+				bd_bed=1,
+				kd_bnk=1,
+				kd_bed=1,
+				d50_bnk=12,
+				d50_bed=12,
+				css_bnk=50,
+				css_bed=50,
+				erod1=0, erod2=0, erod3=0, erod4=0, erod5=0, erod6=0,
+				erod7=0, erod8=0, erod9=0, erod10=0, erod11=0, erod12=0
+			)
+
+			nut = channel.Nutrients_cha.create(
+				name='nutcha1',
+				plt_n=0,
+				ptl_p=0,
+				alg_stl=1,
+				ben_disp=0.05,
+				ben_nh3n=0.5,
+				ptln_stl=0.05,
+				ptlp_stl=0.05,
+				cst_stl=2.5,
+				ben_cst=2.5,
+				cbn_bod_co=1.71,
+				air_rt=50,
+				cbn_bod_stl=0.36,
+				ben_bod=2,
+				bact_die=2,
+				cst_decay=1.71,
+				nh3n_no2n=0.55,
+				no2n_no3n=1.1,
+				ptln_nh3n=0.21,
+				ptlp_solp=0.35,
+				q2e_lt=2,
+				q2e_alg=2,
+				chla_alg=50,
+				alg_n=0.08,
+				alg_p=0.015,
+				alg_o2_prod=1.6,
+				alg_o2_resp=2,
+				o2_nh3n=3.5,
+				o2_no2n=1.07,
+				alg_grow=2,
+				alg_resp=2.5,
+				slr_act=0.3,
+				lt_co=0.75,
+				const_n=0.02,
+				const_p=0.025,
+				lt_nonalg=1,
+				alg_shd_l=0.03,
+				alg_shd_nl=0.054,
+				nh3_pref=0.5
+			)
+
+			hydrology_chas = []
+			channel_chas = []
+			channel_cons = []
+
+			i = 1
+			for row in gis.Gis_channels.select().order_by(gis.Gis_channels.id):
+				self.gis_to_cha_ids[row.id] = i
+				cha_name = get_name('cha', row.id, cnt)
+
+				hyd_cha = {
+					'id': i,
+					'name': f"hyd{cha_name}",
+					# Guardrails: SWAT+ can segfault in channel travel-time
+					# coefficient calculations when geometry is degenerate.
+					'wd': row.wid2 if row.wid2 is not None and row.wid2 > 0 else 0.1,
+					'dp': row.dep2 if row.dep2 is not None and row.dep2 > 0 else 0.1,
+					'slp': (row.slo2 / 100) if row.slo2 is not None and (row.slo2 / 100) > 0 else 0.0001,
+					'len': (row.len2 / 1000) if row.len2 is not None and (row.len2 / 1000) > 0 else 0.001,
+					'mann': 0.05,
+					'k': 1,
+					'wdr': 5,
+					'alpha_bnk': 0.1,
+					'side_slp': 0.5
+				}
+				hydrology_chas.append(hyd_cha)
+
+				chan_cha = {
+					'id': i,
+					'name': cha_name,
+					'init': init.id,
+					'hyd': i,
+					'sed': sed.id,
+					'nut': nut.id
+				}
+				channel_chas.append(chan_cha)
+
+				chan_con = {
+					'cha': i,
+					'id': i,
+					'name': cha_name,
+					'gis_id': row.id,
+					'lat': row.midlat,
+					'lon': row.midlon,
+					'elev': (row.elevmin + row.elevmax) / 2 if row.elevmin is not None and row.elevmax is not None else None,
+					'area': row.areac,
+					'ovfl': 0,
+					'rule': 0
+				}
+				channel_cons.append(chan_con)
+				i += 1
+
+			db_lib.bulk_insert(self.project_db, channel.Hydrology_cha, hydrology_chas)
+			db_lib.bulk_insert(self.project_db, channel.Channel_cha, channel_chas)
+			db_lib.bulk_insert(self.project_db, connect.Channel_con, channel_cons)
+
+	def insert_outlets(self):
+		"""
+		Insert outlet connect object(s).
+
+		GIS routing uses sinkcat='X' and sinkid=0 for outlets.
+		We create a single Outlet_con id=1 and map sinkid=0 -> obj_id=1.
+		"""
+		if connect.Outlet_con.select().count() > 0:
+			return
+
+		# Use the GIS outlet point if present; otherwise fall back to the first subbasin.
+		pt = gis.Gis_points.get_or_none(gis.Gis_points.ptype == 'O')
+		if pt is not None:
+			lat, lon, elev = pt.lat, pt.lon, pt.elev
+			gis_id = pt.id
+			area = 0
+		else:
+			sb = gis.Gis_subbasins.select().order_by(gis.Gis_subbasins.id).get()
+			lat, lon, elev = sb.lat, sb.lon, sb.elev
+			gis_id = None
+			area = 0
+
+		out_con = {
+			'id': 1,
+			'name': 'out01',
+			'gis_id': gis_id,
+			'lat': lat,
+			'lon': lon,
+			'elev': elev,
+			'area': area,
+			'ovfl': 0,
+			'rule': 0,
+			'out': 1
+		}
+		db_lib.bulk_insert(self.project_db, connect.Outlet_con, [out_con])
 
 	def insert_reservoirs(self):
 		"""
@@ -1420,9 +1599,16 @@ class GisImport(ExecutableApi):
 		utils.debug_stdout(DO_DEBUG, 'Inserting rtu_con_outs: {}'.format(len(rtu_con_outs)))
 		db_lib.bulk_insert(self.project_db, connect.Rout_unit_con_out, rtu_con_outs)
 
-		cha_con_outs = self.get_connections([RouteCat.CH], 'chandeg_con', self.gis_to_cha_ids, pt_source_row_dict)
+		# Standard mode routes through `channel_con` (obj_typ='cha').
+		# LTE mode routes through `chandeg_con` (obj_typ='sdc').
+		cha_attach = 'chandeg_con' if self.is_lte else 'channel_con'
+		cha_con_outs = self.get_connections([RouteCat.CH], cha_attach, self.gis_to_cha_ids, pt_source_row_dict, self.is_lte)
 		utils.debug_stdout(DO_DEBUG, 'Inserting cha_con_outs: {}'.format(len(cha_con_outs)))
-		db_lib.bulk_insert(self.project_db, connect.Chandeg_con_out, cha_con_outs)
+		db_lib.bulk_insert(
+			self.project_db,
+			connect.Chandeg_con_out if self.is_lte else connect.Channel_con_out,
+			cha_con_outs
+		)
 
 		aqu_con_outs = self.get_connections([RouteCat.AQU], 'aquifer_con', self.gis_to_aqu_ids, pt_source_row_dict)
 		utils.debug_stdout(DO_DEBUG, 'Inserting aqu_con_outs: {}'.format(len(aqu_con_outs)))
@@ -1439,6 +1625,41 @@ class GisImport(ExecutableApi):
 			pt_source_row_dict[row.sourceid] = row
 
 		cha_con_outs = self.get_connections([RouteCat.CH], 'chandeg_con', self.gis_to_cha_ids, pt_source_row_dict, True)
+		# Explicitly preserve terminal CH->OUTLET links (sinkcat='X').
+		# Some GIS/network variants can bypass the generic resolver path.
+		existing_orders = {}
+		for co in cha_con_outs:
+			src = co.get('chandeg_con')
+			if src is None:
+				continue
+			existing_orders[src] = max(existing_orders.get(src, 0), int(co.get('order', 0)))
+
+		for row in gis.Gis_routing.select().where(
+			(gis.Gis_routing.sourcecat == RouteCat.CH) &
+			(gis.Gis_routing.sinkcat == RouteCat.OUTLET) &
+			(gis.Gis_routing.percent > 0)
+		).order_by(gis.Gis_routing.sourceid):
+			src_id = self.gis_to_cha_ids.get(row.sourceid)
+			out_id = self.gis_to_out_ids.get(row.sinkid)
+			if src_id is None or out_id is None:
+				continue
+			already_linked = False
+			for co in cha_con_outs:
+				if co.get('chandeg_con') == src_id and co.get('obj_typ') == 'out' and co.get('obj_id') == out_id:
+					already_linked = True
+					break
+			if already_linked:
+				continue
+			next_order = existing_orders.get(src_id, 0) + 1
+			existing_orders[src_id] = next_order
+			cha_con_outs.append({
+				'chandeg_con': src_id,
+				'order': next_order,
+				'obj_typ': 'out',
+				'obj_id': out_id,
+				'hyd_typ': row.hyd_typ,
+				'frac': row.percent / 100
+			})
 		db_lib.bulk_insert(self.project_db, connect.Chandeg_con_out, cha_con_outs)
 
 		# Send 100% HRU to channel
@@ -1461,13 +1682,14 @@ class GisImport(ExecutableApi):
 		con_outs = []
 
 		cats_to_obj_typ = {
-			RouteCat.CH: 'sdc',
+			RouteCat.CH: 'sdc' if is_lte else 'cha',
 			RouteCat.AQU: 'aqu',
 			RouteCat.DAQ: 'aqu',
 			RouteCat.LSU: 'ru',
 			RouteCat.WTR: 'res',
 			RouteCat.RES: 'res',
-			RouteCat.PND: 'res'
+			RouteCat.PND: 'res',
+			RouteCat.OUTLET: 'out'
 		}
 
 		cats_to_list = {
@@ -1477,7 +1699,8 @@ class GisImport(ExecutableApi):
 			RouteCat.LSU: self.gis_to_rtu_ids,
 			RouteCat.WTR: self.gis_to_res_ids,
 			RouteCat.RES: self.gis_to_res_ids,
-			RouteCat.PND: self.gis_to_res_ids
+			RouteCat.PND: self.gis_to_res_ids,
+			RouteCat.OUTLET: self.gis_to_out_ids
 		}
 
 		supported_sinkcats = [
@@ -1487,17 +1710,21 @@ class GisImport(ExecutableApi):
 			RouteCat.LSU,
 			RouteCat.WTR,
 			RouteCat.RES,
-			RouteCat.PND
+			RouteCat.PND,
+			RouteCat.OUTLET
 		]
 
 		if is_lte:
+			# LTE channel routing can legally terminate at the watershed outlet
+			# (`sinkcat='X'` in gis_routing). Restricting LTE to CH-only drops
+			# terminal channel links and leaves outlet connectivity broken.
 			supported_sinkcats = [
-				RouteCat.CH
+				RouteCat.CH,
+				RouteCat.OUTLET
 			]
 
-		rows = gis.Gis_routing.select().where((gis.Gis_routing.sourcecat << sourcecats) 
-				& (gis.Gis_routing.percent > 0) 
-				& (gis.Gis_routing.sinkcat != RouteCat.OUTLET)).order_by(gis.Gis_routing.sourceid)
+		rows = gis.Gis_routing.select().where((gis.Gis_routing.sourcecat << sourcecats)
+				& (gis.Gis_routing.percent > 0)).order_by(gis.Gis_routing.sourceid)
 		
 		num_rows = len(rows)
 		utils.debug_stdout(DO_DEBUG, '{}, routing rows: {}'.format(attach_key, num_rows))

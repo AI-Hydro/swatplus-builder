@@ -222,7 +222,7 @@ def delineate(
     # 10. Routing topology + channel attributes
     # ------------------------------------------------------------------
     log.info("[10/10] Building routing graph and channel attributes …")
-    graph = _build_topology(stream_links, watershed_r)
+    graph = _build_topology(stream_links, watershed_r, channels_gdf)
     _attribute_channels(channels_gdf, subbasins_gdf, dem_cond, flow_acc)
 
     # ------------------------------------------------------------------
@@ -564,16 +564,21 @@ def _vectorize_channels(
 # Private helpers — topology
 # ---------------------------------------------------------------------------
 
-def _build_topology(stream_links: Path, watershed_r: Path) -> nx.DiGraph:
-    """Build a DiGraph of channel links from the D8 stream link raster.
+def _build_topology(stream_links: Path, watershed_r: Path, channels_gdf=None) -> nx.DiGraph:
+    """Build a DiGraph of channel links.
 
-    Nodes are stream link IDs (ints). An edge (A → B) means A drains into B.
+    Nodes are stream link IDs (ints). An edge (A -> B) means A drains into B.
     The unique outlet node has no successors.
+
+    Strategy
+    --------
+    1. D8 raster pixel-level adjacency (fast, but misses short segments).
+    2. Spatial endpoint snapping from channels_gdf: downstream end of A
+       near upstream start of B catches connections that D8 misses.
     """
     with rasterio.open(stream_links) as src:
         links = src.read(1).astype(np.int32)
 
-    # D8 pointer is in the same directory
     d8_path = stream_links.parent / "d8_pointer.tif"
     with rasterio.open(d8_path) as src:
         d8 = src.read(1).astype(np.int32)
@@ -584,19 +589,13 @@ def _build_topology(stream_links: Path, watershed_r: Path) -> nx.DiGraph:
     G: nx.DiGraph = nx.DiGraph()
     G.add_nodes_from(int(uid) for uid in unique_ids)
 
-    # Load watershed mask to skip out-of-watershed pixels
     with rasterio.open(watershed_r) as src:
         ws = src.read(1)
         ws_nodata = src.nodata
-    if ws_nodata is not None:
-        ws_mask = ws != ws_nodata
-    else:
-        ws_mask = ws > 0
+    ws_mask = (ws != ws_nodata) if ws_nodata is not None else (ws > 0)
 
     rows, cols = np.where((links > 0) & ws_mask)
     nrows, ncols = links.shape
-
-    # Track edges as a set to avoid redundant add_edge calls
     edge_set: set[tuple[int, int]] = set()
 
     for r, c in zip(rows, cols):
@@ -614,12 +613,73 @@ def _build_topology(stream_links: Path, watershed_r: Path) -> nx.DiGraph:
                     edge_set.add(edge)
                     G.add_edge(link_id, neighbor_id)
 
-    # Validate: must be a DAG
-    if not nx.is_directed_acyclic_graph(G):
-        log.warning("Routing graph has cycles — attempting to remove back-edges.")
-        G = nx.DiGraph(nx.dag.dag_longest_path_length)  # best-effort fallback
+    # --- Augment with spatial endpoint snapping ---
+    # The D8 approach misses connections where short channel segments don't
+    # share raster pixel borders.  The downstream end of each channel
+    # (last coordinate) should be very close to another channel's upstream
+    # start (first coordinate).
+    if channels_gdf is not None:
+        try:
+            from shapely.geometry import Point as _Point
 
+            if "link_id" in channels_gdf.columns:
+                ds_pts: dict[int, _Point] = {}
+                us_pts: dict[int, _Point] = {}
+                for _, row in channels_gdf.iterrows():
+                    lid = int(row["link_id"])
+                    coords = list(row.geometry.coords)
+                    if len(coords) >= 2:
+                        us_pts[lid] = _Point(coords[0])
+                        ds_pts[lid] = _Point(coords[-1])
+
+                snap_tol = 150.0  # metres
+                link_ids_list = list(ds_pts.keys())
+                for a in link_ids_list:
+                    best_dist = float("inf")
+                    best_b: int | None = None
+                    for b in link_ids_list:
+                        if b == a or b not in us_pts:
+                            continue
+                        d = ds_pts[a].distance(us_pts[b])
+                        if d < snap_tol and d < best_dist:
+                            best_dist = d
+                            best_b = b
+                    if best_b is not None:
+                        edge = (a, best_b)
+                        if edge not in edge_set:
+                            edge_set.add(edge)
+                            G.add_edge(a, best_b)
+                            log.debug("topology snap: %d -> %d  (%.1f m)", a, best_b, best_dist)
+        except Exception as exc:
+            log.warning("Spatial topology augmentation failed: %s", exc)
+    else:
+        # Fallback: try reading from disk
+        shapes_dir = stream_links.parent.parent / "shapes"
+        channels_gpkg = shapes_dir / "channels.gpkg"
+        if channels_gpkg.is_file():
+            try:
+                import geopandas as gpd
+                _augment_topology_from_gpkg(G, edge_set, gpd.read_file(channels_gpkg))
+            except Exception as exc:
+                log.warning("Spatial topology (disk fallback) failed: %s", exc)
+
+    # Validate DAG, remove back-edges if needed
+    if not nx.is_directed_acyclic_graph(G):
+        log.warning("Routing graph has cycles — removing back-edges.")
+        while not nx.is_directed_acyclic_graph(G):
+            try:
+                cycle = nx.find_cycle(G, orientation="original")
+                G.remove_edge(cycle[-1][0], cycle[-1][1])
+            except nx.NetworkXNoCycle:
+                break
+
+    log.info(
+        "Routing graph: %d nodes, %d edges, %d terminal",
+        G.number_of_nodes(), G.number_of_edges(),
+        sum(1 for n in G.nodes if G.out_degree(n) == 0),
+    )
     return G
+
 
 
 # ---------------------------------------------------------------------------

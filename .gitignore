@@ -84,3 +84,6 @@ local-docs/
 # Vendored code is tracked (this IS the package), but caches inside are not
 src/swatplus_builder/editor/vendored/**/__pycache__/
 src/swatplus_builder/editor/vendored/**/*.pyc
+
+# Local test artifacts
+tests/_artifacts/
