@@ -101,6 +101,11 @@ Kick off Phase 3C with registry-first calibration foundations and mergeable Trac
   - added `src/swatplus_builder/calibration/report.py` generating `history.csv`, `summary.md`, and dotty/convergence/Pareto plots,
   - updated `swat calibrate` to emit report outputs automatically,
   - added report tests in `tests/test_calibration_report.py`.
+- [2026-04-23] [pre-commit] — Added final calibration comparison outputs:
+  - baseline vs calibrated SWAT parameter comparison table/plots (`parameter_comparison.csv`, `parameter_comparison.png/.pdf`, `best_solution.json`),
+  - observed vs simulated comparison plot output from alignment series (`hydrograph_calibrated_vs_observed.png/.pdf`) with metrics metadata JSON,
+  - CLI support via `swat calibrate --alignment-csv <outputs/alignment.csv>`.
+- [2026-04-23] [pre-commit] — Produced concrete comparison artifacts under `tests/_artifacts/calibration_demo/calibration_reports/`.
 
 ## In Flight
 

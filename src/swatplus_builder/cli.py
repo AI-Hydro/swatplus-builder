@@ -379,6 +379,11 @@ def cmd_calibrate(
         "--report-dir",
         help="Optional calibration report directory (defaults to <artifacts-root>/calibration_reports).",
     ),
+    alignment_csv: str = typer.Option(
+        None,
+        "--alignment-csv",
+        help="Optional outputs/alignment.csv for observed-vs-simulated calibration comparison plots.",
+    ),
 ) -> None:
     """Run calibration sampling with artifact persistence (alpha skeleton)."""
     from datetime import date
@@ -448,6 +453,7 @@ def cmd_calibrate(
     rep = write_calibration_reports(
         results,
         _P(report_dir) if report_dir is not None else _P(artifacts_root) / "calibration_reports",
+        alignment_csv=_P(alignment_csv) if alignment_csv is not None else None,
     )
     cache_hits = sum(1 for r in results if r.cache_hit)
     best_nse = max(
