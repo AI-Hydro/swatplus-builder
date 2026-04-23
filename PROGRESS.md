@@ -2,11 +2,11 @@
 
 ## Active Phase
 
-Phase 3A — Hardening
+Phase 3A — Hardening (Closeout Complete)
 
 ## Current Sprint Focus
 
-Complete Phase 3A.3 soil realism flags end-to-end (metadata, warnings, figure annotations, docs), then move to Phase 3A.4 large-basin guardrails.
+Finalize Phase 3A closeout evidence and prepare Phase 3B kickoff planning.
 
 ## Completed Since Last Update
 
@@ -43,17 +43,21 @@ Complete Phase 3A.3 soil realism flags end-to-end (metadata, warnings, figure an
   - `--max-subbasins`
   - `--auto-adjust/--no-auto-adjust`
 - [2026-04-23] [pre-commit] — Added regression coverage in `tests/test_run_swatplus.py` for guardrail warning path and fail-fast path.
+- [2026-04-23] [pre-commit] — Verified Phase 3A acceptance tests locally:
+  - `SWATPLUS_BUILDER_RUN_ROUTING_REGRESSION=1 pytest -q tests/test_ci_routing_regression.py -s` (pass),
+  - `pytest -q tests/test_run_swatplus.py tests/test_output_plots_utils.py tests/test_output_eval.py tests/test_output_metadata.py tests/test_cli_inspect.py` (pass, one expected opt-in skip).
+- [2026-04-23] [pre-commit] — Added `PHASE_3A_CLOSEOUT.md` with explicit mapping to Roadmap §3A.5 exit criteria, deviations, and Phase 3B lessons.
 
 ## In Flight
 
-- [2026-04-23] — Phase 3A finalization path:
-  - run CI once on branch to verify Linux engine bootstrap + regression gate behavior in GitHub Actions runtime,
-  - verify guardrail behavior in a real large-basin E2E run and tune defaults if needed.
+- [2026-04-23] — Phase 3B kickoff preparation:
+  - create `PHASE_3B_PLAN.md`,
+  - map Roadmap §3B subsections to mergeable PRs with test-first strategy.
 
 ## Next Up
 
-- [1] Prove Phase 3A.1-3A.4 in CI and write `PHASE_3A_CLOSEOUT.md` with exit-criteria evidence.
-- [2] Validate guardrails on a true high-complexity basin and capture evidence in artifacts.
+- [1] Kick off Phase 3B formally with `PHASE_3B_PLAN.md` (artifact schema + store + hashing/caching decomposition).
+- [2] Implement Phase 3B.1 (`ArtifactStore`, schemas, content hash checks) with tests first.
 - [3] Normalize roadmap doc-location references (`docs/ROADMAP.md` vs `ROADMAP.md`) without losing historical docs.
 
 ## Open Questions / Blockers
