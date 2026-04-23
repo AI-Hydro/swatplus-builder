@@ -348,6 +348,109 @@ def cmd_validate(
     )
 
 
+@app.command("calibrate")
+def cmd_calibrate(
+    basin: str = typer.Option(..., "--basin", help="Basin identifier (e.g., usgs_01547700)."),
+    start: str = typer.Option(..., "--start", help="Simulation start date (YYYY-MM-DD)."),
+    end: str = typer.Option(..., "--end", help="Simulation end date (YYYY-MM-DD)."),
+    algo: str = typer.Option("dds", "--algo", help="Calibration algorithm label: dds|sceua|random."),
+    n_iter: int = typer.Option(50, "--n-iter", help="Number of calibration iterations."),
+    objectives: str = typer.Option(
+        "nse,log_nse,pbias",
+        "--objectives",
+        help="Comma-separated objectives subset of: nse,log_nse,pbias,kge.",
+    ),
+    parameters: str = typer.Option(
+        "CN2,ALPHA_BF,SURLAG",
+        "--parameters",
+        help="Comma-separated parameter names from registry.",
+    ),
+    artifacts_root: str = typer.Option(
+        "tests/_artifacts/calibration",
+        "--artifacts-root",
+        help="Root directory for calibration artifacts.",
+    ),
+    seed: int = typer.Option(42, "--seed", help="Random seed for reproducible sampling."),
+    engine_version: str = typer.Option(
+        "unknown", "--engine-version", help="Engine version string for content hashing."
+    ),
+) -> None:
+    """Run calibration sampling with artifact persistence (alpha skeleton)."""
+    from datetime import date
+    from pathlib import Path as _P
+
+    from .calibration import CalibrationRequest, run_calibration
+    from .params import get_parameter
+
+    allowed = {"nse", "log_nse", "pbias", "kge"}
+    objective_list = [o.strip().lower() for o in objectives.split(",") if o.strip()]
+    if not objective_list:
+        rprint("[red]error:[/red] at least one objective is required")
+        raise typer.Exit(2)
+    bad = [o for o in objective_list if o not in allowed]
+    if bad:
+        rprint(f"[red]error:[/red] invalid objectives: {', '.join(bad)}")
+        raise typer.Exit(2)
+
+    param_list = [p.strip() for p in parameters.split(",") if p.strip()]
+    if not param_list:
+        rprint("[red]error:[/red] at least one parameter is required")
+        raise typer.Exit(2)
+    try:
+        for p in param_list:
+            get_parameter(p)
+    except KeyError as exc:
+        rprint(f"[red]error:[/red] {exc}")
+        raise typer.Exit(2) from exc
+
+    req = CalibrationRequest(
+        basin_id=basin,
+        simulation_start=date.fromisoformat(start),
+        simulation_end=date.fromisoformat(end),
+        parameters=param_list,
+        n_iter=n_iter,
+        algorithm=algo,
+        seed=seed,
+        engine_version=engine_version,
+        warm_start=True,
+    )
+
+    def _objective(theta: dict[str, float]) -> dict[str, float]:
+        # Alpha deterministic proxy objective. Replaced by real engine-backed
+        # objective in later Phase 3C PRs.
+        if not theta:
+            score = 0.0
+        else:
+            score = sum(float(v) for v in theta.values()) / float(len(theta))
+        score = score % 1.0
+        out: dict[str, float] = {}
+        if "nse" in objective_list:
+            out["nse"] = score
+        if "kge" in objective_list:
+            out["kge"] = score - 0.05
+        if "pbias" in objective_list:
+            out["pbias"] = (score - 0.5) * 20.0
+        if "log_nse" in objective_list:
+            out["log_nse"] = max(-1.0, score - 0.1)
+        return out
+
+    rprint(f"[bold]swat calibrate[/bold] → basin={basin} algo={algo} n_iter={n_iter}")
+    results = run_calibration(
+        req,
+        artifacts_root=_P(artifacts_root),
+        objective_fn=_objective,
+    )
+    cache_hits = sum(1 for r in results if r.cache_hit)
+    best_nse = max(
+        (r.metrics.get("nse") for r in results if isinstance(r.metrics.get("nse"), (int, float))),
+        default=None,
+    )
+    rprint(
+        f"[green]complete[/green] samples={len(results)} cache_hits={cache_hits} "
+        f"best_nse={'' if best_nse is None else f'{float(best_nse):.3f}'}"
+    )
+
+
 @app.command("build")
 def cmd_build(
     dem: str = typer.Option(..., "--dem"),
