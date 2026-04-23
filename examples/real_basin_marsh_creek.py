@@ -249,6 +249,7 @@ def main(outdir: Path, run_engine: bool = False):
     from swatplus_builder.soil.models import SoilConfig
     soil_mode = "high_fidelity"
     pct_fallback_soils = 0.0
+    soil_fallback_warn_threshold = float(os.environ.get("SWATPLUS_SOIL_FALLBACK_WARN_THRESHOLD", "0.25"))
     try:
         soil_res = fetch_soil_profiles_result(mukeys, config=SoilConfig(use_sda=True), settings=ref_settings)
         write_soils(soil_res.profiles, db_path)
@@ -469,7 +470,12 @@ def main(outdir: Path, run_engine: bool = False):
     plot_res = generate_all_plots(
         run_dir=outdir,
         include_spatial=True,
-        metadata={"basin_name": f"Marsh Creek ({STATION_ID})", "usgs_id": STATION_ID}
+        metadata={
+            "basin_name": f"Marsh Creek ({STATION_ID})",
+            "usgs_id": STATION_ID,
+            "soil_mode": soil_mode,
+            "pct_fallback_soils": pct_fallback_soils,
+        }
     )
     _ok(f"generated {plot_res['n_plots']} figures in plots/")
 
@@ -481,6 +487,15 @@ def main(outdir: Path, run_engine: bool = False):
     }.items():
         if p.exists():
             input_hashes[name] = sha256_file(p)
+
+    notes: list[str] = []
+    if pct_fallback_soils > soil_fallback_warn_threshold:
+        msg = (
+            f"Soil fallback ratio {pct_fallback_soils:.2%} exceeds threshold "
+            f"{soil_fallback_warn_threshold:.2%}."
+        )
+        log.warning(msg)
+        notes.append(msg)
 
     md = RunMetadata(
         timestamp_utc=utc_now_iso(),
@@ -502,7 +517,7 @@ def main(outdir: Path, run_engine: bool = False):
             "precip_max": float(pcp_stats.get("precip_max", 0.0)),
             "date_range": str(pcp_stats.get("date_range", "")),
         },
-        notes=[],
+        notes=notes,
     )
     write_metadata(outdir / "metadata.json", md)
 

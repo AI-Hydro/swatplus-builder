@@ -44,3 +44,17 @@ Consequences:
 - CLI can expose metadata directly (`swat inspect <run_path>`).
 - Evaluate API remains backward-compatible by making diagnostics opt-in.
 Status: Accepted
+
+---
+
+[2026-04-23] Narrow `.gitignore` output rule to top-level `/output/`
+Context: The broad ignore pattern `output/` unintentionally ignored Python source under `src/swatplus_builder/output/`, causing key runtime modules (metrics/reader/plots) to remain untracked locally and absent from repository history.
+Decision: Replace `output/` with `/output/` so only top-level runtime artifacts are ignored. Keep a specific ignore for vendored editor `database/output/` stubs.
+Alternatives considered:
+- Keep broad ignore and force-add individual files ad hoc — rejected because it is fragile and will repeatedly hide legitimate source edits.
+- Remove output ignores entirely — rejected because generated top-level runtime artifacts should remain excluded.
+Consequences:
+- Source files under `src/swatplus_builder/output/` are now tracked normally.
+- Top-level artifact directory `output/` remains ignored.
+- Vendored `database/output/` stubs stay ignored to avoid noisy tracking of unused vendor internals.
+Status: Accepted

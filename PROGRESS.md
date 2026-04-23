@@ -6,7 +6,7 @@ Phase 3A — Hardening
 
 ## Current Sprint Focus
 
-Complete Phase 3A.2 metadata persistence and inspectability on top of the new routing-regression gate, then proceed to Phase 3A.3 soil realism flag surfacing.
+Complete Phase 3A.3 soil realism flags end-to-end (metadata, warnings, figure annotations, docs), then move to Phase 3A.4 large-basin guardrails.
 
 ## Completed Since Last Update
 
@@ -26,24 +26,29 @@ Complete Phase 3A.2 metadata persistence and inspectability on top of the new ro
   - `tests/test_output_metadata.py`
   - `tests/test_cli_inspect.py`
   - enhanced `tests/test_output_eval.py` diagnostics assertions.
+- [2026-04-23] [pre-commit] — Implemented Phase 3A.3 soil realism signaling:
+  - propagated `soil_mode` + `pct_fallback_soils` into plotting metadata,
+  - added configurable fallback warning threshold (`SWATPLUS_SOIL_FALLBACK_WARN_THRESHOLD`, default `0.25`) in real-basin run path,
+  - added visible fallback/synthetic quality annotation in figure titles and watermark footer.
+- [2026-04-23] [pre-commit] — Added plot utility regression test `tests/test_output_plots_utils.py` covering quality-flag rendering and publication save path behavior.
+- [2026-04-23] [pre-commit] — Updated README with soil fidelity level semantics and `swat inspect` usage.
+- [2026-04-23] [pre-commit] — Fixed source-control ignore rule to stop hiding package source modules under `src/swatplus_builder/output/` by narrowing `output/` to `/output/`.
 
 ## In Flight
 
 - [2026-04-23] — Phase 3A finalization path:
-  - normalize roadmap file-location inconsistency in tracked docs,
   - run CI once on branch to verify Linux engine bootstrap + regression gate behavior in GitHub Actions runtime,
-  - begin Phase 3A.3 soil realism flag visibility in figures.
+  - implement Phase 3A.4 large-basin guardrails with CLI controls and fail-fast policy.
 
 ## Next Up
 
-- [1] Finalize and merge Phase 3A.1 + 3A.2 changes after CI proof on branch.
-- [2] Implement Phase 3A.3 soil realism flags (`soil_mode`, `pct_fallback_soils`, output visibility/watermark).
-- [3] Implement Phase 3A.4 large-basin guardrails with fail-fast/auto-adjust behavior.
+- [1] Implement Phase 3A.4 large-basin guardrails (`--max-hrus`, `--max-subbasins`, fail-fast/auto-adjust policy).
+- [2] Prove Phase 3A.1-3A.4 in CI and write `PHASE_3A_CLOSEOUT.md` with exit-criteria evidence.
+- [3] Normalize roadmap doc-location references (`docs/ROADMAP.md` vs `ROADMAP.md`) without losing historical docs.
 
 ## Open Questions / Blockers
 
 - [2026-04-23] Confirm CI basin data strategy:
   - pinned fixtures/artifacts for determinism, or
   - live online fetch in CI with retry + timeout safeguards.
-- [2026-04-23] Roadmap file location is currently inconsistent in working tree (`docs/ROADMAP.md` deleted, root `ROADMAP.md` untracked). This will be normalized in early Phase 3A housekeeping to prevent link drift.
 - [2026-04-23] Legacy historical logs remain in `docs/PROGRESS.md` (gitignored). If needed, port selected historical milestones into this tracked file incrementally.

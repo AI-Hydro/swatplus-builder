@@ -51,7 +51,7 @@ bin/
 reference_dbs/
 TxtInOut/
 watershed_data/
-output/
+/output/
 scratch/
 cache/
 marsh_creek_output/
@@ -84,6 +84,8 @@ local-docs/
 # Vendored code is tracked (this IS the package), but caches inside are not
 src/swatplus_builder/editor/vendored/**/__pycache__/
 src/swatplus_builder/editor/vendored/**/*.pyc
+# Keep editor vendored runtime-output DB stubs ignored (not used by builder API)
+src/swatplus_builder/editor/vendored/database/output/
 
 # Local test artifacts
 tests/_artifacts/

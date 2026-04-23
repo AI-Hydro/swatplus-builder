@@ -20,13 +20,30 @@ The package deliberately **avoids QGIS, PyQGIS, and the QSWATPlus plugin at runt
 
 See:
 
-- [`docs/ROADMAP.md`](docs/ROADMAP.md) — phased plan with checkboxes
-- [`docs/PROGRESS.md`](docs/PROGRESS.md) — running progress journal
+- [`ROADMAP.md`](ROADMAP.md) — phased plan with checkboxes
+- [`PROGRESS.md`](PROGRESS.md) — running progress journal
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — architecture + diagrams
-- [`docs/DECISIONS.md`](docs/DECISIONS.md) — architecture decision records (ADRs)
+- [`DECISIONS.md`](DECISIONS.md) — architecture decision records (ADRs)
 - [`docs/SCHEMA.md`](docs/SCHEMA.md) — SWAT+ `gis_*` table contracts
 - [`docs/INTEGRATION.md`](docs/INTEGRATION.md) — plugging into AI‑Hydro and other agent frameworks
 - [`docs/REFERENCES.md`](docs/REFERENCES.md) — reverse‑engineering notes on QSWATPlus / SWAT+ Editor
+
+---
+
+## Soil Fidelity Flags
+
+Every run now persists explicit soil realism metadata in `metadata.json`:
+
+- `soil_mode`: `high_fidelity` | `fallback` | `synthetic`
+- `pct_fallback_soils`: fraction of basin polygons that used fallback soil profiles
+
+Behavior:
+
+- If fallback usage exceeds 25% (default), the run emits a warning.
+- Threshold is configurable via `SWATPLUS_SOIL_FALLBACK_WARN_THRESHOLD`.
+- Generated figures include a visible quality annotation for fallback/synthetic runs.
+
+Use `swat inspect <run_path>` to inspect persisted metadata for any run.
 
 ---
 
