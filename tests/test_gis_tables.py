@@ -17,6 +17,7 @@ from pathlib import Path
 
 import networkx as nx
 import pytest
+from pyproj import Transformer
 
 from tests.test_gis_hru import mini_watershed  # noqa: F401  (pytest fixture reuse)
 
@@ -333,3 +334,88 @@ class TestBuildTables:
         )
         with pytest.raises(SwatBuilderInputError):
             build_tables(ws, hru_result)
+
+    def test_build_tables_clamps_invalid_outlet_subbasin(self, mini_watershed):
+        """If caller/inference yields missing outlet subbasin, clamp to valid id."""
+        from swatplus_builder.gis.hru import create_hrus
+        from swatplus_builder.gis.tables import build_tables
+
+        import geopandas as gpd
+        from shapely.geometry import Point
+
+        ws = mini_watershed["watershed"]
+        outlet_path = Path(ws.workdir) / "shapes" / "outlets.gpkg"
+        gpd.GeoDataFrame(
+            {"outlet_id": [1]}, geometry=[Point(500_180.0, 4_499_880.0)], crs=ws.crs
+        ).to_file(outlet_path, driver="GPKG")
+
+        g = nx.DiGraph()
+        g.add_node(101)
+        g.add_node(102)
+        g.add_edge(101, 102)
+        routing_path = Path(ws.workdir) / "routing.graphml"
+        nx.write_graphml(g, routing_path)
+
+        ws = ws.model_copy(update={"outlets_vector": outlet_path, "routing_graph": routing_path})
+        hru_result = create_hrus(ws, mini_watershed["landuse_raster"], mini_watershed["soil_raster"])
+        tables = build_tables(ws, hru_result, outlet_subbasin=999999)
+
+        valid_subs = {s.id for s in tables.subbasins}
+        assert tables.points[0].subbasin in valid_subs
+
+    def test_channel_parent_subbasin_handles_nan_sub_id(self):
+        """Regression: terminal channel rows can carry NaN sub_id.
+
+        ``_channel_parent_subbasin`` should recover from any valid channel
+        row instead of crashing on ``int(NaN)``.
+        """
+        import geopandas as gpd
+        from shapely.geometry import LineString
+
+        from swatplus_builder.gis.tables import _channel_parent_subbasin
+
+        chans = gpd.GeoDataFrame(
+            {
+                "link_id": [10, 11],
+                "sub_id": [float("nan"), 7],
+            },
+            geometry=[
+                LineString([(0, 0), (1, 1)]),
+                LineString([(1, 0), (2, 1)]),
+            ],
+            crs="EPSG:5070",
+        )
+
+        assert _channel_parent_subbasin(chans, 10) == 7
+
+    def test_build_channel_rows_recovers_nan_sub_id_when_single_subbasin(self):
+        """Regression: keep channels when sub_id is NaN and only one subbasin exists."""
+        import geopandas as gpd
+        from shapely.geometry import LineString, Polygon
+
+        from swatplus_builder.gis.tables import _build_channel_rows
+
+        subs = gpd.GeoDataFrame(
+            {"sub_id": [1]},
+            geometry=[Polygon([(0, 0), (0, 2), (2, 2), (2, 0)])],
+            crs="EPSG:5070",
+        )
+        chans = gpd.GeoDataFrame(
+            {
+                "link_id": [10],
+                "sub_id": [float("nan")],
+                "length_m": [100.0],
+                "slope_m_m": [0.001],
+                "width_m": [2.0],
+                "depth_m": [0.2],
+                "elev_min_m": [100.0],
+                "elev_max_m": [101.0],
+            },
+            geometry=[LineString([(0, 0), (1, 1)])],
+            crs="EPSG:5070",
+        )
+
+        to_wgs84 = Transformer.from_crs("EPSG:5070", "EPSG:4326", always_xy=True)
+        rows = _build_channel_rows(chans, subs, to_wgs84)
+        assert len(rows) == 1
+        assert rows[0].subbasin == 1

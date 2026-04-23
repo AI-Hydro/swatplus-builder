@@ -42,6 +42,7 @@ Typical flow for an agent:
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 import sys
@@ -71,6 +72,7 @@ _VENDORED_DIR: Path = Path(__file__).parent / "vendored"
 _API_ENTRY: Path = _VENDORED_DIR / "swatplus_api.py"
 _STDERR_TAIL_BYTES: int = 4000
 _STDOUT_TAIL_BYTES: int = 4000
+_log = logging.getLogger(__name__)
 
 # Version of the vendored SWAT+ Editor tag (see .VENDORED_COMMIT for the
 # exact upstream SHA).  This is the upstream release string, *not* our
@@ -316,6 +318,7 @@ def setup_project(
         )
 
     ev = editor_version or _default_editor_version()
+    _ensure_datasets_landuse_compat(project_db=project_db, datasets_db=datasets_db_path)
 
     # The vendored editor only rebuilds GIS-derived connect/object rows when
     # `project_config.imported_gis = 0`. If callers switch mode (LTE <-> standard)
@@ -628,3 +631,96 @@ def _default_editor_version() -> str:
     if commit != "unknown" and len(commit) >= 7:
         return f"{VENDORED_EDITOR_VERSION}+{commit[:7]}"
     return f"{VENDORED_EDITOR_VERSION}-dev"
+
+
+def _ensure_datasets_landuse_compat(*, project_db: Path, datasets_db: Path) -> None:
+    """Patch known datasets/project landuse mismatches before editor setup.
+
+    Some datasets releases omit a `watr` row in `plants_plt`, while our
+    default NLCD mapping emits `WATR` for open-water classes. Vendored
+    `import_gis` treats missing plant/urban names as fatal. If this project
+    uses `WATR` and the datasets DB lacks it, clone a compatible template row
+    into `plants_plt` as `watr`.
+    """
+    import sqlite3
+
+    used_landuses = _read_used_gis_landuses(project_db)
+    if "watr" not in used_landuses:
+        return
+
+    conn = sqlite3.connect(str(datasets_db))
+    conn.row_factory = sqlite3.Row
+    try:
+        if _landuse_exists(conn, table="plants_plt", code="watr"):
+            return
+        if _landuse_exists(conn, table="urban_urb", code="watr"):
+            return
+
+        src = conn.execute(
+            """
+            SELECT *
+            FROM plants_plt
+            WHERE lower(name) IN ('wetn', 'wetf', 'agrl')
+            ORDER BY CASE lower(name)
+                WHEN 'wetn' THEN 1
+                WHEN 'wetf' THEN 2
+                WHEN 'agrl' THEN 3
+                ELSE 99
+            END
+            LIMIT 1
+            """
+        ).fetchone()
+        if src is None:
+            src = conn.execute("SELECT * FROM plants_plt ORDER BY id LIMIT 1").fetchone()
+        if src is None:
+            raise SwatBuilderInputError(
+                "datasets_db plants_plt is empty; cannot seed required landuse code",
+                datasets_db=str(datasets_db),
+                required_landuse="watr",
+            )
+
+        cols = [str(r[1]) for r in conn.execute("PRAGMA table_info(plants_plt)")]
+        insert_cols = [c for c in cols if c != "id"]
+        values = [src[c] for c in insert_cols]
+        values[insert_cols.index("name")] = "watr"
+        if "description" in insert_cols:
+            values[insert_cols.index("description")] = "open_water_compat_seed"
+
+        with conn:
+            conn.execute(
+                f"INSERT INTO plants_plt ({','.join(insert_cols)}) "
+                f"VALUES ({','.join('?' for _ in insert_cols)})",
+                values,
+            )
+        _log.warning(
+            "Seeded missing plants_plt landuse 'watr' into datasets DB for project compatibility: %s",
+            datasets_db,
+        )
+    finally:
+        conn.close()
+
+
+def _read_used_gis_landuses(project_db: Path) -> set[str]:
+    import sqlite3
+
+    conn = sqlite3.connect(str(project_db))
+    try:
+        try:
+            rows = conn.execute(
+                "SELECT DISTINCT lower(trim(landuse)) "
+                "FROM gis_hrus "
+                "WHERE landuse IS NOT NULL AND trim(landuse) <> ''"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return set()
+    finally:
+        conn.close()
+    return {str(r[0]) for r in rows if r and r[0]}
+
+
+def _landuse_exists(conn, *, table: str, code: str) -> bool:
+    cur = conn.execute(
+        f"SELECT 1 FROM {table} WHERE lower(name) = lower(?) LIMIT 1",
+        (code,),
+    )
+    return cur.fetchone() is not None
