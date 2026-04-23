@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import typer
 from rich import print as rprint
+import json
 
 from . import __version__
 import sys
@@ -43,6 +44,37 @@ app = typer.Typer(
 def cmd_version() -> None:
     """Print version."""
     rprint(f"[bold]swatplus-builder[/bold] v{__version__}")
+
+
+@app.command("inspect")
+def cmd_inspect(
+    run_id: str = typer.Argument(..., help="Run directory path or run-id path containing metadata.json."),
+) -> None:
+    """Inspect persisted run metadata for one run.
+
+    Looks for ``metadata.json`` under the provided run path and prints it as JSON.
+    """
+    from pathlib import Path as _P
+    from .output.metadata import read_metadata
+
+    run_path = _P(run_id).expanduser().resolve()
+    candidates = [run_path / "metadata.json", run_path]
+    meta_path = None
+    for p in candidates:
+        if p.is_file() and p.name == "metadata.json":
+            meta_path = p
+            break
+        if p.is_file() and p.name != "metadata.json":
+            continue
+        if p.is_dir() and (p / "metadata.json").exists():
+            meta_path = p / "metadata.json"
+            break
+    if meta_path is None:
+        rprint(f"[red]error:[/red] metadata.json not found under {run_path}")
+        raise typer.Exit(1)
+
+    md = read_metadata(meta_path)
+    rprint(json.dumps(md.model_dump(), indent=2))
 
 
 @app.command("init")

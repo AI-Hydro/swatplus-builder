@@ -29,3 +29,18 @@ Consequences:
 - CI catches structural routing failures now, while maintaining a quantitative floor check on at least one representative basin.
 - We must revisit and expand per-basin NSE floor coverage as calibration/fidelity work progresses.
 Status: Accepted
+
+---
+
+[2026-04-23] Emit run metadata from the real-basin pipeline with outlet diagnostics
+Context: Phase 3A.2 requires complete run metadata persistence and inspectability. Existing runs only persisted metrics/alignment and could not explain which outlet series was used when auto-detection switched away from the configured GIS ID.
+Decision: Add a typed `RunMetadata` schema (`src/swatplus_builder/output/metadata.py`) and persist `metadata.json` in run directories from `examples/real_basin_marsh_creek.py`. Extend `evaluate_run(..., return_diagnostics=True)` to return requested/selected outlet IDs, auto-detection flag, selection reason, and source output file.
+Alternatives considered:
+- Persist metadata as an untyped dict in `run_config.json` only — rejected because schema drift becomes hard to test and inspect reliably.
+- Keep metadata inside SQLite `project_metadata` only — rejected because run-level diagnostics should be directly readable from run artifacts without DB introspection.
+- Delay outlet diagnostics until Phase 3B artifact store — rejected because 3A.2 explicitly requires traceable outlet selection now.
+Consequences:
+- Every new real-basin run emits `metadata.json` with outlet, soil, engine, hash, and weather provenance fields.
+- CLI can expose metadata directly (`swat inspect <run_path>`).
+- Evaluate API remains backward-compatible by making diagnostics opt-in.
+Status: Accepted

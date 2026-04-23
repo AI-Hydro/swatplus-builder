@@ -134,6 +134,13 @@ def main(outdir: Path, run_engine: bool = False):
     from swatplus_builder.weather.writer import write_observed
     from swatplus_builder.calibration.nwis import fetch_usgs_daily_q
     from swatplus_builder.output.eval import evaluate_run
+    from swatplus_builder.output.metadata import (
+        RunMetadata,
+        sha256_file,
+        try_git_sha,
+        utc_now_iso,
+        write_metadata,
+    )
     from swatplus_builder.output.plots.wrapper import generate_all_plots
 
     outdir.mkdir(parents=True, exist_ok=True)
@@ -240,16 +247,25 @@ def main(outdir: Path, run_engine: bool = False):
     mukeys = sorted({int(h.soil.removeprefix('gnatsgo_')) for h in tables.hrus})
     from swatplus_builder.soil.builder import fetch_soil_profiles_result
     from swatplus_builder.soil.models import SoilConfig
+    soil_mode = "high_fidelity"
+    pct_fallback_soils = 0.0
     try:
         soil_res = fetch_soil_profiles_result(mukeys, config=SoilConfig(use_sda=True), settings=ref_settings)
         write_soils(soil_res.profiles, db_path)
         upsert_project_metadata(db_path, "soil_report", json.dumps(soil_res.soil_report))
         from swatplus_builder.soil.plot import plot_depth_distribution
         plot_depth_distribution(soil_res.profiles, out_path=outdir / "plots" / "soil_depth_preview.png")
+        requested = max(int(soil_res.soil_report.get("requested_mukeys", 0)), 1)
+        default_fallback = int(soil_res.soil_report.get("aggregated", {}).get("default_fallback", 0))
+        pct_fallback_soils = min(max(default_fallback / requested, 0.0), 1.0)
+        if pct_fallback_soils > 0.0:
+            soil_mode = "fallback"
         _ok(f"wrote {len(soil_res.profiles)} profiles", elapsed=time.time() - t0)
     except Exception as e:
         log.warning("Soils failed (%s). Seeding minimal.", e)
         seed_minimal_soils(db_path, {h.soil for h in tables.hrus})
+        soil_mode = "synthetic"
+        pct_fallback_soils = 1.0
         _ok("seed_minimal_soils (fallback)")
 
     # 9/11 Weather from GridMET
@@ -290,6 +306,7 @@ def main(outdir: Path, run_engine: bool = False):
     # 11/11 Engine Run
     _section("11/11 Engine Run")
     subprocess_successful = False
+    engine_version = None
     if run_engine:
         # Patch print.prt: set nyskip=0, dates matching the simulation period,
         # and enable daily channel outputs.
@@ -419,6 +436,7 @@ def main(outdir: Path, run_engine: bool = False):
         r = run_engine_fn(wf.txtinout_dir, threads=1, timeout_s=1800.0)
         if r.success:
             subprocess_successful = True
+            engine_version = str(r.binary)
             _ok("SWAT+ engine execution successful")
         else:
             raise RuntimeError(f"SWAT+ engine failed with code {r.exit_code}")
@@ -438,8 +456,15 @@ def main(outdir: Path, run_engine: bool = False):
     sim_path = wf.txtinout_dir / "channel_day.txt"
     if not sim_path.exists():
         sim_path = wf.txtinout_dir / "channel_sd_day.txt"
-    eval_result = evaluate_run(sim_path, q_obs, outlet_gis_id=1, out_alignment_csv=outputs_dir / "alignment.csv")
+    eval_result = evaluate_run(
+        sim_path,
+        q_obs,
+        outlet_gis_id=1,
+        out_alignment_csv=outputs_dir / "alignment.csv",
+        return_diagnostics=True,
+    )
     reports_dir.joinpath("metrics.json").write_text(json.dumps(eval_result[1], indent=2))
+    eval_diag = eval_result[2]
     
     plot_res = generate_all_plots(
         run_dir=outdir,
@@ -447,6 +472,39 @@ def main(outdir: Path, run_engine: bool = False):
         metadata={"basin_name": f"Marsh Creek ({STATION_ID})", "usgs_id": STATION_ID}
     )
     _ok(f"generated {plot_res['n_plots']} figures in plots/")
+
+    input_hashes: dict[str, str] = {}
+    for name, p in {
+        "dem_tif": dem_tif,
+        "nlcd_tif": nlcd_tif,
+        "mukey_tif": mukey_tif,
+    }.items():
+        if p.exists():
+            input_hashes[name] = sha256_file(p)
+
+    md = RunMetadata(
+        timestamp_utc=utc_now_iso(),
+        usgs_id=STATION_ID,
+        requested_outlet_gis_id=int(eval_diag.get("requested_outlet_gis_id", 1)),
+        selected_outlet_gis_id=int(eval_diag.get("selected_outlet_gis_id", 1)),
+        outlet_autodetected=bool(eval_diag.get("outlet_autodetected", False)),
+        outlet_selection_reason=str(eval_diag.get("outlet_selection_reason", "")),
+        routing_mode="standard",
+        soil_mode=soil_mode,
+        pct_fallback_soils=pct_fallback_soils,
+        engine_version=engine_version,
+        builder_git_sha=try_git_sha(Path(__file__).resolve().parents[1]),
+        input_hashes=input_hashes,
+        weather_source="gridmet",
+        weather_coverage_flags={
+            "nonzero_days": int(pcp_stats.get("nonzero_days", 0)),
+            "precip_mean": float(pcp_stats.get("precip_mean", 0.0)),
+            "precip_max": float(pcp_stats.get("precip_max", 0.0)),
+            "date_range": str(pcp_stats.get("date_range", "")),
+        },
+        notes=[],
+    )
+    write_metadata(outdir / "metadata.json", md)
 
     print("\n" + "=" * 72)
     print(f"  Marsh Creek (USGS {STATION_ID}) complete in {time.time() - t_all:.1f}s")

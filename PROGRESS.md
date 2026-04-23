@@ -6,7 +6,7 @@ Phase 3A — Hardening
 
 ## Current Sprint Focus
 
-Implement and stabilize Phase 3A.1 CI routing-regression gate with real engine runs and explicit pass/fail assertions. Prepare follow-on 3A.2 metadata persistence work immediately after the gate is merged.
+Complete Phase 3A.2 metadata persistence and inspectability on top of the new routing-regression gate, then proceed to Phase 3A.3 soil realism flag surfacing.
 
 ## Completed Since Last Update
 
@@ -18,18 +18,27 @@ Implement and stabilize Phase 3A.1 CI routing-regression gate with real engine r
 - [2026-04-23] [pre-commit] — Updated `.github/workflows/ci.yml` with `routing-regression` job (Ubuntu, timeout budget, full dependency install, pinned SWAT+ Linux engine asset bootstrap).
 - [2026-04-23] [pre-commit] — Validated regression test both skip-path and full real run path locally (`SWATPLUS_BUILDER_RUN_ROUTING_REGRESSION=1`).
 - [2026-04-23] [pre-commit] — Recorded explicit decision to scope strict `NSE > -1` floor assertion to the structural regression basin (`03339000`) while requiring finite NSE on all fast CI basins (see `DECISIONS.md`).
+- [2026-04-23] [pre-commit] — Implemented typed run metadata schema and helpers in `src/swatplus_builder/output/metadata.py`.
+- [2026-04-23] [pre-commit] — Extended `evaluate_run` with optional diagnostics return (`requested_outlet_gis_id`, `selected_outlet_gis_id`, `outlet_autodetected`, `outlet_selection_reason`, `sim_source_file`) while preserving backward compatibility.
+- [2026-04-23] [pre-commit] — Added `swat inspect <run_path>` command to print `metadata.json`.
+- [2026-04-23] [pre-commit] — Updated `examples/real_basin_marsh_creek.py` to persist `metadata.json` on successful runs with outlet diagnostics, soil mode/fallback ratio, engine path, git SHA, weather flags, and key input hashes.
+- [2026-04-23] [pre-commit] — Added tests:
+  - `tests/test_output_metadata.py`
+  - `tests/test_cli_inspect.py`
+  - enhanced `tests/test_output_eval.py` diagnostics assertions.
 
 ## In Flight
 
-- [2026-04-23] — Phase 3A.1 finalization:
+- [2026-04-23] — Phase 3A finalization path:
   - normalize roadmap file-location inconsistency in tracked docs,
-  - run CI once on branch to verify Linux engine bootstrap + regression gate behavior in GitHub Actions runtime.
+  - run CI once on branch to verify Linux engine bootstrap + regression gate behavior in GitHub Actions runtime,
+  - begin Phase 3A.3 soil realism flag visibility in figures.
 
 ## Next Up
 
-- [1] Finalize and merge Phase 3A.1 gate after CI proof on branch.
-- [2] Implement Phase 3A.2 `metadata.json` schema/persistence and `swat inspect <run_id>`.
-- [3] Implement Phase 3A.3 soil realism flags (`soil_mode`, `pct_fallback_soils`, output visibility).
+- [1] Finalize and merge Phase 3A.1 + 3A.2 changes after CI proof on branch.
+- [2] Implement Phase 3A.3 soil realism flags (`soil_mode`, `pct_fallback_soils`, output visibility/watermark).
+- [3] Implement Phase 3A.4 large-basin guardrails with fail-fast/auto-adjust behavior.
 
 ## Open Questions / Blockers
 

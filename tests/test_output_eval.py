@@ -123,8 +123,17 @@ def test_evaluate_run_autodetects_flowing_outlet_when_gis1_is_dry(tmp_path):
     )
 
     # outlet_gis_id=1 is dry; evaluator should auto-switch to the flowing outlet.
-    df, _ = evaluate_run(txt / "channel_sd_day.txt", obs, outlet_gis_id=1)
+    df, _, diag = evaluate_run(
+        txt / "channel_sd_day.txt",
+        obs,
+        outlet_gis_id=1,
+        return_diagnostics=True,
+    )
 
     assert len(df) == 2
     assert df["sim"].iloc[0] == pytest.approx(1.5)
     assert df["sim"].iloc[1] == pytest.approx(2.5)
+    assert diag["requested_outlet_gis_id"] == 1
+    assert diag["selected_outlet_gis_id"] == 7
+    assert diag["outlet_autodetected"] is True
+    assert diag["outlet_selection_reason"] == "requested_outlet_dry"

@@ -16,8 +16,9 @@ def evaluate_run(
     sim_channel_path: Path | str, 
     obs_series: pd.Series, 
     outlet_gis_id: int = 1,
-    out_alignment_csv: Path | str | None = None
-) -> tuple[pd.DataFrame, Dict[str, float]]:
+    out_alignment_csv: Path | str | None = None,
+    return_diagnostics: bool = False,
+) -> tuple[pd.DataFrame, Dict[str, float]] | tuple[pd.DataFrame, Dict[str, float], Dict[str, Any]]:
     """Align daily simulated discharge with observed discharge and compute metrics.
     
     Args:
@@ -25,17 +26,19 @@ def evaluate_run(
         obs_series: NWIS observed Series with DatetimeIndex from fetch_usgs_daily_q.
         outlet_gis_id: The ID of the watershed outlet channel routing line.
         out_alignment_csv: Standard cache path for wrapper outputs (outputs/alignment.csv)
+        return_diagnostics: If True, include outlet/source diagnostics in return tuple.
         
     Returns:
         tuple containing:
             - Aligned DataFrame with columns ['obs', 'sim'] mapping overlapping dates.
             - Dictionary of computed hydrological metrics (nse, kge, bfi).
+            - Optional diagnostics dict when ``return_diagnostics=True``.
     """
     sim_channel_path = Path(sim_channel_path)
     if not sim_channel_path.exists():
         raise FileNotFoundError(f"Missing simulation output file: {sim_channel_path}")
 
-    sim_df = _read_sim_discharge(sim_channel_path, outlet_gis_id)
+    sim_df, diagnostics = _read_sim_discharge(sim_channel_path, outlet_gis_id)
     if sim_df.empty:
         raise ValueError(
             f"No valid flow data found in {sim_channel_path} for GIS ID {outlet_gis_id}."
@@ -50,7 +53,10 @@ def evaluate_run(
 
     if df.empty:
         log.warning("No overlapping dates found between simulated and observed!")
-        return df, {"nse": float("nan"), "kge": float("nan"), "bfi_obs": float("nan")}
+        empty_metrics = {"nse": float("nan"), "kge": float("nan"), "bfi_obs": float("nan")}
+        if return_diagnostics:
+            return df, empty_metrics, diagnostics
+        return df, empty_metrics
 
     metrics: Dict[str, float] = {}
     
@@ -71,6 +77,8 @@ def evaluate_run(
         out_path.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(out_path)
 
+    if return_diagnostics:
+        return df, metrics, diagnostics
     return df, metrics
 
 
@@ -168,7 +176,7 @@ def _normalize_discharge_units(sim: pd.Series, source_name: str) -> pd.Series:
     return s
 
 
-def _read_sim_discharge(sim_channel_path: Path, outlet_gis_id: int) -> pd.DataFrame:
+def _read_sim_discharge(sim_channel_path: Path, outlet_gis_id: int) -> tuple[pd.DataFrame, Dict[str, Any]]:
     """Read daily outlet discharge, with fallback when primary file is empty/zero."""
     candidates = [sim_channel_path]
     txtinout_dir = sim_channel_path.parent
@@ -183,6 +191,13 @@ def _read_sim_discharge(sim_channel_path: Path, outlet_gis_id: int) -> pd.DataFr
             candidates.append(p)
 
     last_df = pd.DataFrame(columns=["sim"])
+    diagnostics: Dict[str, Any] = {
+        "requested_outlet_gis_id": int(outlet_gis_id),
+        "selected_outlet_gis_id": int(outlet_gis_id),
+        "outlet_autodetected": False,
+        "outlet_selection_reason": "requested_outlet",
+        "sim_source_file": None,
+    }
     for cand in candidates:
         if not cand.exists():
             continue
@@ -195,7 +210,8 @@ def _read_sim_discharge(sim_channel_path: Path, outlet_gis_id: int) -> pd.DataFr
         df["sim"] = _normalize_discharge_units(df["sim"], cand.name)
         # Prefer first candidate with non-zero signal.
         if float(df["sim"].abs().sum()) > 0.0:
-            return df
+            diagnostics["sim_source_file"] = cand.name
+            return df, diagnostics
 
         # Outlet series exists but is dry: auto-detect a valid flowing channel ID.
         best_gid = _pick_best_flowing_gis_id(table, outlet_gis_id, txtinout_dir)
@@ -210,6 +226,10 @@ def _read_sim_discharge(sim_channel_path: Path, outlet_gis_id: int) -> pd.DataFr
                         cand.name,
                         best_gid,
                     )
-                    return alt
+                    diagnostics["selected_outlet_gis_id"] = int(best_gid)
+                    diagnostics["outlet_autodetected"] = True
+                    diagnostics["outlet_selection_reason"] = "requested_outlet_dry"
+                    diagnostics["sim_source_file"] = cand.name
+                    return alt, diagnostics
         last_df = df
-    return last_df
+    return last_df, diagnostics
