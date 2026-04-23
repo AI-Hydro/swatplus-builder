@@ -87,16 +87,21 @@ Kick off Phase 3C with registry-first calibration foundations and mergeable Trac
   - added bounds + scope validation helpers (`validate_value`, `validate_assignment`),
   - exposed import surface via `src/swatplus_builder/params/__init__.py`.
 - [2026-04-23] [pre-commit] — Added registry validation tests in `tests/test_parameter_registry.py`.
+- [2026-04-23] [pre-commit] — Implemented PR-3C-02 SpotPy adapter skeleton with artifact integration:
+  - added `src/swatplus_builder/calibration/spotpy_adapter.py` and `src/swatplus_builder/calibration/__init__.py`,
+  - implemented deterministic parameter sampling loop with per-iteration artifact writes,
+  - added warm-start cache skip behavior using content-hash existence checks.
+- [2026-04-23] [pre-commit] — Added adapter tests in `tests/test_calibration_spotpy_adapter.py` (artifact-per-sample and warm-start skip).
 
 ## In Flight
 
 - [2026-04-23] — Phase 3C implementation kickoff:
-  - finalize PR-3C-01 and begin PR-3C-02 SpotPy adapter skeleton.
+  - finalize PR-3C-02 and begin PR-3C-03 `swat calibrate` CLI wiring.
 
 ## Next Up
 
-- [1] Implement PR-3C-02 SpotPy adapter skeleton with artifact-write enforcement.
-- [2] Implement PR-3C-03 `swat calibrate` CLI with multi-objective parsing.
+- [1] Implement PR-3C-03 `swat calibrate` CLI with multi-objective parsing.
+- [2] Implement PR-3C-04 calibration reporting outputs (dotty/convergence/Pareto artifacts).
 - [3] Normalize roadmap doc-location references (`docs/ROADMAP.md` vs `ROADMAP.md`) without losing historical docs.
 
 ## Open Questions / Blockers
