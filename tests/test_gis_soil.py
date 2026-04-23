@@ -357,6 +357,33 @@ class TestFetchMukeyRaster:
             )
         assert "swatplus-builder[soils]" in str(ei.value)
 
+    def test_tries_next_item_when_first_item_does_not_overlap(
+        self, tmp_path, monkeypatch, mukey_raster
+    ):
+        """Regression: STAC can return a nearby non-overlapping tile first."""
+        from swatplus_builder.gis.soil import extract_unique_mukeys, fetch_mukey_raster
+
+        # First raster is far away (no overlap), second is the valid fixture.
+        far_arr = np.full((4, 4), 999, dtype=np.int32)
+        far_raster = _write_mukey_raster(
+            tmp_path / "far.tif",
+            far_arr,
+            nodata=0,
+            origin_xy=(900_000.0, 5_000_000.0),
+        )
+
+        items = [
+            _FakeItem("far_item", {"mukey": _FakeAsset(str(far_raster))}),
+            _FakeItem("good_item", {"mukey": _FakeAsset(str(mukey_raster))}),
+        ]
+        _install_fake_pc(monkeypatch, items)
+
+        boundary = box(500_000, 4_499_940, 500_060, 4_500_000)
+        out = tmp_path / "out" / "mukey_retry.tif"
+        result = fetch_mukey_raster(boundary, output_path=out, boundary_crs=_CRS_UTM)
+        assert result == out.resolve()
+        assert extract_unique_mukeys(result) == {100}
+
 
 # ---------------------------------------------------------------------------
 # extract_mukeys_for_watershed

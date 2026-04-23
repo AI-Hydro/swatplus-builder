@@ -163,6 +163,11 @@ def build_tables(
             outlet_subbasin = _channel_parent_subbasin(chans_gdf, first_terminal)
         else:
             outlet_subbasin = subbasins[0].id
+    valid_sub_ids = {s.id for s in subbasins}
+    if outlet_subbasin not in valid_sub_ids:
+        # Guard against clipped/degenerate delineations where inferred
+        # outlet subbasin id does not exist in the surviving subbasin rows.
+        outlet_subbasin = subbasins[0].id
 
     points = _build_point_rows(outlets_gdf, outlet_subbasin, to_wgs84)
 
@@ -289,6 +294,12 @@ def _build_channel_rows(
         # the channel and breaking network connectivity.
         if sub_id <= 0 and link_id in sub_area_by_id:
             sub_id = link_id
+        elif sub_id <= 0 and len(sub_area_by_id) == 1:
+            # Pathological but real on some large basins when clipping can
+            # collapse polygonized subbasins to one feature while channels
+            # remain segmented. Keep channels connected by assigning them to
+            # the lone subbasin instead of dropping all channel rows.
+            sub_id = next(iter(sub_area_by_id))
 
         if link_id <= 0 or sub_id <= 0:
             log.warning(
@@ -609,5 +620,30 @@ def _channel_parent_subbasin(
         return 1
     match = chans_gdf[chans_gdf["link_id"].astype(int) == link_id]
     if match.empty:
-        return 1
-    return int(match.iloc[0]["sub_id"])
+        # Fallback to any valid channel sub_id in this basin.
+        valid = chans_gdf["sub_id"].dropna()
+        if valid.empty:
+            return 1
+        try:
+            sid = int(valid.iloc[0])
+            return sid if sid > 0 else 1
+        except (TypeError, ValueError):
+            return 1
+    raw = match.iloc[0]["sub_id"]
+    try:
+        sid = int(raw)
+        if sid > 0:
+            return sid
+    except (TypeError, ValueError):
+        pass
+    # Matched channel exists but has NaN/invalid sub_id; recover from any
+    # other valid channel row so build_tables can continue.
+    valid = chans_gdf["sub_id"].dropna()
+    if not valid.empty:
+        try:
+            sid = int(valid.iloc[0])
+            if sid > 0:
+                return sid
+        except (TypeError, ValueError):
+            pass
+    return 1

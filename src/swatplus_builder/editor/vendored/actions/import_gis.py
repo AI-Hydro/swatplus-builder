@@ -122,6 +122,13 @@ class GisImport(ExecutableApi):
 						self.emit_progress(50, "Importing hrus from GIS...")
 						self.insert_hru_ltes()
 
+						# LTE still needs an explicit outlet object. Connection import
+						# uses sinkcat='X' -> obj_typ='out' links; without Outlet_con
+						# row(s), object.cnt has out=0 and Rev60/61 can segfault in
+						# hyd_connect when resolving channel terminal links.
+						self.emit_progress(70, "Importing outlets from GIS...")
+						self.insert_outlets()
+
 						self.emit_progress(90, "Importing connections from GIS...")
 						self.insert_connections_lte()
 					else:

@@ -235,11 +235,10 @@ def fetch_mukey_raster(
 
     Notes:
         The gNATSGO raster collection is tiled at the state level.
-        For a single-state watershed we expect one item; for a
-        multi-state watershed we may need to mosaic. This function
-        currently takes the **first** matching item and clips to
-        ``boundary`` — acceptable for the tests we target (single-
-        state US watersheds). Mosaic support is a follow-up.
+        For a single-state watershed we often get one item; for
+        multi-state or edge-of-tile watersheds we may get several.
+        We try each candidate item until one overlaps and clips
+        successfully. Mosaic support is a follow-up.
     """
     _ = settings  # reserved for future cache/timeout knobs
     try:
@@ -281,49 +280,62 @@ def fetch_mukey_raster(
             collection=collection,
         )
 
-    item = items[0]
-    if "mukey" not in item.assets:
-        raise SwatBuilderPipelineError(
-            f"STAC item {item.id!r} has no 'mukey' asset",
-            available=sorted(item.assets),
-            item_id=item.id,
-        )
-    href = item.assets["mukey"].href  # signed via modifier above
+    last_error: Exception | None = None
+    for item in items:
+        if "mukey" not in item.assets:
+            continue
+        href = item.assets["mukey"].href  # signed via modifier above
+        try:
+            # Open the remote COG, reproject the boundary into its CRS, clip,
+            # and write. rasterio handles /vsicurl transparently.
+            with rasterio.open(href) as src:
+                geom = _reproject_geom_to_raster(
+                    boundary, src_crs=boundary_crs, dst_crs=src.crs
+                )
+                clipped, transform = rasterio.mask.mask(
+                    src,
+                    [mapping(geom)],
+                    crop=True,
+                    filled=True,
+                    indexes=1,
+                    nodata=src.nodata if src.nodata is not None else 0,
+                )
+                profile = src.profile.copy()
+                profile.update(
+                    height=clipped.shape[0],
+                    width=clipped.shape[1],
+                    transform=transform,
+                    count=1,
+                    compress="deflate",
+                )
+                with rasterio.open(out, "w", **profile) as dst:
+                    dst.write(clipped, 1)
+            log.info("wrote mukey raster: %s (item=%s)", out, item.id)
+            return out
+        except ValueError as exc:
+            # Common edge case: STAC returns a nearby tile that does not
+            # actually overlap after reprojection/mask. Try next item.
+            if "do not overlap raster" in str(exc).lower():
+                last_error = exc
+                continue
+            raise
+        except rasterio.errors.WindowError as exc:
+            last_error = exc
+            continue
+        except rasterio.errors.RasterioIOError as exc:
+            raise SwatBuilderExternalError(
+                f"reading/writing mukey raster failed: {exc}",
+                href=href,
+                output_path=str(out),
+            ) from exc
 
-    # Open the remote COG, reproject the boundary into its CRS, clip,
-    # and write. rasterio handles /vsicurl for signed URLs transparently.
-    try:
-        with rasterio.open(href) as src:
-            geom = _reproject_geom_to_raster(
-                boundary, src_crs=boundary_crs, dst_crs=src.crs
-            )
-            clipped, transform = rasterio.mask.mask(
-                src,
-                [mapping(geom)],
-                crop=True,
-                filled=True,
-                indexes=1,
-                nodata=src.nodata if src.nodata is not None else 0,
-            )
-            profile = src.profile.copy()
-            profile.update(
-                height=clipped.shape[0],
-                width=clipped.shape[1],
-                transform=transform,
-                count=1,
-                compress="deflate",
-            )
-            with rasterio.open(out, "w", **profile) as dst:
-                dst.write(clipped, 1)
-    except rasterio.errors.RasterioIOError as exc:
-        raise SwatBuilderExternalError(
-            f"reading/writing mukey raster failed: {exc}",
-            href=href,
-            output_path=str(out),
-        ) from exc
-
-    log.info("wrote mukey raster: %s (item=%s)", out, item.id)
-    return out
+    raise SwatBuilderExternalError(
+        "No returned gNATSGO raster item overlaps boundary after clipping.",
+        collection=collection,
+        bbox=list(bbox_wgs84),
+        n_items=len(items),
+        last_error=str(last_error) if last_error is not None else None,
+    )
 
 
 # ---------------------------------------------------------------------------

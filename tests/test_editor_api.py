@@ -185,6 +185,44 @@ def test_setup_project_rejects_missing_datasets_db(populated_project) -> None:
         setup_project(populated_project)
 
 
+def test_seeds_missing_watr_landuse_for_compat(tmp_path) -> None:
+    """If GIS HRUs contain WATR and datasets lacks watr, seed a compat row."""
+    from swatplus_builder.editor.api import _ensure_datasets_landuse_compat
+
+    project_db = tmp_path / "project.sqlite"
+    ds_db = tmp_path / "datasets.sqlite"
+
+    with sqlite3.connect(project_db) as conn:
+        conn.execute("CREATE TABLE gis_hrus (id INTEGER PRIMARY KEY, landuse TEXT)")
+        conn.execute("INSERT INTO gis_hrus (landuse) VALUES ('WATR')")
+
+    with sqlite3.connect(ds_db) as conn:
+        conn.execute(
+            "CREATE TABLE plants_plt ("
+            "id INTEGER PRIMARY KEY, "
+            "name TEXT NOT NULL UNIQUE, "
+            "plnt_typ TEXT NOT NULL, "
+            "description TEXT)"
+        )
+        conn.execute(
+            "CREATE TABLE urban_urb ("
+            "id INTEGER PRIMARY KEY, "
+            "name TEXT NOT NULL UNIQUE)"
+        )
+        conn.execute(
+            "INSERT INTO plants_plt (name, plnt_typ, description) "
+            "VALUES ('agrl', 'warm_annual', 'agriculture')"
+        )
+
+    _ensure_datasets_landuse_compat(project_db=project_db, datasets_db=ds_db)
+
+    with sqlite3.connect(ds_db) as conn:
+        (n_watr,) = conn.execute(
+            "SELECT COUNT(*) FROM plants_plt WHERE lower(name)='watr'"
+        ).fetchone()
+    assert n_watr == 1
+
+
 def test_setup_project_accepts_explicit_datasets_db_path(
     populated_project, tmp_path,
 ) -> None:
