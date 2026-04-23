@@ -33,17 +33,27 @@ Complete Phase 3A.3 soil realism flags end-to-end (metadata, warnings, figure an
 - [2026-04-23] [pre-commit] — Added plot utility regression test `tests/test_output_plots_utils.py` covering quality-flag rendering and publication save path behavior.
 - [2026-04-23] [pre-commit] — Updated README with soil fidelity level semantics and `swat inspect` usage.
 - [2026-04-23] [pre-commit] — Fixed source-control ignore rule to stop hiding package source modules under `src/swatplus_builder/output/` by narrowing `output/` to `/output/`.
+- [2026-04-23] [`b15ebb2`] — Merged Phase 3A.3 implementation commit: soil fidelity flags, plot watermarking, fallback-threshold warning, and README/decision updates plus tracking of previously hidden `src/swatplus_builder/output/*` modules.
+- [2026-04-23] [pre-commit] — Implemented Phase 3A.4 large-basin pre-engine guardrails in `run.swatplus.run`:
+  - detects `n_subbasins` and `n_hrus` from delineation manifests when available,
+  - enforces thresholds (`max_subbasins`, `max_hrus`),
+  - warns and continues by default (`auto_adjust=True`), or fails fast on `auto_adjust=False`.
+- [2026-04-23] [pre-commit] — Added `swat run` CLI options for guardrails:
+  - `--max-hrus`
+  - `--max-subbasins`
+  - `--auto-adjust/--no-auto-adjust`
+- [2026-04-23] [pre-commit] — Added regression coverage in `tests/test_run_swatplus.py` for guardrail warning path and fail-fast path.
 
 ## In Flight
 
 - [2026-04-23] — Phase 3A finalization path:
   - run CI once on branch to verify Linux engine bootstrap + regression gate behavior in GitHub Actions runtime,
-  - implement Phase 3A.4 large-basin guardrails with CLI controls and fail-fast policy.
+  - verify guardrail behavior in a real large-basin E2E run and tune defaults if needed.
 
 ## Next Up
 
-- [1] Implement Phase 3A.4 large-basin guardrails (`--max-hrus`, `--max-subbasins`, fail-fast/auto-adjust policy).
-- [2] Prove Phase 3A.1-3A.4 in CI and write `PHASE_3A_CLOSEOUT.md` with exit-criteria evidence.
+- [1] Prove Phase 3A.1-3A.4 in CI and write `PHASE_3A_CLOSEOUT.md` with exit-criteria evidence.
+- [2] Validate guardrails on a true high-complexity basin and capture evidence in artifacts.
 - [3] Normalize roadmap doc-location references (`docs/ROADMAP.md` vs `ROADMAP.md`) without losing historical docs.
 
 ## Open Questions / Blockers

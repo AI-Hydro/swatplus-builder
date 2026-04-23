@@ -213,6 +213,21 @@ def cmd_run(
     binary: str = typer.Option(
         None, "--binary", help="Override SWAT+ engine path (else settings / env / PATH)."
     ),
+    max_hrus: int = typer.Option(
+        5000,
+        "--max-hrus",
+        help="Pre-engine guardrail threshold for HRU count (when detectable).",
+    ),
+    max_subbasins: int = typer.Option(
+        500,
+        "--max-subbasins",
+        help="Pre-engine guardrail threshold for subbasin count (when detectable).",
+    ),
+    auto_adjust: bool = typer.Option(
+        True,
+        "--auto-adjust/--no-auto-adjust",
+        help="On guardrail breach: warn and continue (--auto-adjust) or fail fast (--no-auto-adjust).",
+    ),
 ) -> None:
     """Run the SWAT+ engine or automate a full platform execution (--usgs).
     """
@@ -263,6 +278,9 @@ def cmd_run(
             threads=threads,
             timeout_s=timeout,
             binary=binary,
+            max_hrus=max_hrus,
+            max_subbasins=max_subbasins,
+            auto_adjust=auto_adjust,
         )
     except SwatBuilderError as exc:
         rprint(f"[red]engine failed:[/red] {exc}")

@@ -48,6 +48,8 @@ import shutil
 import subprocess
 import sys
 import time
+import json
+import logging
 from pathlib import Path
 
 from ..config import DEFAULT_SETTINGS, Settings
@@ -74,6 +76,10 @@ BINARY_CANDIDATES: tuple[str, ...] = (
 _DIAGNOSTICS_TAIL_BYTES: int = 4000
 _STDOUT_TAIL_BYTES: int = 4000
 _STDERR_TAIL_BYTES: int = 4000
+_DEFAULT_MAX_SUBBASINS: int = 500
+_DEFAULT_MAX_HRUS: int = 5000
+
+log = logging.getLogger(__name__)
 
 # Output files we surface in ``SwatPlusRun.paths`` for convenience. This is a
 # *whitelist of interesting names*, not an exhaustive list — the full
@@ -164,6 +170,9 @@ def run(
     project: SwatPlusProject | None = None,
     binary: Path | str | None = None,
     settings: Settings = DEFAULT_SETTINGS,
+    max_subbasins: int = _DEFAULT_MAX_SUBBASINS,
+    max_hrus: int = _DEFAULT_MAX_HRUS,
+    auto_adjust: bool = True,
 ) -> SwatPlusRun:
     """Execute the SWAT+ engine in ``txtinout_dir`` and collect its outputs.
 
@@ -183,6 +192,13 @@ def run(
         binary: Override the resolved engine binary. If ``None``, we call
             :func:`locate_binary`.
         settings: Runtime overrides (used only if ``binary is None``).
+        max_subbasins: Guardrail threshold for pre-engine subbasin count.
+            If detected count exceeds this value, behavior depends on
+            ``auto_adjust``.
+        max_hrus: Guardrail threshold for pre-engine HRU count.
+        auto_adjust: If ``True`` (default), log warning and continue on
+            threshold breach while surfacing suggested aggregation actions.
+            If ``False``, fail fast with :class:`SwatBuilderInputError`.
 
     Returns:
         :class:`SwatPlusRun` carrying exit code, runtime, binary path,
@@ -208,6 +224,13 @@ def run(
             "editor.api.write_files() first?",
             txtinout_dir=str(txtinout),
         )
+
+    _check_size_guardrails(
+        txtinout,
+        max_subbasins=max_subbasins,
+        max_hrus=max_hrus,
+        auto_adjust=auto_adjust,
+    )
 
     exe = (
         Path(binary).expanduser().resolve()
@@ -319,6 +342,88 @@ def run_project(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def _check_size_guardrails(
+    txtinout: Path,
+    *,
+    max_subbasins: int,
+    max_hrus: int,
+    auto_adjust: bool,
+) -> None:
+    """Pre-engine guardrail for large-basin runs.
+
+    Counts are loaded from `delin/watershed_result.json` and
+    `delin/hrus/hru_catalog.json` when available.
+    """
+    run_root = _infer_run_root(txtinout)
+    counts = _load_preengine_counts(run_root) if run_root is not None else {}
+    n_subbasins = _coerce_int(counts.get("n_subbasins"))
+    n_hrus = _coerce_int(counts.get("n_hrus"))
+
+    exceeded: list[str] = []
+    if n_subbasins is not None and n_subbasins > max_subbasins:
+        exceeded.append(f"subbasins={n_subbasins} > max_subbasins={max_subbasins}")
+    if n_hrus is not None and n_hrus > max_hrus:
+        exceeded.append(f"hrus={n_hrus} > max_hrus={max_hrus}")
+
+    if not exceeded:
+        return
+
+    guidance = (
+        "Suggested auto-adjustments: increase delineation stream threshold "
+        "to reduce subbasins and/or enable stronger HRU aggregation "
+        "(dominant-only or higher min_hru_fraction)."
+    )
+    msg = "Large-basin guardrail triggered: " + "; ".join(exceeded)
+
+    if auto_adjust:
+        log.warning("%s. %s Proceeding because auto_adjust=True.", msg, guidance)
+        return
+
+    raise SwatBuilderInputError(
+        f"{msg}. {guidance}",
+        txtinout_dir=str(txtinout),
+        n_subbasins=n_subbasins,
+        n_hrus=n_hrus,
+        max_subbasins=max_subbasins,
+        max_hrus=max_hrus,
+        guidance=guidance,
+    )
+
+
+def _infer_run_root(txtinout: Path) -> Path | None:
+    """Best-effort locate run root containing `delin/`."""
+    for candidate in [txtinout, *txtinout.parents]:
+        if (candidate / "delin").is_dir():
+            return candidate
+    return None
+
+
+def _load_preengine_counts(run_root: Path) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    ws = run_root / "delin" / "watershed_result.json"
+    hru = run_root / "delin" / "hrus" / "hru_catalog.json"
+    if ws.is_file():
+        try:
+            data = json.loads(ws.read_text(encoding="utf-8"))
+            counts["n_subbasins"] = int(data.get("stats", {}).get("n_subbasins", 0))
+        except Exception:
+            pass
+    if hru.is_file():
+        try:
+            data = json.loads(hru.read_text(encoding="utf-8"))
+            counts["n_hrus"] = int(data.get("stats", {}).get("n_hrus", 0))
+        except Exception:
+            pass
+    return counts
+
+
+def _coerce_int(value: object) -> int | None:
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _build_env(threads: int, exe: Path | None = None) -> dict[str, str]:

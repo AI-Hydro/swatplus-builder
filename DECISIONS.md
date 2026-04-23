@@ -18,6 +18,20 @@ Status: Accepted
 
 ---
 
+[2026-04-23] Default large-basin guardrail mode is warn-and-continue (`auto_adjust=True`)
+Context: Phase 3A.4 requires pre-engine size guardrails and fail-fast behavior when users opt out. Existing workflows rely on `swat run` succeeding with minimal flags, so making guardrail breaches fatal by default would break compatibility.
+Decision: Add `--max-hrus` and `--max-subbasins` guardrails with default thresholds (5000 and 500), and default to warning + guidance while continuing (`--auto-adjust`). Provide explicit opt-out (`--no-auto-adjust`) to fail fast.
+Alternatives considered:
+- Fail fast by default on threshold breach — rejected because it would be a breaking operational change for existing runs.
+- Skip guardrails when counts are unavailable — rejected because deterministic checks are still possible in many run layouts using persisted delineation manifests.
+Consequences:
+- Large-basin risk is surfaced before engine execution without immediate workflow breakage.
+- Strict users/CI can enforce fail-fast by setting `--no-auto-adjust`.
+- Guidance now explicitly points to delineation threshold and HRU aggregation knobs for structural size reduction.
+Status: Accepted
+
+---
+
 [2026-04-23] Scope NSE floor assertion to structural CI basin in Phase 3A.1
 Context: Phase 3A.1 calls for an NSE floor gate (`NSE > -1`) to catch silent regressions. During real multi-basin gate validation, routing/connectivity assertions passed but several uncalibrated basins showed strongly negative NSE (order 10^2-10^3), which would hard-fail CI independent of routing correctness.
 Decision: Keep mandatory NSE floor assertion on the known structural regression basin (`03339000`) where the outlet-selection/routing path is the target behavior under test; require finite NSE on all other fast CI basins while preserving strict routing assertions (engine success, terminal flow > 0, alignment exists, outlet auto-detection behavior).
