@@ -2,14 +2,20 @@
 
 ## Active Phase
 
-Phase 3D — Agent Loop & Autoresearch (Kickoff)
+Phase 3E — Packaging & Distribution (Kickoff)
 
 ## Current Sprint Focus
 
-Kick off revised Phase 3D with a strict PR plan (`PHASE_3D_PLAN.md`) mapped to both `ROADMAP.md` Phase 3D and `CALIBRATION_PLAN_REVISED.md` surrogate-in-3D additions, then execute MCP typed-tool foundation first.
+Establish Phase 3E execution structure with a mergeable PR plan (`PHASE_3E_PLAN.md`) and then execute packaging/distribution work in roadmap order (container baseline, CLI polish, docs readiness, closeout evidence).
 
 ## Completed Since Last Update
 
+- [2026-04-24] [`17dbd8e`] — Committed Phase 3C/3D stabilization milestone:
+  - calibration bridge + diagnostics + sensitivity integration,
+  - MCP operational 8-tool surface,
+  - SKILL contract, autoresearch loop, surrogate routing/hold-out harness,
+  - Phase 3D closeout evidence artifacts and documentation updates.
+- [2026-04-24] [pre-commit] — Added `PHASE_3E_PLAN.md` mapping Roadmap §3E.1–3E.4 to isolated PRs with tests, risks, and explicit scope boundaries.
 - [2026-04-23] [pre-commit] — Completed Phase 3A kickoff reconnaissance against authoritative `ROADMAP.md`; verified current repository is structurally stabilized but missing 3A deliverables (CI routing gate, metadata schema, soil realism signaling, basin guardrails).
 - [2026-04-23] [pre-commit] — Added `PHASE_3A_PLAN.md` mapping roadmap sections 3A.1-3A.5 to isolated PRs with tests and risks.
 - [2026-04-23] [pre-commit] — Added `BACKLOG.md` as append-only deferred-work register.
@@ -364,12 +370,12 @@ Kick off revised Phase 3D with a strict PR plan (`PHASE_3D_PLAN.md`) mapped to b
 
 ## In Flight
 
-- [2026-04-24] — Phase 3D implementation and evidence are complete locally; remaining step is staging/committing the tranche.
+- [2026-04-24] — Phase 3E kickoff plan is written; next action is PR-3E-01 implementation (container baseline).
 
 ## Next Up
 
-- [1] Stage and commit Phase 3D implementation tranche (PR-3D-01..06 + evidence artifacts) with roadmap-linked message.
-- [2] Kick off Phase 3E with `PHASE_3E_PLAN.md` and explicit exit-criteria mapping.
+- [1] Stage and commit Phase 3E kickoff plan (`PHASE_3E_PLAN.md` + `PROGRESS.md` active-phase update).
+- [2] Implement PR-3E-01: container baseline with smoke verification and usage docs.
 - [3] Confirm licensing strategy decision path before broadening pySWATPlus coupling in future packaging/distribution work.
 
 ## Open Questions / Blockers
