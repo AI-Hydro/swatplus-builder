@@ -18,6 +18,7 @@ def write_calibration_reports(
     outdir: Path | str,
     *,
     alignment_csv: Path | str | None = None,
+    calibrated_alignment_csv: Path | str | None = None,
 ) -> dict[str, str]:
     """Write calibration history tables and diagnostic plots."""
     out = Path(outdir).expanduser().resolve()
@@ -30,7 +31,13 @@ def write_calibration_reports(
     _write_summary_md(summary_md, results)
     _write_plots(out, results)
     comp = write_parameter_comparison(results, out)
-    if alignment_csv is not None:
+    if alignment_csv is not None and calibrated_alignment_csv is not None:
+        write_hydrograph_comparison_from_two_alignments(
+            baseline_alignment_csv=alignment_csv,
+            calibrated_alignment_csv=calibrated_alignment_csv,
+            outdir=out,
+        )
+    elif alignment_csv is not None:
         write_hydrograph_comparison_from_alignment(results, alignment_csv, out)
 
     return {
@@ -276,6 +283,73 @@ def write_hydrograph_comparison_from_alignment(
         linewidth=1.2,
     )
     ax.set_title("Observed vs Simulated (Baseline vs Calibrated Proxy)")
+    ax.set_xlabel("Date")
+    ax.set_ylabel("Discharge")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(out / "hydrograph_calibrated_vs_observed.png", dpi=220, bbox_inches="tight")
+    fig.savefig(out / "hydrograph_calibrated_vs_observed.pdf", bbox_inches="tight")
+    plt.close(fig)
+
+    return {
+        "hydrograph_metrics_json": str(out / "hydrograph_comparison_metrics.json"),
+        "hydrograph_plot": str(out / "hydrograph_calibrated_vs_observed.png"),
+    }
+
+
+def write_hydrograph_comparison_from_two_alignments(
+    *,
+    baseline_alignment_csv: Path | str,
+    calibrated_alignment_csv: Path | str,
+    outdir: Path | str,
+) -> dict[str, str]:
+    """Write observed vs baseline simulated vs real-calibrated simulated plots."""
+    out = Path(outdir).expanduser().resolve()
+    out.mkdir(parents=True, exist_ok=True)
+
+    b = pd.read_csv(Path(baseline_alignment_csv), index_col=0, parse_dates=True)
+    c = pd.read_csv(Path(calibrated_alignment_csv), index_col=0, parse_dates=True)
+    if "obs" not in b.columns or "sim" not in b.columns:
+        raise ValueError("baseline alignment.csv must contain 'obs' and 'sim' columns.")
+    if "obs" not in c.columns or "sim" not in c.columns:
+        raise ValueError("calibrated alignment.csv must contain 'obs' and 'sim' columns.")
+
+    df = pd.DataFrame(
+        {
+            "obs": b["obs"].astype(float),
+            "sim_baseline": b["sim"].astype(float),
+            "sim_calibrated": c["sim"].astype(float),
+        }
+    ).dropna()
+    if df.empty:
+        raise ValueError("No overlapping rows between baseline and calibrated alignments.")
+
+    baseline_nse = _nse(df["obs"], df["sim_baseline"])
+    calibrated_nse = _nse(df["obs"], df["sim_calibrated"])
+    meta = {
+        "baseline_nse": baseline_nse,
+        "calibrated_nse": calibrated_nse,
+        "mode": "real_engine",
+    }
+    (out / "hydrograph_comparison_metrics.json").write_text(
+        json.dumps(meta, indent=2) + "\n", encoding="utf-8"
+    )
+
+    try:
+        import matplotlib.pyplot as plt
+    except Exception:
+        return {"hydrograph_metrics_json": str(out / "hydrograph_comparison_metrics.json")}
+
+    fig, ax = plt.subplots(figsize=(11, 4.2))
+    ax.plot(df.index, df["obs"], label="Observed", linewidth=1.6)
+    ax.plot(df.index, df["sim_baseline"], label=f"Baseline Sim (NSE={baseline_nse:.3f})", linewidth=1.2)
+    ax.plot(
+        df.index,
+        df["sim_calibrated"],
+        label=f"Calibrated Sim REAL (NSE={calibrated_nse:.3f})",
+        linewidth=1.2,
+    )
+    ax.set_title("Observed vs Simulated (Baseline vs Real Calibrated Rerun)")
     ax.set_xlabel("Date")
     ax.set_ylabel("Discharge")
     ax.legend()

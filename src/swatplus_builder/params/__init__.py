@@ -2,6 +2,7 @@
 
 from .registry import (
     AdjustmentType,
+    ChangeType,
     Parameter,
     ParameterScope,
     get_parameter,
@@ -12,6 +13,7 @@ from .registry import (
 
 __all__ = [
     "AdjustmentType",
+    "ChangeType",
     "Parameter",
     "ParameterScope",
     "get_parameter",
@@ -19,4 +21,3 @@ __all__ = [
     "validate_assignment",
     "validate_value",
 ]
-

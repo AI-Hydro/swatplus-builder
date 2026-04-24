@@ -2,11 +2,11 @@
 
 ## Active Phase
 
-Phase 3C — Calibration (Kickoff)
+Phase 3D — Agent Loop & Autoresearch (Kickoff)
 
 ## Current Sprint Focus
 
-Kick off Phase 3C with registry-first calibration foundations and mergeable Track 1/Track 2 decomposition.
+Kick off revised Phase 3D with a strict PR plan (`PHASE_3D_PLAN.md`) mapped to both `ROADMAP.md` Phase 3D and `CALIBRATION_PLAN_REVISED.md` surrogate-in-3D additions, then execute MCP typed-tool foundation first.
 
 ## Completed Since Last Update
 
@@ -106,17 +106,271 @@ Kick off Phase 3C with registry-first calibration foundations and mergeable Trac
   - observed vs simulated comparison plot output from alignment series (`hydrograph_calibrated_vs_observed.png/.pdf`) with metrics metadata JSON,
   - CLI support via `swat calibrate --alignment-csv <outputs/alignment.csv>`.
 - [2026-04-23] [pre-commit] — Produced concrete comparison artifacts under `tests/_artifacts/calibration_demo/calibration_reports/`.
+- [2026-04-23] [pre-commit] — Investigated and fixed calibration no-op in real reruns:
+  - confirmed baseline and "calibrated" hydrographs were identical because calibration CLI still defaulted to a proxy objective and, in real reruns, stale copied daily outputs were being scored,
+  - added `src/swatplus_builder/calibration/real_engine.py` objective wiring with strict parameter-apply checks for LTE files, deterministic per-parameter run directories, and alignment export per sample,
+  - updated `swat calibrate` CLI with explicit real-engine mode (`--real-engine`) requiring `--base-txtinout` and `--alignment-csv`, with optional `--binary`, `--outlet-gis-id`, and `--real-work-root`,
+  - fixed real-engine scoring path to force fresh daily channel outputs (`print.prt` sanitation: `nyskip=0`, daily channel rows on), purge stale copied day files, and evaluate from `channel_sd_day.txt`,
+  - partitioned artifact cache by objective mode (`proxy` vs `real_engine`) to avoid warm-start contamination,
+  - updated hydrograph reporting to support true baseline-vs-real-calibrated comparisons (no proxy blending when calibrated alignment is available),
+  - generated fresh real-engine calibration artifacts under:
+    - `tests/_artifacts/calibration_real_check_20260423_v3/`.
+- [2026-04-23] [pre-commit] — Added regression coverage for the above:
+  - `tests/test_calibration_real_engine.py` (parameter-apply behavior, alignment loading, deterministic hash, print.prt output forcing),
+  - `tests/test_calibration_spotpy_adapter.py` objective-mode cache partition test,
+  - `tests/test_cli_calibrate.py` real-engine required-argument test.
+- [2026-04-23] [pre-commit] — Performed deep calibration diagnostics (outlet/units/source-file):
+  - compared `channel_sd_day`, `basin_sd_cha_day`, and fallback behavior with runtime diagnostics,
+  - identified that forcing objective scoring through `channel_sd_day` produced inflated discharge scale for this workflow (`NSE ≈ -1305`) while `basin_sd_cha_day` retained physically consistent scale (`NSE ≈ -0.208` baseline),
+  - switched real-engine objective and calibrated-alignment generation to use `basin_sd_cha_day` as primary source,
+  - validated objective responsiveness: 10-sample run produced varied NSE (`-1.54` to `-0.24`) with non-identical baseline vs calibrated hydrographs.
+- [2026-04-23] [pre-commit] — Added calibration stabilization controls for fail-loud foundation:
+  - objective source-file lock (`--objective-sim-file`, `--strict-objective-file`) with runtime trace persistence (`objective_trace.json`) per sample,
+  - explicit outlet guard (`--require-explicit-outlet` / `--allow-outlet-autodetect`) enforced in real-engine objective,
+  - minimum NSE-improvement gate (`--min-improvement-nse`) to fail calibration runs that do not beat rerun baseline by required margin,
+  - calibration context metadata emitted to report directory (`calibration_run_context.json`).
+- [2026-04-23] [pre-commit] — Validated new fail-loud behavior:
+  - strict run with `--min-improvement-nse 0.01` failed as expected (`best_nse=-0.244`, `baseline_nse=-0.208`),
+  - strict run without gate completed and persisted full objective traces under:
+    - `tests/_artifacts/calibration_real_check_20260423_v6/`.
+- [2026-04-23] [pre-commit] — Implemented PR-3C-05 typed forward function + dataset bridge:
+  - added `src/swatplus_builder/calibration/forward.py` with typed models and API:
+    - `forward_simulate(ForwardRequest) -> SimulatedTimeseries`
+    - `extract_surrogate_dataset(...) -> SurrogateDataset`
+    - `verify_forward_artifact(...) -> ForwardVerification`
+  - forward path is artifact-aware/content-hash cached and records run metadata under artifact store.
+  - surrogate bridge extracts parameter/metric/timeseries-derived rows from forward artifacts.
+  - added explicit verification checks on objective source/outlet trace, timeseries integrity, and recomputed NSE consistency.
+- [2026-04-23] [pre-commit] — Added tests for PR-3C-05:
+  - `tests/test_calibration_forward.py` covering determinism/cache short-circuit, dataset extraction, and output-truth verification.
+- [2026-04-23] [pre-commit] — Ran real forward verification with actual SWAT+ output:
+  - artifact root: `tests/_artifacts/forward_verify_real_20260423/`
+  - content hash: `286c7a7d231edcd220d6aab40797f3495ce47d1d24140c892af68695d7a907eb`
+  - verification passed all checks (`trace/source/outlet/timeseries/NSE consistency`).
+- [2026-04-23] [pre-commit] — Read and adopted revised calibration authority:
+  - `CALIBRATION_PLAN_REVISED.md` now governs Phase 3C sequencing in this branch.
+  - added `PHASE_3C_REVISED_PLAN.md` with PR decomposition aligned to revised 3C.1–3C.7.
+- [2026-04-23] [pre-commit] — Began revised 3C.1 dependency alignment:
+  - updated `pyproject.toml` optional `swatplus` extra to:
+    - `pySWATPlus>=1.3.0`
+    - `pymoo>=0.6.1`
+    - `SALib>=1.5.0`
+- [2026-04-23] [pre-commit] — Implemented revised 3C.1 runtime verification guard:
+  - added `src/swatplus_builder/calibration/pyswatplus_runtime.py`,
+  - added `ensure_pyswatplus_runtime()` typed checks for module presence + minimum version compatibility,
+  - exposed runtime guard via `swatplus_builder.calibration` import surface,
+  - added tests in `tests/test_calibration_pyswatplus_runtime.py`.
+- [2026-04-23] [pre-commit] — Implemented revised 3C.2 registry compatibility layer:
+  - extended `Parameter` model with `change_type` (`absval`/`pctchg`/`abschg`) and `physical_meaning`,
+  - added conversion helpers:
+    - `Parameter.to_pyswatplus_dict(value)`
+    - `Parameter.to_pyswatplus_bounds_dict()`,
+  - exported `ChangeType` via `swatplus_builder.params`,
+  - added registry conversion tests in `tests/test_parameter_registry.py`.
+- [2026-04-23] [pre-commit] — Implemented revised 3C.3 bridge scaffold (`Calibrator`):
+  - added `src/swatplus_builder/calibration/calibrator.py` with typed request/result models, backend protocol, and `PySwatPlusBackend` adapter boundary,
+  - persisted calibration-level artifacts under `runs/calibrations/<hash>/` (`history.csv`, `summary.md`, `best_solution.json`, `pareto.csv` for multi-objective),
+  - persisted per-evaluation standard run artifacts via content-hash into canonical `runs/<hash>/` store,
+  - wired CLI path: `swat calibrate --calibration-engine pyswatplus ...`,
+  - added fail-loud dependency/runtime errors with actionable install guidance.
+- [2026-04-23] [pre-commit] — Added revised 3C.1 integration-test scaffold:
+  - `tests/test_calibration_pyswatplus_integration.py` (opt-in smoke, skipped unless env + dependencies are present).
+- [2026-04-23] [pre-commit] — Added/updated tests for bridge path:
+  - `tests/test_calibration_calibrator.py` (artifact writes + warm-start cache behavior),
+  - `tests/test_cli_calibrate.py` (`--calibration-engine pyswatplus` branch routing),
+  - `tests/test_calibration_pyswatplus_runtime.py` runtime guard coverage.
+- [2026-04-23] [pre-commit] — Implemented revised 3C.4 sensitivity bridge:
+  - added `src/swatplus_builder/sensitivity.py` with typed request/result models and backend adapter boundary,
+  - added `SensitivityAnalyzer` orchestrator persisting artifacts under `runs/sensitivity/<hash>/`,
+  - added CLI command: `swat sensitivity --basin ... --base-txtinout ... --parameters ... --n-samples ...`,
+  - added fail-loud dependency/runtime behavior consistent with calibration bridge.
+- [2026-04-23] [pre-commit] — Added sensitivity tests:
+  - `tests/test_sensitivity_bridge.py` (artifact write + warm-start cache behavior),
+  - `tests/test_cli_sensitivity.py` (CLI routing + validation).
+- [2026-04-23] [pre-commit] — Implemented revised 3C.5 diagnostic layer:
+  - added `src/swatplus_builder/diagnostics.py` with typed `Diagnosis` model and explicit rule set for:
+    - peak lag,
+    - baseflow/flashiness mismatch,
+    - volume bias,
+    - snow timing mismatch,
+    - flat hydrograph structural check,
+    - high PBIAS with acceptable NSE,
+    - fast/slow recession behavior,
+  - added markdown reporting helper `write_diagnostics_report(...)`,
+  - added CLI command: `swat diagnose --run-artifact <path> [--out-md ...]`.
+- [2026-04-23] [pre-commit] — Added diagnostics tests:
+  - `tests/test_diagnostics.py` (rule firing + report write),
+  - `tests/test_cli_diagnose.py` (CLI command behavior).
+- [2026-04-23] [pre-commit] — Ran real diagnostic verification:
+  - command: `swat diagnose` on real forward artifact
+  - output report written under:
+    - `tests/_artifacts/forward_verify_real_20260423/runs/286c7a.../diagnostics.md`
+  - diagnoses produced: `3`.
+- [2026-04-23] [working session] — Calibration execution compatibility + final real-engine evidence:
+  - fixed pySWATPlus observed CSV date normalization bug (`DatetimeIndex.strftime`),
+  - added pySWATPlus macOS runtime compatibility shims (executable detection + env patch + staged TxtInOut runtime companions),
+  - added `sim_output_file` passthrough in `CalibratorRequest` and wired CLI `--objective-sim-file` into the pyswatplus branch,
+  - produced fresh real-engine calibration artifact and reports under:
+    - `tests/_artifacts/calibration_final_real_20260423/calibration_reports`.
+- [2026-04-23] [working session] — Implemented revised Phase 3C.6 preset workflow patterns in CLI:
+  - added `swat calibrate --preset quick|standard|thorough`,
+  - wired preset default overrides for both engines (`spotpy`, `pyswatplus`) with explicit runtime echo of applied configuration,
+  - added CLI regression tests for invalid preset, spotpy quick preset behavior, and pyswatplus quick preset behavior,
+  - verified with:
+    - `pytest -q tests/test_cli_calibrate.py tests/test_calibration_calibrator.py`.
+- [2026-04-23] [working session] — Executed revised Phase 3C.7 curated-basin pySWATPlus evidence run (usgs_01547700):
+  - command used `--calibration-engine pyswatplus --preset quick` with 160 evaluations,
+  - calibration artifacts persisted under:
+    - `tests/_artifacts/calibration_pyswatplus_3c7_evidence_v2_20260423/runs/calibrations/d445b749.../`,
+  - hardened pySWATPlus staging path for this run:
+    - forced daily output print settings in staged `print.prt`,
+    - purged stale daily objective files before calibration,
+    - added objective outlet filtering (`gis_id`) via `outlet_gis_id`.
+  - added independent verification step (real-engine objective rerun):
+    - baseline NSE: `-0.2081`,
+    - best-parameter NSE: `-0.2029` (small positive improvement),
+    - verification workspace:
+      - `tests/_artifacts/calibration_pyswatplus_3c7_evidence_v2_20260423/verification_real_objective/`.
+  - observed blocker: pySWATPlus-reported objective values remain numerically distorted (`~ -3.67e9`) despite real-engine verification showing plausible-scale metrics; requires backend metric interpretation hardening before claiming benchmark-quality 3C.7 closure.
+- [2026-04-23] [working session] — Implemented metric parity hardening for pySWATPlus bridge (scope: metric interpretation only):
+  - added authoritative post-evaluation metric pass in bridge:
+    - computes `nse`/`kge` with `evaluate_run` on each generated simulation output for the requested `sim_output_file` + `outlet_gis_id`,
+    - bridge-reported calibration metrics now come from this authoritative pass,
+  - added per-evaluation parity logging:
+    - `metric_parity_log.csv` with required fields:
+      - `aligned_days`, `obs_mean/std/min/max`, `sim_mean/std/min/max`,
+      - `first_date`, `last_date`, `outlet_gis_id`, `bridge_reported_nse`, `bridge_reported_kge`,
+      - plus `pyswatplus_raw_objective_nse` for traceability,
+  - ensured staged pySWATPlus runs retain per-simulation directories until parity evaluation completes, then cleanup is applied.
+- [2026-04-23] [working session] — Validated parity and reran quick calibration after parity fix:
+  - parity smoke run:
+    - `tests/_artifacts/calibration_metric_parity_smoke_20260423/.../metric_parity_log.csv`
+    - bridge NSE now plausible-scale (`-0.208...`) while raw pySWATPlus objective remained extreme (`~ -3.67e9`) and is no longer used for reported calibration metrics,
+  - full quick rerun (160 evals) after parity fix:
+    - `tests/_artifacts/calibration_metric_parity_quick_20260423/runs/calibrations/d445b749.../`
+    - completed successfully with bridge-reported `best_nse=-0.208`.
+- [2026-04-23] [working session] — Completed revised Phase 3C closeout packaging:
+  - added formal closeout document:
+    - `PHASE_3C_CLOSEOUT.md`
+  - added regression guard test for metric parity logging + bridge-metric overwrite behavior:
+    - `tests/test_calibration_calibrator.py::test_metric_parity_overwrites_bridge_metrics_and_writes_required_log`
+  - recorded architectural decision making authoritative `evaluate_run` metrics the reporting source for pySWATPlus bridge:
+    - `DECISIONS.md` entry dated `2026-04-23`.
+- [2026-04-24] [pre-commit] — Began Phase 3D kickoff:
+  - added `PHASE_3D_PLAN.md` with mergeable PR decomposition (`PR-3D-01`..`PR-3D-06`),
+  - mapped revised 3D surrogate items (`3D.X/3D.Y/3D.Z`) into explicit implementation/testing units,
+  - set Phase 3D first implementation target to MCP typed tool foundation.
+- [2026-04-24] [working session] — Implemented Phase 3D PR-3D-01 MCP foundation:
+  - replaced placeholder MCP server with FastMCP-based typed 8-tool surface in `src/swatplus_builder/mcp/server.py`,
+  - wired tool contracts for `build_project`, `run_basin`, `calibrate`, `propose_parameters`, `compare_runs`, `query_artifacts`, `diagnose_failure`, and `validate`,
+  - fixed parameter-proposal bounds bug by reading canonical registry ranges (`meta.range`) instead of non-existent fields,
+  - updated MCP package exports in `src/swatplus_builder/mcp/__init__.py`,
+  - added regression tests in `tests/test_mcp_server.py` covering:
+    - exact 8-tool registration,
+    - placeholder not-implemented statuses,
+    - deterministic parameter proposal bounds,
+    - compare-runs metrics handling with missing metrics fallback,
+    - artifact query filtering behavior,
+    - diagnostics invocation on alignment CSV,
+    - validate-tool runner wiring/summary behavior (monkeypatched).
+  - verification commands:
+    - `pytest -q tests/test_mcp_server.py`,
+    - `pytest -q tests/test_parameter_registry.py tests/test_diagnostics.py`.
+- [2026-04-24] [working session] — Implemented Phase 3D PR-3D-02 agent skill packaging:
+  - added root `SKILL.md` aligned to Roadmap Appendix C sections:
+    - tool catalog (8 MCP tools),
+    - parameter registry guidance,
+    - diagnostic heuristics,
+    - basin taxonomy,
+    - evaluation protocol,
+    - example workflows,
+    - common pitfalls.
+  - documented current MCP tool operational status and failure modes explicitly (including placeholder tools).
+  - added regression test `tests/test_skill_md.py` to enforce required section headers and exact MCP tool-surface references.
+  - verification command:
+    - `pytest -q tests/test_mcp_server.py tests/test_skill_md.py`.
+- [2026-04-24] [working session] — Implemented Phase 3D PR-3D-03 autoresearch loop orchestrator:
+  - added typed module `src/swatplus_builder/autoresearch/loop.py` with:
+    - `LoopRequest`, `LoopStoppingCriteria`, `SurrogatePrediction`, `LoopIterationResult`, `LoopResult`,
+    - deterministic proposal strategies (`random`, `grid`, `history`),
+    - uncertainty-gated routing between surrogate prediction and real evaluator,
+    - artifact-native iteration persistence via `LocalArtifactStore`,
+    - per-iteration lineage wiring (`provenance.parent_run`, `proposal_source`),
+    - stop criteria support: `n_iterations`, objective threshold, convergence tolerance/window.
+  - added package export surface in `src/swatplus_builder/autoresearch/__init__.py`.
+  - added regression tests in `tests/test_autoresearch_loop.py` covering:
+    - deterministic behavior with fixed seed,
+    - objective-threshold stop condition,
+    - convergence stop condition,
+    - lineage persistence in artifact records,
+    - surrogate-routing branch when uncertainty is below threshold.
+  - verification commands:
+    - `pytest -q tests/test_autoresearch_loop.py`,
+    - `pytest -q tests/test_autoresearch_loop.py tests/test_mcp_server.py tests/test_skill_md.py`.
+- [2026-04-24] [working session] — Implemented Phase 3D PR-3D-04 surrogate training + uncertainty ensemble:
+  - added `src/swatplus_builder/autoresearch/surrogate.py` with typed APIs:
+    - `SurrogateTrainingRequest`,
+    - `train_surrogate_ensemble(...)`,
+    - `predict_with_surrogate(...)`,
+    - `make_loop_surrogate_predictor(...)`.
+  - implemented deterministic bootstrap linear-regression ensemble training from artifact-backed rows (`extract_surrogate_dataset`), with uncertainty from inter-member spread.
+  - persisted surrogate artifacts under `surrogates/<ensemble_id>/`:
+    - `training_rows.csv`,
+    - `model_cards.json`,
+    - `training_summary.json`.
+  - exported surrogate interfaces via `src/swatplus_builder/autoresearch/__init__.py`.
+  - added regression tests in `tests/test_autoresearch_surrogate.py` covering:
+    - artifact persistence,
+    - fixed-seed reproducibility,
+    - non-zero uncertainty spread on noisy data,
+    - fail-loud behavior for insufficient training rows.
+  - recorded architecture decision in `DECISIONS.md` for surrogate v1 model-family choice.
+  - verification commands:
+    - `pytest -q tests/test_autoresearch_surrogate.py`,
+    - `pytest -q tests/test_autoresearch_loop.py tests/test_autoresearch_surrogate.py tests/test_mcp_server.py tests/test_skill_md.py`.
+- [2026-04-24] [working session] — Implemented Phase 3D PR-3D-05 surrogate-aware routing + hold-out harness:
+  - extended surrogate module `src/swatplus_builder/autoresearch/surrogate.py` with:
+    - uncertainty-gated routing decision API: `decide_routing_path(...) -> RoutingDecision`,
+    - hold-out evaluation APIs:
+      - `HoldoutEvaluationRequest`,
+      - `HoldoutEvaluationCase`,
+      - `HoldoutEvaluationReport`,
+      - `evaluate_surrogate_holdout(...)`,
+    - basin-based row filtering for train/exclude controls in surrogate training request.
+  - integrated hold-out reporting artifacts under:
+    - `<ensemble_artifact_dir>/holdout_evaluation/summary.json`,
+    - `<ensemble_artifact_dir>/holdout_evaluation/cases.csv`.
+  - expanded autoresearch exports in `src/swatplus_builder/autoresearch/__init__.py` for routing and hold-out interfaces.
+  - expanded tests in `tests/test_autoresearch_surrogate.py` covering:
+    - route-threshold branch behavior (surrogate vs real-engine),
+    - hold-out evaluation execution and artifact/report persistence.
+  - verification commands:
+    - `pytest -q tests/test_autoresearch_surrogate.py`,
+    - `pytest -q tests/test_autoresearch_loop.py tests/test_autoresearch_surrogate.py tests/test_mcp_server.py tests/test_skill_md.py`.
+- [2026-04-24] [working session] — Implemented Phase 3D PR-3D-06 closeout evidence packaging:
+  - added `PHASE_3D_CLOSEOUT.md` with explicit mapping to Roadmap 3D.5 exit criteria,
+  - documented achieved items (typed/operational 8-tool MCP surface, SKILL contract, autoresearch loop, surrogate routing + hold-out harness),
+  - documented remaining evidence gaps for strict full closure:
+    - external MCP-capable agent smoke validation artifact,
+    - curated-basin autoresearch trace artifact.
+- [2026-04-24] [working session] — Executed remaining Phase 3D evidence runs and closed 3D.5 gaps:
+  - curated-basin autoresearch evidence run completed for `usgs_01547700` with persisted trace bundle under:
+    - `tests/_artifacts/phase3d_evidence_20260424/curated_autoresearch/`
+    - key artifact: `autoresearch_trace.json`,
+  - external MCP client smoke completed against stdio server with persisted transcript under:
+    - `tests/_artifacts/phase3d_evidence_20260424/mcp_smoke/`
+    - key artifact: `mcp_smoke_transcript.json`,
+  - updated `PHASE_3D_CLOSEOUT.md` to mark all Roadmap 3D.5 criteria as met (with explicit surrogate-model-family deviation note retained).
 
 ## In Flight
 
-- [2026-04-23] — Phase 3C implementation kickoff:
-  - finalize PR-3C-04 and begin PR-3C-05 typed parameter->output function.
+- [2026-04-24] — Phase 3D implementation and evidence are complete locally; remaining step is staging/committing the tranche.
 
 ## Next Up
 
-- [1] Implement PR-3C-05 typed parameter->output function with artifact cache integration.
-- [2] Implement PR-3C-06 surrogate MVP scaffolding + uncertainty gate.
-- [3] Normalize roadmap doc-location references (`docs/ROADMAP.md` vs `ROADMAP.md`) without losing historical docs.
+- [1] Stage and commit Phase 3D implementation tranche (PR-3D-01..06 + evidence artifacts) with roadmap-linked message.
+- [2] Kick off Phase 3E with `PHASE_3E_PLAN.md` and explicit exit-criteria mapping.
+- [3] Confirm licensing strategy decision path before broadening pySWATPlus coupling in future packaging/distribution work.
 
 ## Open Questions / Blockers
 
@@ -124,3 +378,5 @@ Kick off Phase 3C with registry-first calibration foundations and mergeable Trac
   - pinned fixtures/artifacts for determinism, or
   - live online fetch in CI with retry + timeout safeguards.
 - [2026-04-23] Legacy historical logs remain in `docs/PROGRESS.md` (gitignored). If needed, port selected historical milestones into this tracked file incrementally.
+- [2026-04-23] Licensing blocker acknowledged by revised plan: project is currently MIT while pySWATPlus is GPL-3.0; explicit human decision is still required for final coupling strategy.
+- [2026-04-24] pySWATPlus raw objective remains numerically extreme in this setup; mitigated for reporting by bridge metric parity layer. Open decision: whether to additionally expose a normalized surrogate objective field for optimizer diagnostics in future phases.

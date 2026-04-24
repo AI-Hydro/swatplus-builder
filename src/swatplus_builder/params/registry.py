@@ -23,6 +23,14 @@ class AdjustmentType(str, Enum):
     ADD = "add"
 
 
+class ChangeType(str, Enum):
+    """pySWATPlus/SWAT+ calibration change-type semantics."""
+
+    ABSVAL = "absval"
+    PCTCHG = "pctchg"
+    ABSCHG = "abschg"
+
+
 @dataclass(frozen=True)
 class Parameter:
     """Calibration parameter specification."""
@@ -34,8 +42,29 @@ class Parameter:
     default: float
     units: str
     description: str
+    physical_meaning: str
+    change_type: ChangeType
     adjustment_type: AdjustmentType
     tier: int
+
+    def to_pyswatplus_dict(self, value: float) -> dict[str, object]:
+        """Convert one parameter assignment to pySWATPlus-friendly mapping."""
+        validate_value(self.name, float(value))
+        return {
+            "name": self.name.lower(),
+            "value": float(value),
+            "change_type": self.change_type.value,
+        }
+
+    def to_pyswatplus_bounds_dict(self) -> dict[str, object]:
+        """Convert parameter bounds to pySWATPlus-friendly mapping."""
+        lo, hi = self.range
+        return {
+            "name": self.name.lower(),
+            "min": float(lo),
+            "max": float(hi),
+            "change_type": self.change_type.value,
+        }
 
 
 def _p(
@@ -47,6 +76,8 @@ def _p(
     default: float,
     units: str,
     description: str,
+    physical_meaning: str,
+    change_type: ChangeType,
     adjustment_type: AdjustmentType,
     tier: int,
 ) -> Parameter:
@@ -64,6 +95,8 @@ def _p(
         default=default,
         units=units,
         description=description,
+        physical_meaning=physical_meaning,
+        change_type=change_type,
         adjustment_type=adjustment_type,
         tier=tier,
     )
@@ -79,6 +112,8 @@ registry: dict[str, Parameter] = {
         75.0,
         "dimensionless",
         "SCS curve number",
+        "Runoff generation potential; higher CN2 generally increases direct runoff.",
+        ChangeType.ABSVAL,
         AdjustmentType.REPLACE,
         1,
     ),
@@ -91,6 +126,8 @@ registry: dict[str, Parameter] = {
         0.048,
         "1/day",
         "Baseflow recession constant",
+        "Controls baseflow recession response speed in groundwater contribution.",
+        ChangeType.ABSVAL,
         AdjustmentType.REPLACE,
         1,
     ),
@@ -103,6 +140,8 @@ registry: dict[str, Parameter] = {
         31.0,
         "day",
         "Groundwater delay time",
+        "Delay between recharge and groundwater return flow to channels.",
+        ChangeType.ABSVAL,
         AdjustmentType.REPLACE,
         1,
     ),
@@ -115,6 +154,8 @@ registry: dict[str, Parameter] = {
         0.95,
         "fraction",
         "Soil evaporation compensation factor",
+        "Controls depth distribution of soil evaporation demand.",
+        ChangeType.ABSVAL,
         AdjustmentType.REPLACE,
         2,
     ),
@@ -127,6 +168,8 @@ registry: dict[str, Parameter] = {
         1.0,
         "fraction",
         "Plant uptake compensation factor",
+        "Controls soil-profile compensation for plant water uptake.",
+        ChangeType.ABSVAL,
         AdjustmentType.REPLACE,
         2,
     ),
@@ -139,6 +182,8 @@ registry: dict[str, Parameter] = {
         4.0,
         "day",
         "Surface runoff lag coefficient",
+        "Controls runoff routing lag from land phase to channel network.",
+        ChangeType.ABSVAL,
         AdjustmentType.REPLACE,
         1,
     ),
@@ -151,6 +196,8 @@ registry: dict[str, Parameter] = {
         0.05,
         "dimensionless",
         "Manning n for main channel",
+        "Channel roughness controlling velocity and attenuation in routing.",
+        ChangeType.ABSVAL,
         AdjustmentType.REPLACE,
         2,
     ),
@@ -163,6 +210,8 @@ registry: dict[str, Parameter] = {
         50.0,
         "mm/hr",
         "Channel hydraulic conductivity",
+        "Channel bed seepage potential to groundwater.",
+        ChangeType.ABSVAL,
         AdjustmentType.REPLACE,
         2,
     ),
@@ -175,6 +224,8 @@ registry: dict[str, Parameter] = {
         0.2,
         "fraction",
         "Available water capacity",
+        "Soil available water storage capacity affecting runoff/ET partitioning.",
+        ChangeType.ABSVAL,
         AdjustmentType.REPLACE,
         2,
     ),
@@ -187,6 +238,8 @@ registry: dict[str, Parameter] = {
         50.0,
         "mm/hr",
         "Saturated hydraulic conductivity",
+        "Soil saturated conductivity controlling infiltration and percolation.",
+        ChangeType.ABSVAL,
         AdjustmentType.REPLACE,
         2,
     ),
@@ -199,6 +252,8 @@ registry: dict[str, Parameter] = {
         0.0,
         "mm",
         "Threshold water depth for return flow",
+        "Groundwater threshold for initiating baseflow return.",
+        ChangeType.ABSVAL,
         AdjustmentType.REPLACE,
         2,
     ),
@@ -211,6 +266,8 @@ registry: dict[str, Parameter] = {
         0.0,
         "mm",
         "Threshold water depth for revap",
+        "Threshold groundwater storage for revap to unsaturated zone.",
+        ChangeType.ABSVAL,
         AdjustmentType.REPLACE,
         3,
     ),
@@ -223,6 +280,8 @@ registry: dict[str, Parameter] = {
         0.02,
         "fraction",
         "Groundwater revap coefficient",
+        "Fractional rate of upward groundwater movement (revap).",
+        ChangeType.ABSVAL,
         AdjustmentType.REPLACE,
         3,
     ),
@@ -235,6 +294,8 @@ registry: dict[str, Parameter] = {
         0.0,
         "mm/km",
         "Precipitation lapse rate",
+        "Adjusts precipitation with elevation gradient.",
+        ChangeType.ABSCHG,
         AdjustmentType.ADD,
         3,
     ),
@@ -247,6 +308,8 @@ registry: dict[str, Parameter] = {
         0.0,
         "degC/km",
         "Temperature lapse rate",
+        "Adjusts temperature with elevation gradient.",
+        ChangeType.ABSCHG,
         AdjustmentType.ADD,
         3,
     ),
@@ -259,6 +322,8 @@ registry: dict[str, Parameter] = {
         1.0,
         "degC",
         "Snowfall temperature",
+        "Temperature threshold controlling snow vs rain partitioning.",
+        ChangeType.ABSVAL,
         AdjustmentType.REPLACE,
         3,
     ),
@@ -271,6 +336,8 @@ registry: dict[str, Parameter] = {
         0.5,
         "degC",
         "Snow melt base temperature",
+        "Base temperature threshold for snowmelt onset.",
+        ChangeType.ABSVAL,
         AdjustmentType.REPLACE,
         3,
     ),
@@ -299,4 +366,3 @@ def validate_assignment(name: str, value: float, scope: ParameterScope) -> None:
     validate_value(name, value)
     if p.scope != scope:
         raise ValueError(f"{name} requires scope '{p.scope.value}', got '{scope.value}'")
-

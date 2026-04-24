@@ -384,6 +384,74 @@ def cmd_calibrate(
         "--alignment-csv",
         help="Optional outputs/alignment.csv for observed-vs-simulated calibration comparison plots.",
     ),
+    real_engine: bool = typer.Option(
+        False,
+        "--real-engine/--proxy-objective",
+        help="Use true SWAT+ engine-backed objective (requires --base-txtinout and --alignment-csv).",
+    ),
+    base_txtinout: str = typer.Option(
+        None,
+        "--base-txtinout",
+        help="Base TxtInOut directory for real-engine calibration.",
+    ),
+    binary: str = typer.Option(
+        None,
+        "--binary",
+        help="Optional SWAT+ executable path override for real-engine calibration.",
+    ),
+    outlet_gis_id: int = typer.Option(
+        1,
+        "--outlet-gis-id",
+        help="Outlet GIS ID used for objective scoring in real-engine mode.",
+    ),
+    real_work_root: str = typer.Option(
+        None,
+        "--real-work-root",
+        help="Optional working directory for real-engine sample reruns.",
+    ),
+    objective_sim_file: str = typer.Option(
+        "basin_sd_cha_day.txt",
+        "--objective-sim-file",
+        help="Simulation output filename used for objective scoring in real-engine mode.",
+    ),
+    strict_objective_file: bool = typer.Option(
+        True,
+        "--strict-objective-file/--allow-objective-fallback",
+        help="Require evaluator to use exactly --objective-sim-file (fail on fallback).",
+    ),
+    allow_outlet_autodetect: bool = typer.Option(
+        False,
+        "--allow-outlet-autodetect/--require-explicit-outlet",
+        help="Allow objective scoring to auto-switch outlet when requested outlet is dry.",
+    ),
+    min_improvement_nse: float = typer.Option(
+        None,
+        "--min-improvement-nse",
+        help="Optional minimum NSE improvement (best_nse - baseline_nse) required to pass.",
+    ),
+    calibration_engine: str = typer.Option(
+        "spotpy",
+        "--calibration-engine",
+        help="Calibration backend: spotpy (legacy) | pyswatplus (revised 3C path).",
+    ),
+    n_gen: int = typer.Option(
+        30,
+        "--n-gen",
+        help="Generations for pySWATPlus calibration engine.",
+    ),
+    pop_size: int = typer.Option(
+        32,
+        "--pop-size",
+        help="Population size for pySWATPlus calibration engine.",
+    ),
+    preset: str = typer.Option(
+        None,
+        "--preset",
+        help=(
+            "Calibration preset: quick|standard|thorough. "
+            "Applies opinionated defaults; explicit advanced flags can still be set after review."
+        ),
+    ),
 ) -> None:
     """Run calibration sampling with artifact persistence (alpha skeleton)."""
     from datetime import date
@@ -413,6 +481,116 @@ def cmd_calibrate(
         rprint(f"[red]error:[/red] {exc}")
         raise typer.Exit(2) from exc
 
+    engine = calibration_engine.strip().lower()
+    if engine not in {"spotpy", "pyswatplus"}:
+        rprint("[red]error:[/red] --calibration-engine must be one of: spotpy, pyswatplus")
+        raise typer.Exit(2)
+
+    if preset is not None:
+        preset_key = preset.strip().lower()
+        if preset_key not in {"quick", "standard", "thorough"}:
+            rprint("[red]error:[/red] --preset must be one of: quick, standard, thorough")
+            raise typer.Exit(2)
+        if engine == "pyswatplus":
+            if preset_key == "quick":
+                algo = "de"
+                n_gen = 10
+                pop_size = 16
+                objective_list = ["nse"]
+            elif preset_key == "standard":
+                algo = "nsga2"
+                n_gen = 30
+                pop_size = 32
+                objective_list = ["nse"]
+            else:
+                algo = "nsga2"
+                n_gen = 80
+                pop_size = 64
+                objective_list = ["nse"]
+            rprint(
+                f"[cyan]preset[/cyan] {preset_key} applied "
+                f"(engine=pyswatplus algo={algo} n_gen={n_gen} pop_size={pop_size} objectives={','.join(objective_list)})"
+            )
+        else:
+            if preset_key == "quick":
+                algo = "dds"
+                n_iter = 10
+                objective_list = ["nse"]
+            elif preset_key == "standard":
+                algo = "sceua"
+                n_iter = 30
+                objective_list = ["nse", "kge", "pbias"]
+            else:
+                algo = "sceua"
+                n_iter = 80
+                objective_list = ["nse", "kge", "pbias"]
+            rprint(
+                f"[cyan]preset[/cyan] {preset_key} applied "
+                f"(engine=spotpy algo={algo} n_iter={n_iter} objectives={','.join(objective_list)})"
+            )
+
+    if engine == "pyswatplus":
+        from .calibration import Calibrator, CalibratorRequest
+
+        if base_txtinout is None:
+            rprint("[red]error:[/red] --base-txtinout is required with --calibration-engine pyswatplus")
+            raise typer.Exit(2)
+        if alignment_csv is None:
+            rprint("[red]error:[/red] --alignment-csv is required with --calibration-engine pyswatplus")
+            raise typer.Exit(2)
+        algo_key = algo.strip().lower()
+        if algo_key not in {"ga", "de", "nsga2"}:
+            rprint("[red]error:[/red] --algo for pyswatplus must be one of: ga,de,nsga2")
+            raise typer.Exit(2)
+        if len(objective_list) != 1:
+            rprint(
+                "[red]error:[/red] pyswatplus bridge currently supports one objective per run "
+                "(use --objectives nse or --objectives kge)"
+            )
+            raise typer.Exit(2)
+        rprint(
+            f"[bold]swat calibrate[/bold] → basin={basin} engine=pyswatplus "
+            f"algo={algo_key} n_gen={n_gen} pop_size={pop_size}"
+        )
+        req = CalibratorRequest(
+            basin_id=basin,
+            simulation_start=date.fromisoformat(start),
+            simulation_end=date.fromisoformat(end),
+            txtinout_dir=_P(base_txtinout),
+            observed_csv=_P(alignment_csv),
+            parameters=param_list,
+            objectives=objective_list,
+            algorithm=algo_key,
+            n_gen=int(n_gen),
+            pop_size=int(pop_size),
+            seed=int(seed),
+            artifacts_root=_P(artifacts_root),
+            engine_version=engine_version,
+            builder_git_sha=None,
+            warm_start=True,
+            sim_output_file=objective_sim_file,
+            outlet_gis_id=int(outlet_gis_id),
+        )
+        from .errors import SwatBuilderError
+
+        try:
+            summary = Calibrator().run(req)
+        except SwatBuilderError as exc:
+            msg = str(exc)
+            hint = exc.context.get("hint")
+            if hint:
+                msg = f"{msg}. {hint}"
+            rprint(f"[red]error:[/red] {msg}")
+            raise typer.Exit(2) from exc
+        rprint(
+            f"[green]complete[/green] engine=pyswatplus cache_hit={summary.cache_hit} "
+            f"evaluations={summary.n_evaluations} "
+            f"best_nse={'' if summary.best_nse is None else f'{float(summary.best_nse):.3f}'} "
+            f"report={summary.outdir}"
+        )
+        return
+
+    objective_mode = "real_engine" if real_engine else "proxy"
     req = CalibrationRequest(
         basin_id=basin,
         simulation_start=date.fromisoformat(start),
@@ -420,46 +598,151 @@ def cmd_calibrate(
         parameters=param_list,
         n_iter=n_iter,
         algorithm=algo,
+        objective_mode=objective_mode,
         seed=seed,
         engine_version=engine_version,
         warm_start=True,
     )
 
-    def _objective(theta: dict[str, float]) -> dict[str, float]:
-        # Alpha deterministic proxy objective. Replaced by real engine-backed
-        # objective in later Phase 3C PRs.
-        if not theta:
-            score = 0.0
-        else:
-            score = sum(float(v) for v in theta.values()) / float(len(theta))
-        score = score % 1.0
-        out: dict[str, float] = {}
-        if "nse" in objective_list:
-            out["nse"] = score
-        if "kge" in objective_list:
-            out["kge"] = score - 0.05
-        if "pbias" in objective_list:
-            out["pbias"] = (score - 0.5) * 20.0
-        if "log_nse" in objective_list:
-            out["log_nse"] = max(-1.0, score - 0.1)
-        return out
+    obs = None
+    objective = None
+    real_runs_dir = None
+    baseline_alignment_for_report = _P(alignment_csv) if alignment_csv is not None else None
+    baseline_nse_real: float | None = None
+    if real_engine:
+        from .calibration.real_engine import (
+            load_observed_from_alignment_csv,
+            make_real_objective,
+            params_hash,
+        )
+
+        if base_txtinout is None:
+            rprint("[red]error:[/red] --base-txtinout is required with --real-engine")
+            raise typer.Exit(2)
+        if alignment_csv is None:
+            rprint("[red]error:[/red] --alignment-csv is required with --real-engine")
+            raise typer.Exit(2)
+
+        obs = load_observed_from_alignment_csv(alignment_csv)
+        real_runs_dir = (
+            _P(real_work_root).expanduser().resolve()
+            if real_work_root is not None
+            else _P(artifacts_root).expanduser().resolve() / "real_engine_runs"
+        )
+        objective = make_real_objective(
+            base_txtinout=_P(base_txtinout),
+            observed_series=obs,
+            work_root=real_runs_dir,
+            outlet_gis_id=int(outlet_gis_id),
+            binary=_P(binary) if binary is not None else None,
+            threads=1,
+            timeout_s=3600.0,
+            objective_sim_file=objective_sim_file,
+            strict_objective_file=bool(strict_objective_file),
+            allow_outlet_autodetect=bool(allow_outlet_autodetect),
+        )
+        # Generate an apples-to-apples baseline from the same rerun stack.
+        baseline_metrics = objective({})
+        baseline_nse_real = (
+            float(baseline_metrics["nse"])
+            if isinstance(baseline_metrics.get("nse"), (int, float))
+            else None
+        )
+        baseline_alignment_for_report = (
+            real_runs_dir / params_hash({}) / "TxtInOut" / "alignment_calibration.csv"
+        )
+    else:
+        def _objective(theta: dict[str, float]) -> dict[str, float]:
+            # Alpha deterministic proxy objective.
+            if not theta:
+                score = 0.0
+            else:
+                score = sum(float(v) for v in theta.values()) / float(len(theta))
+            score = score % 1.0
+            out: dict[str, float] = {}
+            if "nse" in objective_list:
+                out["nse"] = score
+            if "kge" in objective_list:
+                out["kge"] = score - 0.05
+            if "pbias" in objective_list:
+                out["pbias"] = (score - 0.5) * 20.0
+            if "log_nse" in objective_list:
+                out["log_nse"] = max(-1.0, score - 0.1)
+            return out
+        objective = _objective
 
     rprint(f"[bold]swat calibrate[/bold] → basin={basin} algo={algo} n_iter={n_iter}")
     results = run_calibration(
         req,
         artifacts_root=_P(artifacts_root),
-        objective_fn=_objective,
+        objective_fn=objective,
     )
+    report_path = _P(report_dir) if report_dir is not None else _P(artifacts_root) / "calibration_reports"
+    calibrated_alignment = None
+    if real_engine and alignment_csv is not None and real_runs_dir is not None and obs is not None:
+        from .calibration.real_engine import params_hash
+        from .output.eval import evaluate_run
+
+        best = max(results, key=lambda r: float(r.metrics.get("nse", float("-inf"))))
+        best_run_txt = real_runs_dir / params_hash(best.parameters) / "TxtInOut"
+        if best_run_txt.exists():
+            calibrated_alignment = best_run_txt / "alignment_calibration.csv"
+            if not calibrated_alignment.exists():
+                evaluate_run(
+                    best_run_txt / "basin_sd_cha_day.txt",
+                    obs,
+                    outlet_gis_id=int(outlet_gis_id),
+                    out_alignment_csv=calibrated_alignment,
+                )
+
     rep = write_calibration_reports(
         results,
-        _P(report_dir) if report_dir is not None else _P(artifacts_root) / "calibration_reports",
-        alignment_csv=_P(alignment_csv) if alignment_csv is not None else None,
+        report_path,
+        alignment_csv=baseline_alignment_for_report,
+        calibrated_alignment_csv=calibrated_alignment,
     )
     cache_hits = sum(1 for r in results if r.cache_hit)
     best_nse = max(
         (r.metrics.get("nse") for r in results if isinstance(r.metrics.get("nse"), (int, float))),
         default=None,
     )
+    if (
+        real_engine
+        and min_improvement_nse is not None
+        and baseline_nse_real is not None
+        and isinstance(best_nse, (int, float))
+    ):
+        improvement = float(best_nse) - float(baseline_nse_real)
+        if improvement < float(min_improvement_nse):
+            rprint(
+                "[red]error:[/red] calibration improvement gate failed: "
+                f"best_nse={float(best_nse):.3f}, baseline_nse={float(baseline_nse_real):.3f}, "
+                f"improvement={improvement:.3f} < required={float(min_improvement_nse):.3f}"
+            )
+            raise typer.Exit(3)
+
+    if real_engine:
+        import json
+
+        context_path = report_path / "calibration_run_context.json"
+        context_path.parent.mkdir(parents=True, exist_ok=True)
+        context_path.write_text(
+            json.dumps(
+                {
+                    "objective_mode": "real_engine",
+                    "objective_sim_file": objective_sim_file,
+                    "strict_objective_file": bool(strict_objective_file),
+                    "allow_outlet_autodetect": bool(allow_outlet_autodetect),
+                    "requested_outlet_gis_id": int(outlet_gis_id),
+                    "baseline_nse_real": baseline_nse_real,
+                    "best_nse": None if best_nse is None else float(best_nse),
+                    "min_improvement_nse": min_improvement_nse,
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
     rprint(
         f"[green]complete[/green] samples={len(results)} cache_hits={cache_hits} "
         f"best_nse={'' if best_nse is None else f'{float(best_nse):.3f}'} "
@@ -489,11 +772,102 @@ def cmd_build(
     raise typer.Exit("Not implemented yet (Phase 1). See docs/ROADMAP.md §1.7.")
 
 
+@app.command("sensitivity")
+def cmd_sensitivity(
+    basin: str = typer.Option(..., "--basin", help="Basin identifier (e.g., usgs_01547700)."),
+    base_txtinout: str = typer.Option(..., "--base-txtinout", help="TxtInOut directory to analyze."),
+    parameters: str = typer.Option(
+        "CN2,ESCO,ALPHA_BF,SURLAG",
+        "--parameters",
+        help="Comma-separated parameter names from registry.",
+    ),
+    n_samples: int = typer.Option(512, "--n-samples", help="Sobol sample count."),
+    observed_csv: str = typer.Option(
+        None,
+        "--observed-csv",
+        help="Optional observed/alignment CSV for backend sensitivity scoring.",
+    ),
+    artifacts_root: str = typer.Option(
+        "tests/_artifacts/sensitivity",
+        "--artifacts-root",
+        help="Root directory for sensitivity artifacts.",
+    ),
+) -> None:
+    """Run pySWATPlus-backed Sobol sensitivity analysis and persist ranked indices."""
+    from pathlib import Path as _P
+
+    from .errors import SwatBuilderError
+    from .sensitivity import SensitivityAnalyzer, SensitivityRequest
+
+    param_list = [p.strip() for p in parameters.split(",") if p.strip()]
+    if not param_list:
+        rprint("[red]error:[/red] at least one parameter is required")
+        raise typer.Exit(2)
+    rprint(f"[bold]swat sensitivity[/bold] → basin={basin} n_samples={n_samples}")
+    req = SensitivityRequest(
+        basin_id=basin,
+        txtinout_dir=_P(base_txtinout),
+        parameters=param_list,
+        n_samples=int(n_samples),
+        observed_csv=_P(observed_csv) if observed_csv is not None else None,
+        artifacts_root=_P(artifacts_root),
+    )
+    try:
+        res = SensitivityAnalyzer().run(req)
+    except SwatBuilderError as exc:
+        msg = str(exc)
+        hint = exc.context.get("hint")
+        if hint:
+            msg = f"{msg}. {hint}"
+        rprint(f"[red]error:[/red] {msg}")
+        raise typer.Exit(2) from exc
+    top = res.ranked[0].parameter if res.ranked else "n/a"
+    rprint(
+        f"[green]complete[/green] cache_hit={res.cache_hit} top_parameter={top} "
+        f"report={res.outdir}"
+    )
+
+
 @app.command("mcp")
 def cmd_mcp() -> None:
     """Start the stdio MCP server (install [mcp] extra first)."""
     from .mcp.server import main
     main()
+
+
+@app.command("diagnose")
+def cmd_diagnose(
+    run_artifact: str = typer.Option(
+        ...,
+        "--run-artifact",
+        help="Run artifact directory or alignment CSV path.",
+    ),
+    out_md: str = typer.Option(
+        None,
+        "--out-md",
+        help="Optional markdown report path (defaults to <run-artifact>/diagnostics.md).",
+    ),
+) -> None:
+    """Run rule-based diagnostics over a run artifact/alignment output."""
+    from pathlib import Path as _P
+
+    from .diagnostics import diagnose, write_diagnostics_report
+    from .errors import SwatBuilderError
+
+    target = _P(run_artifact).expanduser().resolve()
+    rprint(f"[bold]swat diagnose[/bold] → target={target}")
+    try:
+        diags = diagnose(target)
+    except SwatBuilderError as exc:
+        rprint(f"[red]error:[/red] {exc}")
+        raise typer.Exit(2) from exc
+    report = (
+        _P(out_md).expanduser().resolve()
+        if out_md is not None
+        else (target if target.is_dir() else target.parent) / "diagnostics.md"
+    )
+    write_diagnostics_report(diags, report)
+    rprint(f"[green]complete[/green] diagnoses={len(diags)} report={report}")
 
 
 if __name__ == "__main__":

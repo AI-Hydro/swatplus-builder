@@ -41,3 +41,12 @@ def test_scope_validation_enforced() -> None:
     with pytest.raises(ValueError):
         validate_assignment("ALPHA_BF", 0.1, ParameterScope.HRU)
 
+
+def test_registry_exposes_pyswatplus_conversion_helpers() -> None:
+    p = get_parameter("CN2")
+    d = p.to_pyswatplus_dict(70.0)
+    b = p.to_pyswatplus_bounds_dict()
+    assert d["name"] == "cn2"
+    assert d["change_type"] == "absval"
+    assert b["min"] == 35.0
+    assert b["max"] == 98.0

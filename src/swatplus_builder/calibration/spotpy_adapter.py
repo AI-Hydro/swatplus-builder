@@ -35,6 +35,7 @@ class CalibrationRequest:
     parameters: list[str]
     n_iter: int
     algorithm: str = "dds"
+    objective_mode: str = "proxy"
     seed: int = 42
     engine_version: str = "unknown"
     warm_start: bool = True
@@ -80,7 +81,11 @@ def run_calibration(
             simulation_start=request.simulation_start,
             simulation_end=request.simulation_end,
             parameters={name: {"value": val, "scope": get_parameter(name).scope.value} for name, val in params.items()},
-            options={"calibration_algorithm": request.algorithm, "iteration": i},
+            options={
+                "calibration_algorithm": request.algorithm,
+                "iteration": i,
+                "objective_mode": request.objective_mode,
+            },
         )
         content_hash = compute_content_hash(
             cfg,
@@ -137,4 +142,3 @@ def _sample_parameters(names: list[str], rng: random.Random) -> dict[str, float]
         validate_value(name, val)
         out[name] = val
     return out
-
