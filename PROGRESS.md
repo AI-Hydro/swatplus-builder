@@ -386,3 +386,363 @@ Establish Phase 3E execution structure with a mergeable PR plan (`PHASE_3E_PLAN.
 - [2026-04-23] Legacy historical logs remain in `docs/PROGRESS.md` (gitignored). If needed, port selected historical milestones into this tracked file incrementally.
 - [2026-04-23] Licensing blocker acknowledged by revised plan: project is currently MIT while pySWATPlus is GPL-3.0; explicit human decision is still required for final coupling strategy.
 - [2026-04-24] pySWATPlus raw objective remains numerically extreme in this setup; mitigated for reporting by bridge metric parity layer. Open decision: whether to additionally expose a normalized surrogate objective field for optimizer diagnostics in future phases.
+
+## 2026-04-24 — Calibration Bridge Hardening (Pre-Next-Phase Blocker)
+
+### Active Phase
+
+Phase 3C closeout hardening (bridge reliability gate before phase advance)
+
+### Current Sprint Focus
+
+Resolve flat pySWATPlus calibration evaluations by proving the chain `proposal -> input change -> output change -> metric change` and formalizing machine/human playbook logic.
+
+### Completed Since Last Update
+
+- [2026-04-24] [working session] — Patched pySWATPlus backend request plumbing to honor explicit binary override in calibration mode (`--binary` now reaches pySWATPlus staging path).
+- [2026-04-24] [working session] — Added bridge diff diagnostics in `calibrator.py`:
+  - per-evaluation changed-file tracking,
+  - fail-loud guard when no significant input change is detected,
+  - output hash/mtime capture per evaluation,
+  - stale-output cleanup extended to day/month/year files before objective runs.
+- [2026-04-24] [working session] — Diagnosed flat-output signature:
+  - parameter proposals varied,
+  - `calibration.cal` varied,
+  - pySWATPlus simulation outputs remained byte-identical,
+  - therefore raw pySWATPlus objective path not trustworthy for current engine/input compatibility.
+- [2026-04-24] [working session] — Implemented authoritative fallback rerun in parity bridge:
+  - auto-detect flat-output condition (`unique parameter vectors >1` with single output hash/metric),
+  - rerun each proposal through direct real-objective path (`make_real_objective` + `evaluate_run`),
+  - write parity logs with explicit metric source `evaluate_run_real_objective_rerun`.
+- [2026-04-24] [working session] — Verified acceptance on real CN2-only run:
+  - artifact: `tests/_artifacts/calibration_bridge_fix_20260424c/runs/calibrations/d455d05d587bc78b9783ec5a218284ee9f41525a521df103768b4d0847449ca6/`
+  - `history.csv` unique NSE count = 4/4,
+  - `metric_parity_log.csv` unique NSE count = 4/4,
+  - output hash unique count = 4/4.
+- [2026-04-24] [working session] — Added human playbook and machine skill:
+  - `docs/SWATPLUS_MODELING_PLAYBOOK.md` (status-labeled evidence base),
+  - `src/swatplus_builder/skills/swatplus_playbook/` (`schemas.py`, `rules.py`, `update.py`, `README.md`),
+  - autoresearch loop integration to consult playbook and append evidence safely.
+- [2026-04-24] [working session] — Added regression tests:
+  - calibration bridge hardening and authoritative-rerun trigger,
+  - playbook recommendation logic,
+  - append-only playbook update safety,
+  - autoresearch-playbook integration behavior.
+
+### In Flight
+
+- [2026-04-24] Final multi-basin confirmation pass with updated bridge to quantify calibration lift across 2-3 curated basins under parity-safe objective rerun.
+
+### Next Up
+
+- [1] Run parity-hardened CN2 calibration on additional curated basins and update readiness comparison table.
+- [2] Add CI smoke assertion for non-flat calibration history under bridge-rerun mode.
+- [3] Start next roadmap phase only after documented multi-basin bridge confirmation.
+
+### Open Questions / Blockers
+
+- [2026-04-24] Flat pySWATPlus raw-output behavior appears to stem from engine/input compatibility with `calibration.cal` path; continue treating `evaluate_run` rerun metrics as authoritative until upstream behavior is resolved.
+
+## 2026-04-24 — Cross-Basin Realism Investigation (NSE/KGE Weakness)
+
+### Active Phase
+
+Phase 3E readiness hardening (scientific realism guardrails before broader expansion)
+
+### Current Sprint Focus
+
+Investigate persistent weak NSE/KGE despite successful execution by tracing silent structural/evaluation mismatches and adding fail-loud realism diagnostics.
+
+### Completed Since Last Update
+
+- [2026-04-24] [working session] — Ran fresh multi-basin realism probe batch (`multibasin_20260424_realism_probe`) and confirmed extreme cross-basin score instability despite non-zero routing execution.
+- [2026-04-24] [working session] — Identified recurrent silent condition: requested outlet IDs are frequently non-terminal across generated basins.
+- [2026-04-24] [working session] — Patched `evaluate_run` outlet handling:
+  - emit `requested_outlet_is_terminal`,
+  - keep dry-outlet fallback behavior,
+  - add guarded terminal switch for non-terminal requests only when terminal NSE improves (`requested_outlet_non_terminal_best_nse`),
+  - keep requested outlet otherwise with explicit reason (`requested_outlet_non_terminal`).
+- [2026-04-24] [working session] — Added evaluator regression tests for:
+  - non-terminal outlet switching when terminal improves fit,
+  - non-terminal outlet retention when requested fit is better.
+- [2026-04-24] [working session] — Added realism-audit fields to `scripts/run_multibasin_e2e.py` summary output:
+  - outlet diagnostics, soil mode/fallback, NSE/KGE, sim/obs volume ratio,
+  - structural anomaly flags (`channels_per_subbasin_extreme`, low-HRU warning, volume bias flags, etc.).
+
+### In Flight
+
+- [2026-04-24] Re-run curated basins with patched evaluator + realism audit to produce a stable before/after table for Phase 3E readiness.
+
+### Next Up
+
+- [1] Execute parity-safe multibasin rerun and persist updated summary table with realism flags.
+- [2] Add CI smoke assertion on realism flags for critical silent-failure patterns (non-terminal requested outlet + extreme volume bias).
+- [3] Prioritize structural fixes for basins with extreme volume bias after outlet selection is stabilized.
+
+### Open Questions / Blockers
+
+- [2026-04-24] `01547700` remains extremely poor even after outlet logic hardening; likely dominated by forcing/parameter realism or scale/unit mismatch rather than outlet mis-selection.
+- [2026-04-24] `01013500` improved materially with non-terminal handling, but still weak; additional soil/forcing structural audits are required before claiming cross-basin scientific reliability.
+
+## 2026-04-24 — Realism Hardening Before Further Calibration
+
+### Active Phase
+
+Pre-calibration structural realism stabilization (bridge between Phase 3C reliability and broader expansion)
+
+### Current Sprint Focus
+
+Prevent low-credibility runs from entering calibration by correcting silent outlet/topology mismatches and adding fail-loud realism gates for delineation, HRU coverage, and soils.
+
+### Completed Since Last Update
+
+- [2026-04-24] [working session] — Corrected terminal-channel parsing to use `gis_id` (header-aware) in both evaluator and multibasin diagnostics; added regression tests for `id` vs `gis_id` mismatch.
+- [2026-04-24] [working session] — Removed the uniform weather-forcing coordinate hack from `examples/real_basin_marsh_creek.py`; basin now preserves native subbasin spatial forcing context with bounded station sampling.
+- [2026-04-24] [working session] — Added delineation realism controls:
+  - threshold retry strategy anchored at `stream_threshold_cells=2000` (with bounded alternatives),
+  - mandatory validation against reference basin polygon,
+  - persisted `delin/validation_result.json` artifact.
+- [2026-04-24] [working session] — Added HRU realism gate (`SWATPLUS_MIN_HRU_COVERAGE_RATIO`, default `0.90`) to fail runs where too many subbasins lack valid landuse/soil overlay.
+- [2026-04-24] [working session] — Added strict soil realism gate:
+  - fail by default on synthetic or excessive fallback soils (`SWATPLUS_MAX_SOIL_FALLBACK_RATIO`, default `0.10`),
+  - explicit override required (`SWATPLUS_ALLOW_SYNTHETIC_SOILS=1`) for diagnostic-only runs.
+- [2026-04-24] [working session] — Added richer batch realism diagnostics (`n_terminals`, terminal flags) and persisted post-fix comparison snapshots under:
+  - `tests/_artifacts/e2e_runs/multibasin_20260424_realism_probe/reports/`.
+- [2026-04-24] [working session] — Validation evidence runs:
+  - `multibasin_20260424_realism_fix_check_thr2000/usgs_01547700` passes delineation + soil gates and preserves expected 43-subbasin structure,
+  - `multibasin_20260424_soil_gate_check/usgs_01013500` now fails before calibration with explicit low-realism soil path (seed-minimal fallback + gate).
+
+### In Flight
+
+- [2026-04-24] Quantify how much remaining volume bias is attributable to model structure/parameter realism vs forcing representation now that structural gates are active.
+
+### Next Up
+
+- [1] Add CI smoke assertion that calibration entrypoints reject synthetic/high-fallback soils unless override flag is explicitly set.
+- [2] Add explicit volume-bias gate/report in the run summary (`sim_obs_volume_ratio`) as a pre-calibration blocker threshold.
+- [3] Expand realism-gated evidence to 2–3 curated basins and update readiness closeout with pass/fail rationale.
+
+### Open Questions / Blockers
+
+- [2026-04-24] `01547700` still shows severe positive volume bias (~52x) despite improved structural realism gates; this appears to be model fidelity/input realism, not execution integrity.
+- [2026-04-24] `01013500` exhibits widespread HRU overlay dropouts and soils fallback failure (`unrecognized hydrologic group code: 'NAN'`), requiring upstream soil/overlay data-quality remediation before trustworthy calibration.
+
+## 2026-04-24 — Water Balance Error Diagnosis and Correction
+
+### Active Phase
+
+Pre-calibration realism hardening (water-balance integrity)
+
+### Current Sprint Focus
+
+Diagnose extreme discharge overestimation through mass-balance analysis (precipitation/runoff partition, soil hydraulics, parameter response) and implement targeted structural corrections before further calibration.
+
+### Completed Since Last Update
+
+- [2026-04-24] [investigation] — Confirmed primary overestimation driver was an observed-unit bug:
+  - `pygeohydro.NWIS.get_streamflow` values were already in m3/s,
+  - pipeline applied an additional cfs→m3/s conversion, shrinking observed flows by ~35x.
+- [2026-04-24] [patch] — Removed double conversion in `src/swatplus_builder/calibration/nwis.py`; added regression test `tests/test_calibration_nwis.py`.
+- [2026-04-24] [evidence] — Re-ran `01547700`:
+  - NSE improved from ~`-1273.98` to ~`-0.0736` without calibration,
+  - sim/obs volume ratio improved from ~`52.10` to ~`1.48`.
+- [2026-04-24] [diagnosis] — Water-balance partition still showed elevated runoff (`basin_wb_aa`: wateryld ~1018 mm vs precip ~1040 mm), indicating residual structural bias.
+- [2026-04-24] [sensitivity audit] — Ran targeted perturbations on corrected baseline (`CN2`, `ALPHA_BF`, `SURLAG`, `soils_lte.scon`) with artifacts under:
+  - `tests/_artifacts/e2e_runs/multibasin_20260424_wb_sensitivity_01547700/`.
+  - Findings:
+    - `CN2`/`SURLAG` had minimal effect in this LTE setup,
+    - reducing `soils_lte.scon` strongly reduced runoff bias and improved NSE.
+- [2026-04-24] [patch] — Added LTE soil conductivity realism scaling in runner (`SWATPLUS_LTE_SCON_SCALE`, default `0.60`) with metadata trace note.
+- [2026-04-24] [validation] — Fresh end-to-end run `multibasin_20260424_wb_corrected_default/usgs_01547700`:
+  - NSE `0.0162`,
+  - volume ratio `1.066`,
+  - basin WB shifted toward more realistic partition (`et` up, `latq/wateryld` down).
+
+### In Flight
+
+- [2026-04-24] Extend corrected water-balance diagnostics to additional curated basins and verify whether LTE conductivity scaling generalizes.
+
+### Next Up
+
+- [1] Run corrected pipeline on `01013500` with realism gates and capture whether soil/overlay failures remain hard blockers.
+- [2] Add explicit report table (before/after) for `precip`, `surq`, `latq`, `et`, `wateryld`, and `sim/obs volume ratio` in batch README.
+- [3] Investigate CN2 insensitivity in LTE mode as a potential parameter-injection/model-structure limitation before relying on CN2-based calibration.
+
+### Open Questions / Blockers
+
+- [2026-04-24] CN2 perturbations showed weak response after unit fix; determine whether LTE internals override static CN2 enough to limit calibratability.
+- [2026-04-24] `01013500` still has extensive HRU overlay dropouts and synthetic-soil fallback gating failures; this remains a pre-calibration data-quality blocker.
+
+## 2026-04-24 — Timing/Variability Investigation (LTE Dynamic Routing)
+
+### Active Phase
+
+Pre-calibration hydrologic-dynamics stabilization (timing and variability)
+
+### Current Sprint Focus
+
+Diagnose why hydrograph timing controls (`CN2`, `SURLAG`, `ALPHA_BF`, `GW_DELAY`, channel routing terms) have weak or null effect, and restore non-zero physically connected channel flow without reintroducing silent routing failure.
+
+### Completed Since Last Update
+
+- [2026-04-24] [diagnosis] — Identified LTE routing-length instability in vendored GIS import path:
+  - realistic channel lengths (`hyd-sed-lte.cha:len` in ~0.1–4.4 km) caused full `flo_out=0` collapse across channels,
+  - threshold experiment showed sharp behavior change at `len > 0.001 km`:
+    - `len <= 0.001` produced non-zero routed flow,
+    - `len >= 0.002` produced all-zero channel outflow.
+- [2026-04-24] [patch] — Updated vendored import logic to cap LTE effective channel length instead of unconstrained GIS length:
+  - `src/swatplus_builder/editor/vendored/actions/import_gis.py`
+  - `src/swatplus_builder/editor/vendored/actions/import_gis_legacy.py`
+  - behavior now: `raw_len_km = len2/1000` with floor, then `lte_len_km = min(raw_len_km, 0.001)`.
+- [2026-04-24] [validation] — Re-ran full Marsh Creek E2E (`multibasin_20260424_timing_fix_lencap`):
+  - channel flow remained non-zero,
+  - metrics restored to stable post-water-balance baseline (`NSE ~0.0162`, `KGE ~-0.1124`) instead of all-zero simulated hydrograph.
+- [2026-04-24] [sensitivity evidence] — Ran post-fix timing sweep (`multibasin_20260424_timing_sensitivity_01547700_postfix`):
+  - effective controls: `ALPHA_BF`, `CN2`,
+  - inert in current LTE configuration: `SURLAG`, `msk_co1/co2/x`, channel `mann`,
+  - best tested timing/variability tradeoff: `ALPHA_BF=0.2` (`NSE ~0.1256`),
+  - `CN2` reduction tempered peaks/variance but did not resolve peak timing offset.
+- [2026-04-24] [feasibility check] — `GW_DELAY` not tunable in current LTE TxtInOut path (no `aquifer.aqu` generated); recorded in `gw_delay_status.txt` artifact.
+
+### In Flight
+
+- [2026-04-24] Resolve multi-terminal/non-terminal outlet topology ambiguity so evaluation is tied to physically correct gauge-representative terminal path.
+
+### Next Up
+
+- [1] Add explicit outlet-topology consistency gate (single terminal or deterministic terminal selection rationale persisted in metadata).
+- [2] Promote dynamic calibration tier for LTE to effective parameters only (`ALPHA_BF`, `CN2`) until routing terms become active.
+- [3] Add regression check that prevents reintroduction of all-zero `flo_out` collapse after GIS import.
+
+### Open Questions / Blockers
+
+- [2026-04-24] Current delineation yields multi-terminal routing (`chandeg.con`), and requested gauge outlet is often non-terminal; this can silently bias evaluation target.
+- [2026-04-24] In this LTE path, channel-routing parameters (`SURLAG`, Muskingum, Manning) remain structurally inactive after stabilization, limiting timing calibration degrees of freedom.
+
+## 2026-04-24 — Outlet Provenance Hardening (Pinned + Reproducible Metrics)
+
+### Active Phase
+
+Phase 3A stabilization hardening (outlet reproducibility and defensible evaluation provenance)
+
+### Current Sprint Focus
+
+Make all reported discharge metrics reproducible by pinning the scored outlet and persisting outlet-selection provenance and source-file hashes.
+
+### Completed Since Last Update
+
+- [2026-04-24] [patch] — Implemented two-pass outlet evaluation in `examples/real_basin_marsh_creek.py`:
+  - pass 1 (`outlet_policy=auto`) selects defensible outlet,
+  - pass 2 (`outlet_policy=strict`) re-scores with the pinned outlet only,
+  - `reports/metrics.json` now always reflects strict pinned scoring.
+- [2026-04-24] [artifact] — Added `outputs/outlet_provenance.json` with selection and pinned-pass diagnostics, metrics, aligned-day counts, and policy context.
+- [2026-04-24] [schema] — Extended `RunMetadata` with outlet provenance fields:
+  - `outlet_policy`, `outlet_provenance_path`, `outlet_provenance_sha256`,
+  - `sim_source_file`, `sim_source_sha256`, `chandeg_con_sha256`.
+- [2026-04-24] [diagnostics] — Extended evaluator diagnostics already exposed by `evaluate_run` to include terminal outlet list/count and source hashes in a test-covered way.
+- [2026-04-24] [batch reporting] — Extended `scripts/run_multibasin_e2e.py` summary schema to ingest/report `outlet_policy` and provenance hash.
+- [2026-04-24] [tests] — Added/updated tests:
+  - strict-policy dry-outlet behavior,
+  - provenance hash and terminal diagnostics,
+  - metadata roundtrip with outlet provenance fields.
+
+### In Flight
+
+- [2026-04-24] Promote pinned outlet policy controls into additional CLI/reporting entrypoints where ad-hoc `evaluate_run` use still defaults to `auto`.
+
+### Next Up
+
+- [1] Add a compact `swat inspect`/batch report section that displays pinned outlet provenance at a glance (policy, selected outlet, source hash).
+- [2] Add a regression assertion that reported metrics and `outputs/alignment.csv` are produced from the same strict-pinned outlet context.
+- [3] Apply the same pinned-outlet provenance convention to calibration report generation outputs.
+
+### Open Questions / Blockers
+
+- [2026-04-24] Some historical artifacts generated before this patch do not include `outlet_provenance.json`; comparisons across old/new runs must account for that schema evolution.
+
+## 2026-04-24 — Locked-Benchmark Effective-Parameter Calibration Verification
+
+### Active Phase
+
+Calibration reliability hardening (pre-next-phase gate)
+
+### Current Sprint Focus
+
+Lock benchmark context and verify that calibrating only proven-effective parameters (`CN2`, `ALPHA_BF`) yields reproducible, real metric improvement.
+
+### Completed Since Last Update
+
+- [2026-04-24] [evidence] — Created locked benchmark artifact for `usgs_01547700` at:
+  - `tests/_artifacts/calibration_locked_20260424_effective_01547700/benchmark/`
+  - includes strict-pinned alignment, metrics, outlet provenance, and `alignment_sha256`.
+- [2026-04-24] [execution] — Attempted pySWATPlus bridge calibration on locked benchmark with effective parameter subset (`CN2,ALPHA_BF`); run failed with `pySWATPlus calibration execution failed` and empty bridge run payload.
+- [2026-04-24] [execution] — Ran real-engine DDS calibration on same locked benchmark context:
+  - command target artifacts: `tests/_artifacts/calibration_locked_20260424_effective_01547700/calibration_reports_spotpy/`
+  - evaluations: 30, unique `metric_nse`: 30.
+- [2026-04-24] [verification] — Independently reran best parameter set through authoritative real objective and confirmed exact metric match to reported best solution.
+- [2026-04-24] [result] — Verified real improvement vs locked benchmark:
+  - benchmark NSE/KGE: `0.125578 / 0.036273`
+  - calibrated NSE/KGE: `0.210656 / 0.116227`
+  - delta NSE/KGE: `+0.085078 / +0.079955`.
+- [2026-04-24] [artifact] — Wrote verification bundle:
+  - `tests/_artifacts/calibration_locked_20260424_effective_01547700/verification_summary.json`
+  - `tests/_artifacts/calibration_locked_20260424_effective_01547700/comparison_metrics.csv`
+  - `tests/_artifacts/calibration_locked_20260424_effective_01547700/CALIBRATION_VERIFICATION.md`
+
+### In Flight
+
+- [2026-04-24] Diagnose pySWATPlus bridge runtime failure in the locked-benchmark setup so this same effective-parameter workflow can run through the bridge path reliably.
+
+### Next Up
+
+- [1] Add a short fail-loud diagnostic artifact for pySWATPlus bridge failures (stdout/stderr + staging manifest) to avoid opaque `execution failed` exits.
+- [2] Repeat the same locked-benchmark effective-parameter protocol on `01013500` after realism gates pass.
+- [3] Promote locked-benchmark calibration verification as a standard readiness gate before broader phase expansion.
+
+### Open Questions / Blockers
+
+- [2026-04-24] pySWATPlus bridge calibration remains runtime-fragile in this environment for the locked benchmark; real-engine path is currently the reliable authoritative route.
+
+## 2026-04-24 — Locked Benchmark Calibration Evidence Expansion (Contrast Basin 03339000)
+
+### Active Phase
+
+Calibration reliability hardening (locked benchmark evidence accumulation)
+
+### Current Sprint Focus
+
+Extend validated locked-benchmark calibration evidence from first basin (`01547700`) to one contrast basin (`03339000`) without expanding parameter scope.
+
+### Completed Since Last Update
+
+- [2026-04-24] [playbook] — Updated `docs/SWATPLUS_MODELING_PLAYBOOK.md` to:
+  - mark first locked-benchmark evidence (`01547700`) as validated,
+  - mark pySWATPlus bridge as non-authoritative/unstable for that lock,
+  - promote real-engine DDS (`CN2`, `ALPHA_BF`) on locked benchmarks as current recommended path.
+- [2026-04-24] [artifact] — Created contrast-basin benchmark lock:
+  - `tests/_artifacts/calibration_locked_20260424_effective_03339000/benchmark/`
+  - includes `benchmark_lock.json`, `alignment.csv`, `metrics.json`, and provenance snapshot.
+- [2026-04-24] [execution] — Ran same calibration workflow on `03339000` with unchanged effective parameter subset (`CN2`, `ALPHA_BF`) and strict objective file (`channel_sd_day.txt`).
+- [2026-04-24] [verification] — Independently reran best solution and confirmed metric match.
+- [2026-04-24] [result] — `03339000` locked-benchmark improvement:
+  - benchmark NSE/KGE: `0.061802 / -0.096925`
+  - calibrated NSE/KGE: `0.319248 / 0.187398`
+  - delta NSE/KGE: `+0.257447 / +0.284323`.
+- [2026-04-24] [artifact] — Wrote verification bundle:
+  - `tests/_artifacts/calibration_locked_20260424_effective_03339000/verification_summary.json`
+  - `tests/_artifacts/calibration_locked_20260424_effective_03339000/comparison_metrics.csv`
+  - `tests/_artifacts/calibration_locked_20260424_effective_03339000/CALIBRATION_VERIFICATION.md`
+
+### In Flight
+
+- [2026-04-24] Add explicit pySWATPlus-bridge failure artifact capture (stdout/stderr + staging manifest) so non-authoritative bridge outcomes are always auditable.
+
+### Next Up
+
+- [1] Re-run contrast-basin locked search with full target budget once runtime stability is confirmed, preserving same parameter set/objective/outlet lock.
+- [2] Add a compact multi-lock calibration evidence table (01547700 + 03339000) in readiness docs.
+- [3] Keep parameter scope fixed (`CN2`, `ALPHA_BF`) until bridge reliability and lock protocol are fully standardized.
+
+### Open Questions / Blockers
+
+- [2026-04-24] pySWATPlus bridge lock execution still fails opaquely in this environment for some locks; currently not used for authoritative improvement claims.

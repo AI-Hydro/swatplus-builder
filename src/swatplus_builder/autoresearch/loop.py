@@ -23,6 +23,12 @@ from ..artifacts import (
     RunConfig,
     compute_content_hash,
 )
+from ..skills.swatplus_playbook import (
+    PlaybookContext,
+    PlaybookEvidenceEntry,
+    append_playbook_evidence,
+    recommend_next_action,
+)
 from ..params import get_parameter
 
 
@@ -47,6 +53,8 @@ class LoopRequest(BaseModel):
     proposal_parameters: list[str] = Field(default_factory=lambda: ["CN2", "ESCO", "SURLAG"])
     seed: int = 42
     uncertainty_threshold: float = Field(default=0.15, ge=0.0)
+    consult_playbook: bool = True
+    playbook_path: str | None = None
     stopping: LoopStoppingCriteria = Field(default_factory=LoopStoppingCriteria)
 
 
@@ -125,10 +133,23 @@ def run_autoresearch_loop(
 
     results: list[LoopIterationResult] = []
     prev_hash: str | None = None
+    effective_proposal_source = request.proposal_source
+    if request.consult_playbook:
+        recommendation = recommend_next_action(
+            PlaybookContext(
+                basin_id=request.basin_id,
+                metric_source="evaluate_run",
+                proposal_source=request.proposal_source,
+                calibration_history_rows=len(history),
+                calibration_history_unique_nse=_unique_objective_count(history),
+            )
+        )
+        if request.proposal_source in recommendation.rejected_paths:
+            effective_proposal_source = recommendation.fallback_proposal_source or "random"
 
     for i in range(request.stopping.n_iterations):
         proposal = _propose_parameters(
-            strategy=request.proposal_source,
+            strategy=effective_proposal_source,
             parameter_names=params,
             iteration=i,
             max_iterations=request.stopping.n_iterations,
@@ -162,7 +183,7 @@ def run_autoresearch_loop(
                 "simulation_end": request.simulation_end,
                 "parameters": _to_run_parameters(proposal),
                 "options": {
-                    "proposal_source": request.proposal_source,
+                    "proposal_source": effective_proposal_source,
                     "iteration": i,
                     "used_surrogate": used_surrogate,
                 },
@@ -194,7 +215,7 @@ def run_autoresearch_loop(
             iteration=i,
             content_hash=content_hash,
             objective_value=objective,
-            proposal_source=request.proposal_source,
+            proposal_source=effective_proposal_source,
             parameters=proposal,
             used_surrogate=used_surrogate,
             uncertainty=uncertainty,
@@ -203,6 +224,23 @@ def run_autoresearch_loop(
         results.append(row)
         history.append(row)
         prev_hash = content_hash
+        if request.playbook_path is not None:
+            append_playbook_evidence(
+                Path(request.playbook_path),
+                [
+                    PlaybookEvidenceEntry(
+                        title=f"Autoresearch iteration {i} ({request.basin_id})",
+                        status="tentative",
+                        category="experiment_evidence",
+                        source="autoresearch_loop",
+                        evidence=(
+                            f"objective={request.stopping.objective_metric} "
+                            f"value={objective:.6f}; used_surrogate={used_surrogate}"
+                        ),
+                        consequence="Evidence appended for future rule updates.",
+                    )
+                ],
+            )
 
         best = _best_result(results, request.stopping.objective_metric)
         if _threshold_met(
@@ -366,3 +404,8 @@ def _is_converged(results: list[LoopIterationResult], stopping: LoopStoppingCrit
     window = results[-stopping.convergence_window :]
     vals = [abs(r.objective_value) if stopping.objective_metric == "pbias" else r.objective_value for r in window]
     return (max(vals) - min(vals)) <= stopping.convergence_tolerance
+
+
+def _unique_objective_count(history: list[LoopIterationResult]) -> int:
+    vals = {round(float(item.objective_value), 12) for item in history}
+    return len(vals)

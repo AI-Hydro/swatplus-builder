@@ -39,6 +39,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -72,6 +73,93 @@ def _section(title: str) -> None:
 def _ok(msg: str, *, elapsed: float | None = None) -> None:
     suffix = f"  ({elapsed:.1f}s)" if elapsed is not None else ""
     print(f"  ✓ {msg}{suffix}")
+
+
+def _truthy_env(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _adaptive_stream_threshold(area_km2: float, dem_resolution_m: int) -> int:
+    """Choose a stream threshold that scales with basin area."""
+    target_subbasins = max(8, min(250, int(round(area_km2 / 4.0))))
+    cell_area_m2 = float(dem_resolution_m * dem_resolution_m)
+    cells_total = max(area_km2 * 1_000_000.0 / max(cell_area_m2, 1.0), 1.0)
+    threshold = int(max(100, min(8000, round(cells_total / max(target_subbasins, 1)))))
+    return threshold
+
+
+def _topology_suspicious(ws_stats: dict) -> bool:
+    n_sub = int(ws_stats.get("n_subbasins", 0) or 0)
+    n_cha = int(ws_stats.get("n_channels", 0) or 0)
+    if n_sub <= 0 or n_cha <= 0:
+        return True
+    if n_cha > 20 * max(n_sub, 1):
+        return True
+    if float(ws_stats.get("total_area_km2", 0.0) or 0.0) > 5.0 and n_sub < 3:
+        return True
+    return False
+
+
+def _scale_lte_soil_scon(txtinout_dir: Path, scale: float) -> int:
+    """Scale LTE soil saturated-conductivity values in ``soils_lte.sol``."""
+    p = txtinout_dir / "soils_lte.sol"
+    if not p.exists() or abs(scale - 1.0) < 1e-9:
+        return 0
+    lines = p.read_text(encoding="utf-8", errors="ignore").splitlines()
+    if len(lines) < 3:
+        return 0
+    header = lines[1].split()
+    if "scon" not in header:
+        return 0
+    idx = header.index("scon")
+    out: list[str] = []
+    updated = 0
+    for i, ln in enumerate(lines):
+        if i < 2 or not ln.strip():
+            out.append(ln)
+            continue
+        parts = ln.split()
+        if len(parts) <= idx:
+            out.append(ln)
+            continue
+        scon = float(parts[idx])
+        parts[idx] = f"{max(0.05, min(250.0, scon * scale)):.5f}"
+        updated += 1
+        out.append("  " + "       ".join(parts))
+    p.write_text("\n".join(out) + "\n", encoding="utf-8")
+    return updated
+
+
+def _set_lte_hru_column(txtinout_dir: Path, column: str, value: float) -> int:
+    """Set one column across all rows in ``hru-lte.hru``."""
+    p = txtinout_dir / "hru-lte.hru"
+    if not p.exists():
+        return 0
+    lines = p.read_text(encoding="utf-8", errors="ignore").splitlines()
+    if len(lines) < 3:
+        return 0
+    header = lines[1].split()
+    if column not in header:
+        return 0
+    idx = header.index(column)
+    out: list[str] = []
+    updated = 0
+    for i, ln in enumerate(lines):
+        if i < 2 or not ln.strip():
+            out.append(ln)
+            continue
+        parts = ln.split()
+        if len(parts) <= idx:
+            out.append(ln)
+            continue
+        parts[idx] = f"{value:.5f}"
+        updated += 1
+        out.append("  " + "       ".join(parts))
+    p.write_text("\n".join(out) + "\n", encoding="utf-8")
+    return updated
 
 
 def fetch_basin_boundary(usgs_id: str, out_gpkg: Path):
@@ -128,6 +216,7 @@ def main(outdir: Path, run_engine: bool = False):
     from swatplus_builder.gis.hru import create_hrus
     from swatplus_builder.gis.soil import fetch_mukey_raster
     from swatplus_builder.gis.tables import build_tables
+    from swatplus_builder.gis.validate import validate_watershed
     from swatplus_builder.ref.bootstrap import ensure_datasets_db
     from swatplus_builder.soil.writer import write_soils
     from swatplus_builder.weather.gridmet import fetch_gridmet
@@ -182,15 +271,64 @@ def main(outdir: Path, run_engine: bool = False):
     _section("4/11 Delineation (WhiteboxTools D8)")
     outlet = resolve_usgs_outlet(STATION_ID)
     t0 = time.time()
-    ws = delineate(
-        dem_path=dem_tif,
-        outlet=outlet,
-        workdir=outdir / "delin",
-        stream_threshold_cells=2000,
+    base_threshold = int(os.environ.get("SWATPLUS_STREAM_THRESHOLD_CELLS", "2000"))
+    thresholds = [
+        base_threshold,
+        max(100, base_threshold // 2),
+        max(100, base_threshold // 4),
+        min(8000, base_threshold * 2),
+    ]
+    if actual_area_km2 < 20.0:
+        thresholds.insert(0, _adaptive_stream_threshold(actual_area_km2, DEM_RESOLUTION_M))
+    # Keep order while removing duplicates.
+    thresholds = list(dict.fromkeys(thresholds))
+    ws = None
+    validation = None
+    selected_threshold = None
+    for th in thresholds:
+        ws_try = delineate(
+            dem_path=dem_tif,
+            outlet=outlet,
+            workdir=outdir / "delin",
+            stream_threshold_cells=th,
+        )
+        vr = validate_watershed(
+            ws_try,
+            reference_polygon=basin_gpkg,
+            area_tolerance_pct=20.0,
+        )
+        suspicious = _topology_suspicious(ws_try.stats)
+        ws = ws_try
+        validation = vr
+        selected_threshold = th
+        if vr.passed and not suspicious:
+            break
+        log.warning(
+            "Delineation attempt rejected (threshold=%s): passed=%s, area_diff_pct=%s, iou_pct=%s, suspicious_topology=%s",
+            th,
+            vr.passed,
+            vr.area_diff_pct,
+            vr.iou_pct,
+            suspicious,
+        )
+
+    assert ws is not None
+    assert validation is not None
+    if not validation.passed or _topology_suspicious(ws.stats):
+        raise RuntimeError(
+            "Delineation failed realism gates (area/topology). "
+            f"area_diff_pct={validation.area_diff_pct}, iou_pct={validation.iou_pct}, "
+            f"n_subbasins={ws.stats.get('n_subbasins')}, n_channels={ws.stats.get('n_channels')}."
+        )
+    (outdir / "delin" / "validation_result.json").write_text(
+        json.dumps(validation.to_dict(), indent=2),
+        encoding="utf-8",
     )
-    _ok(f"subbasins = {ws.stats.get('n_subbasins', 0):.0f}  "
-        f"channels = {ws.stats.get('n_channels', 0):.0f}",
-        elapsed=time.time() - t0)
+    _ok(
+        f"subbasins = {ws.stats.get('n_subbasins', 0):.0f}  channels = {ws.stats.get('n_channels', 0):.0f}  "
+        f"threshold = {selected_threshold}",
+        elapsed=time.time() - t0,
+    )
 
     # 5. gNATSGO mukey raster
     _section("5/11 gNATSGO mukey raster (Planetary Computer)")
@@ -215,6 +353,16 @@ def main(outdir: Path, run_engine: bool = False):
         landuse_raster=nlcd_tif,
         soil_raster=mukey_tif,
     )
+    n_sub = int(hru.stats.get("n_subbasins", ws.stats.get("n_subbasins", 0)))
+    n_hru = int(hru.stats["n_hrus"])
+    min_hru_coverage_ratio = float(os.environ.get("SWATPLUS_MIN_HRU_COVERAGE_RATIO", "0.90"))
+    hru_coverage_ratio = (n_hru / max(n_sub, 1)) if n_sub > 0 else 0.0
+    if hru_coverage_ratio < min_hru_coverage_ratio:
+        raise RuntimeError(
+            "HRU realism gate failed: too many delineated subbasins have no valid landuse/soil overlay. "
+            f"coverage_ratio={hru_coverage_ratio:.2%}, required>={min_hru_coverage_ratio:.2%} "
+            f"(n_hrus={n_hru}, n_subbasins={n_sub})."
+        )
     _ok(f"n_lsus = {int(hru.stats['n_lsus'])}  "
         f"n_hrus = {int(hru.stats['n_hrus'])}",
         elapsed=time.time() - t0)
@@ -223,13 +371,7 @@ def main(outdir: Path, run_engine: bool = False):
     _section("7/11 GisTables → project.sqlite")
     tables = build_tables(ws, hru)
     
-    # Unified Weather Forcing (STABILITY FIX)
-    # Force all subbasins to share the same location to eliminate engine indexing issues
-    target_lat = sum(float(s.lat) for s in tables.subbasins) / len(tables.subbasins)
-    target_lon = sum(float(s.lon) for s in tables.subbasins) / len(tables.subbasins)
-    target_elev = sum(float(s.elev) for s in tables.subbasins) / len(tables.subbasins)
-    for s in tables.subbasins:
-        s.lat, s.lon, s.elev = target_lat, target_lon, target_elev
+    # Keep native subbasin coordinates/elevations for spatially realistic forcing.
     from swatplus_builder.config import Settings
     ref_settings = Settings(reference_db_dir=outdir / "reference_dbs")
     datasets_db = ensure_datasets_db(settings=ref_settings)
@@ -269,12 +411,25 @@ def main(outdir: Path, run_engine: bool = False):
         pct_fallback_soils = 1.0
         _ok("seed_minimal_soils (fallback)")
 
+    allow_synthetic_soils = _truthy_env("SWATPLUS_ALLOW_SYNTHETIC_SOILS", default=False)
+    max_soil_fallback_ratio = float(os.environ.get("SWATPLUS_MAX_SOIL_FALLBACK_RATIO", "0.10"))
+    if (soil_mode == "synthetic" or pct_fallback_soils > max_soil_fallback_ratio) and not allow_synthetic_soils:
+        raise RuntimeError(
+            "Soil realism gate failed: "
+            f"soil_mode={soil_mode}, pct_fallback_soils={pct_fallback_soils:.2%}, "
+            f"allowed_max={max_soil_fallback_ratio:.2%}. "
+            "Set SWATPLUS_ALLOW_SYNTHETIC_SOILS=1 to override for diagnostic-only runs."
+        )
+
     # 9/11 Weather from GridMET
     _section("9/11 Weather from GridMET")
     t0 = time.time()
-    # Use the unified station location for fetch
-    target_lat, target_lon, target_elev = tables.subbasins[0].lat, tables.subbasins[0].lon, tables.subbasins[0].elev
-    stations = [(float(target_lat), float(target_lon), float(target_elev))]
+    max_weather_stations = max(1, int(os.environ.get("SWATPLUS_MAX_WEATHER_STATIONS", "25")))
+    subs_for_weather = list(tables.subbasins)
+    if len(subs_for_weather) > max_weather_stations:
+        step = max(1, len(subs_for_weather) // max_weather_stations)
+        subs_for_weather = subs_for_weather[::step][:max_weather_stations]
+    stations = [(float(s.lat), float(s.lon), float(s.elev)) for s in subs_for_weather]
     weather_bundle = fetch_gridmet(
         stations, 
         start=SIM_START, 
@@ -292,7 +447,10 @@ def main(outdir: Path, run_engine: bool = False):
         "date_range": f"{weather_bundle.start} to n_days={weather_bundle.n_days}"
     }
     log.info("Weather Signature: %s", json.dumps(pcp_stats, indent=2))
-    _ok(f"fetched GridMET for {len(weather_bundle.stations)} stations", elapsed=time.time() - t0)
+    _ok(
+        f"fetched GridMET for {len(weather_bundle.stations)} stations (from {len(tables.subbasins)} subbasins)",
+        elapsed=time.time() - t0,
+    )
 
     # 10. Editor
     _section("10/11 SWAT+ Editor Operations")
@@ -302,6 +460,22 @@ def main(outdir: Path, run_engine: bool = False):
     write_observed(weather_bundle, txtinout_dir)
     import_weather_observed(db_path, txtinout_dir, timeout=300.0)
     wf = write_files(db_path, timeout=300.0)
+    lte_scon_scale = float(os.environ.get("SWATPLUS_LTE_SCON_SCALE", "0.60"))
+    scon_rows = _scale_lte_soil_scon(wf.txtinout_dir, lte_scon_scale)
+    if scon_rows > 0:
+        log.info(
+            "Applied LTE soil conductivity scaling to %d rows (scale=%.3f)",
+            scon_rows,
+            lte_scon_scale,
+        )
+    lte_alpha_bf = float(os.environ.get("SWATPLUS_LTE_ALPHA_BF", "0.20"))
+    alpha_rows = _set_lte_hru_column(wf.txtinout_dir, "alpha_bf", lte_alpha_bf)
+    if alpha_rows > 0:
+        log.info(
+            "Applied LTE alpha_bf override to %d rows (alpha_bf=%.3f)",
+            alpha_rows,
+            lte_alpha_bf,
+        )
     _ok(f"TxtInOut ready ({sum(1 for _ in wf.txtinout_dir.iterdir())} files)", elapsed=time.time() - t0)
 
     # 11/11 Engine Run
@@ -345,9 +519,10 @@ def main(outdir: Path, run_engine: bool = False):
                 )
                 time_sim.write_text("\n".join(ts_lines) + "\n", encoding="utf-8")
 
-        # Keep standard channel routing off (`rte_cha=0`) in this LTE workflow.
+        # Optional override for channel-routing switch (preserve existing value by default).
         codes_bsn = wf.txtinout_dir / "codes.bsn"
-        if codes_bsn.is_file():
+        force_rte_cha = os.environ.get("SWATPLUS_FORCE_RTE_CHA")
+        if codes_bsn.is_file() and force_rte_cha in {"0", "1"}:
             lines = codes_bsn.read_text(encoding="utf-8", errors="replace").splitlines()
             if len(lines) >= 3:
                 header = lines[1].split()
@@ -355,12 +530,13 @@ def main(outdir: Path, run_engine: bool = False):
                 if "rte_cha" in header:
                     idx = header.index("rte_cha")
                     if idx < len(values):
-                        values[idx] = "0"
+                        values[idx] = force_rte_cha
                         # Rebuild: first 2 cols are string (16-wide), rest are int (10-wide)
                         lines[2] = f"{values[0]:<16}{values[1]:<16}" + "".join(
-                            f"{('0' if j == idx else v):>10}" for j, v in enumerate(values[2:], start=2)
+                            f"{(force_rte_cha if j == idx else v):>10}" for j, v in enumerate(values[2:], start=2)
                         )
                         codes_bsn.write_text("\n".join(lines) + "\n", encoding="utf-8")
+                        log.info("Applied codes.bsn rte_cha override: %s", force_rte_cha)
 
         # Rev61 (mac) can segfault in `climate_control.f90` if WGN inputs are
         # missing. The editor expects `weather-wgn.cli` to exist and
@@ -454,18 +630,58 @@ def main(outdir: Path, run_engine: bool = False):
 
     import json
     q_obs = fetch_usgs_daily_q(STATION_ID, SIM_START, SIM_END, outputs_dir / "obs_q.csv")
-    sim_path = wf.txtinout_dir / "channel_day.txt"
+    sim_path = wf.txtinout_dir / "channel_sd_day.txt"
     if not sim_path.exists():
-        sim_path = wf.txtinout_dir / "channel_sd_day.txt"
-    eval_result = evaluate_run(
+        sim_path = wf.txtinout_dir / "channel_day.txt"
+    selection_eval = evaluate_run(
         sim_path,
         q_obs,
         outlet_gis_id=1,
-        out_alignment_csv=outputs_dir / "alignment.csv",
+        outlet_policy="auto",
         return_diagnostics=True,
     )
-    reports_dir.joinpath("metrics.json").write_text(json.dumps(eval_result[1], indent=2))
-    eval_diag = eval_result[2]
+    selection_df, selection_metrics, selection_diag = selection_eval
+    pinned_outlet = int(selection_diag.get("selected_outlet_gis_id", 1) or 1)
+
+    pinned_eval = evaluate_run(
+        sim_path,
+        q_obs,
+        outlet_gis_id=pinned_outlet,
+        out_alignment_csv=outputs_dir / "alignment.csv",
+        outlet_policy="strict",
+        return_diagnostics=True,
+    )
+    eval_df, eval_metrics, eval_diag = pinned_eval
+    reports_dir.joinpath("metrics.json").write_text(json.dumps(eval_metrics, indent=2))
+
+    outlet_provenance = {
+        "version": 1,
+        "selection_pass": {
+            "policy": "auto",
+            "requested_outlet_gis_id": 1,
+            "metrics": selection_metrics,
+            "diagnostics": selection_diag,
+            "aligned_days": int(len(selection_df)),
+        },
+        "pinned_pass": {
+            "policy": "strict",
+            "pinned_outlet_gis_id": pinned_outlet,
+            "metrics": eval_metrics,
+            "diagnostics": eval_diag,
+            "aligned_days": int(len(eval_df)),
+        },
+    }
+    outlet_provenance_path = outputs_dir / "outlet_provenance.json"
+    outlet_provenance_path.write_text(
+        json.dumps(outlet_provenance, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    outlet_provenance_sha = sha256_file(outlet_provenance_path)
+    sim_source_file = str(eval_diag.get("sim_source_file", "") or "")
+    if sim_source_file:
+        src = wf.txtinout_dir / sim_source_file
+        if src.exists():
+            shutil.copy2(src, outputs_dir / sim_source_file)
     
     plot_res = generate_all_plots(
         run_dir=outdir,
@@ -489,6 +705,15 @@ def main(outdir: Path, run_engine: bool = False):
             input_hashes[name] = sha256_file(p)
 
     notes: list[str] = []
+    if abs(float(lte_scon_scale) - 1.0) > 1e-9:
+        notes.append(
+            f"lte_scon_scale_applied={float(lte_scon_scale):.3f} (rows={int(scon_rows)})"
+        )
+    if validation is not None:
+        notes.append(
+            f"delineation_validation: passed={validation.passed}, area_diff_pct={validation.area_diff_pct}, iou_pct={validation.iou_pct}"
+        )
+        notes.extend(validation.notes)
     if pct_fallback_soils > soil_fallback_warn_threshold:
         msg = (
             f"Soil fallback ratio {pct_fallback_soils:.2%} exceeds threshold "
@@ -500,10 +725,16 @@ def main(outdir: Path, run_engine: bool = False):
     md = RunMetadata(
         timestamp_utc=utc_now_iso(),
         usgs_id=STATION_ID,
-        requested_outlet_gis_id=int(eval_diag.get("requested_outlet_gis_id", 1)),
-        selected_outlet_gis_id=int(eval_diag.get("selected_outlet_gis_id", 1)),
-        outlet_autodetected=bool(eval_diag.get("outlet_autodetected", False)),
-        outlet_selection_reason=str(eval_diag.get("outlet_selection_reason", "")),
+        requested_outlet_gis_id=int(selection_diag.get("requested_outlet_gis_id", 1)),
+        selected_outlet_gis_id=int(pinned_outlet),
+        outlet_autodetected=bool(selection_diag.get("outlet_autodetected", False)),
+        outlet_selection_reason=str(selection_diag.get("outlet_selection_reason", "")),
+        outlet_policy="strict_pinned_from_auto",
+        outlet_provenance_path=str(outlet_provenance_path),
+        outlet_provenance_sha256=outlet_provenance_sha,
+        sim_source_file=str(eval_diag.get("sim_source_file", "") or ""),
+        sim_source_sha256=str(eval_diag.get("sim_source_sha256", "") or ""),
+        chandeg_con_sha256=str(eval_diag.get("chandeg_con_sha256", "") or ""),
         routing_mode="standard",
         soil_mode=soil_mode,
         pct_fallback_soils=pct_fallback_soils,
@@ -516,6 +747,8 @@ def main(outdir: Path, run_engine: bool = False):
             "precip_mean": float(pcp_stats.get("precip_mean", 0.0)),
             "precip_max": float(pcp_stats.get("precip_max", 0.0)),
             "date_range": str(pcp_stats.get("date_range", "")),
+            "n_weather_stations": int(len(weather_bundle.stations)),
+            "n_subbasins_for_weather_context": int(len(tables.subbasins)),
         },
         notes=notes,
     )

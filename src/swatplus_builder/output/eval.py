@@ -1,10 +1,11 @@
 from __future__ import annotations
 """Performance evaluation by aligning simulated and observed outputs."""
 
+import hashlib
 import logging
 import pandas as pd
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Literal
 
 from swatplus_builder.output.reader import read_output_file
 from swatplus_builder.output.metrics import nse, kge, baseflow_index
@@ -17,6 +18,7 @@ def evaluate_run(
     obs_series: pd.Series, 
     outlet_gis_id: int = 1,
     out_alignment_csv: Path | str | None = None,
+    outlet_policy: Literal["auto", "strict", "best_terminal_nse"] = "auto",
     return_diagnostics: bool = False,
 ) -> tuple[pd.DataFrame, Dict[str, float]] | tuple[pd.DataFrame, Dict[str, float], Dict[str, Any]]:
     """Align daily simulated discharge with observed discharge and compute metrics.
@@ -26,6 +28,10 @@ def evaluate_run(
         obs_series: NWIS observed Series with DatetimeIndex from fetch_usgs_daily_q.
         outlet_gis_id: The ID of the watershed outlet channel routing line.
         out_alignment_csv: Standard cache path for wrapper outputs (outputs/alignment.csv)
+        outlet_policy:
+            - ``"auto"``: allow dry-outlet fallback and non-terminal best-NSE upgrade.
+            - ``"strict"``: never switch outlets; score requested/pinned outlet only.
+            - ``"best_terminal_nse"``: always choose best terminal outlet by NSE when available.
         return_diagnostics: If True, include outlet/source diagnostics in return tuple.
         
     Returns:
@@ -38,7 +44,17 @@ def evaluate_run(
     if not sim_channel_path.exists():
         raise FileNotFoundError(f"Missing simulation output file: {sim_channel_path}")
 
-    sim_df, diagnostics = _read_sim_discharge(sim_channel_path, outlet_gis_id)
+    if outlet_policy not in {"auto", "strict", "best_terminal_nse"}:
+        raise ValueError(
+            "outlet_policy must be one of: 'auto', 'strict', 'best_terminal_nse'."
+        )
+
+    sim_df, diagnostics = _read_sim_discharge(
+        sim_channel_path,
+        outlet_gis_id,
+        allow_dry_autodetect=(outlet_policy == "auto"),
+    )
+    diagnostics["outlet_policy"] = outlet_policy
     if sim_df.empty:
         raise ValueError(
             f"No valid flow data found in {sim_channel_path} for GIS ID {outlet_gis_id}."
@@ -48,6 +64,48 @@ def evaluate_run(
 
     # Intersection of dates via unified aligner
     from swatplus_builder.output.plots.utils import align_timeseries
+
+    if diagnostics.get("requested_outlet_is_terminal") is False and not diagnostics.get("outlet_autodetected", False):
+        # Non-terminal requested outlets are common in generated projects.
+        # Before scoring, try terminal outlets and switch only if fit improves.
+        source_name = diagnostics.get("sim_source_file")
+        if isinstance(source_name, str) and source_name:
+            sim_source = sim_channel_path.parent / source_name
+            best = _select_best_terminal_by_nse(
+                sim_source,
+                obs_series,
+                requested_outlet_gis_id=int(outlet_gis_id),
+            )
+            if best is not None:
+                best_gid, best_df, best_nse = best
+                req_df = align_timeseries(obs_series, sim_df["sim"])
+                req_nse = _safe_nse(req_df)
+                should_switch = False
+                if outlet_policy == "best_terminal_nse":
+                    should_switch = True
+                elif outlet_policy == "auto":
+                    should_switch = bool(pd.isna(req_nse) or best_nse > (req_nse + 1e-9))
+                if should_switch:
+                    sim_df = best_df
+                    diagnostics["selected_outlet_gis_id"] = int(best_gid)
+                    diagnostics["outlet_autodetected"] = True
+                    diagnostics["outlet_selection_reason"] = (
+                        "policy_best_terminal_nse"
+                        if outlet_policy == "best_terminal_nse"
+                        else "requested_outlet_non_terminal_best_nse"
+                    )
+                    log.warning(
+                        "Configured outlet GIS ID %s is non-terminal; selected terminal GIS ID %s by best NSE.",
+                        outlet_gis_id,
+                        best_gid,
+                    )
+                else:
+                    diagnostics["outlet_selection_reason"] = (
+                        "strict_requested_outlet_non_terminal"
+                        if outlet_policy == "strict"
+                        else "requested_outlet_non_terminal"
+                    )
+
     df = align_timeseries(obs_series, sim_df["sim"])
     log.info("Aligned %d overlapping days of observed and simulated flow", len(df))
 
@@ -110,16 +168,30 @@ def _terminal_ids_from_chandeg_con(txtinout_dir: Path) -> set[int]:
     p = txtinout_dir / "chandeg.con"
     if not p.exists():
         return set()
+    lines = p.read_text(encoding="utf-8", errors="ignore").splitlines()
     terminal_ids: set[int] = set()
-    for line in p.read_text(encoding="utf-8", errors="ignore").splitlines():
+    col_idx: dict[str, int] | None = None
+    for line in lines:
         parts = line.split()
-        if len(parts) < 14:
+        if not parts:
             continue
-        if not parts[0].isdigit():
+        if "gis_id" in parts and "obj_typ" in parts:
+            col_idx = {c: i for i, c in enumerate(parts)}
             continue
-        # chandeg.con columns include "... out_tot obj_typ obj_id hyd_typ frac"
-        if parts[13] == "out":
-            terminal_ids.add(int(parts[0]))
+        if col_idx is None:
+            # Fallback for legacy fixed-width chandeg.con layout.
+            if len(parts) >= 14 and parts[0].isdigit() and parts[13] == "out":
+                terminal_ids.add(int(parts[0]))
+            continue
+        try:
+            obj_typ = parts[col_idx["obj_typ"]]
+            if obj_typ != "out":
+                continue
+            # Use GIS IDs to match *_day.txt output tables.
+            gis_id = int(parts[col_idx["gis_id"]])
+            terminal_ids.add(gis_id)
+        except (IndexError, KeyError, ValueError):
+            continue
     return terminal_ids
 
 
@@ -175,11 +247,17 @@ def _normalize_discharge_units(sim: pd.Series, source_name: str) -> pd.Series:
     # channel_sd_day is expected to already be a rate in m3/s.
     return s
 
-
-def _read_sim_discharge(sim_channel_path: Path, outlet_gis_id: int) -> tuple[pd.DataFrame, Dict[str, Any]]:
-    """Read daily outlet discharge, with fallback when primary file is empty/zero."""
+def _read_sim_discharge(
+    sim_channel_path: Path,
+    outlet_gis_id: int,
+    *,
+    allow_dry_autodetect: bool,
+) -> tuple[pd.DataFrame, Dict[str, Any]]:
+    """Read daily outlet discharge, with optional dry-outlet fallback."""
     candidates = [sim_channel_path]
     txtinout_dir = sim_channel_path.parent
+    terminal_ids = _terminal_ids_from_chandeg_con(txtinout_dir)
+    chandeg_path = txtinout_dir / "chandeg.con"
     for alt in (
         "channel_sd_day.txt",
         "basin_sd_cha_day.txt",
@@ -196,13 +274,22 @@ def _read_sim_discharge(sim_channel_path: Path, outlet_gis_id: int) -> tuple[pd.
         "selected_outlet_gis_id": int(outlet_gis_id),
         "outlet_autodetected": False,
         "outlet_selection_reason": "requested_outlet",
+        "requested_outlet_is_terminal": None,
         "sim_source_file": None,
+        "terminal_outlet_ids": sorted(int(t) for t in terminal_ids),
+        "terminal_outlet_count": int(len(terminal_ids)),
+        "chandeg_con_sha256": _sha256_file(chandeg_path),
+        "chandeg_con_path": str(chandeg_path),
+        "sim_source_sha256": None,
+        "available_sim_sources": [p.name for p in candidates if p.exists()],
     }
     for cand in candidates:
         if not cand.exists():
             continue
         log.info("Reading simulated timeseries from %s", cand)
         table = read_output_file(cand)
+        if terminal_ids:
+            diagnostics["requested_outlet_is_terminal"] = int(outlet_gis_id) in terminal_ids
         df = _extract_flo_out_rows(table, outlet_gis_id)
         if df.empty:
             last_df = df
@@ -211,25 +298,90 @@ def _read_sim_discharge(sim_channel_path: Path, outlet_gis_id: int) -> tuple[pd.
         # Prefer first candidate with non-zero signal.
         if float(df["sim"].abs().sum()) > 0.0:
             diagnostics["sim_source_file"] = cand.name
+            diagnostics["sim_source_sha256"] = _sha256_file(cand)
             return df, diagnostics
 
         # Outlet series exists but is dry: auto-detect a valid flowing channel ID.
-        best_gid = _pick_best_flowing_gis_id(table, outlet_gis_id, txtinout_dir)
-        if best_gid is not None:
-            alt = _extract_flo_out_rows(table, best_gid)
-            if not alt.empty:
-                alt["sim"] = _normalize_discharge_units(alt["sim"], cand.name)
-                if float(alt["sim"].abs().sum()) > 0.0:
-                    log.warning(
-                        "Configured outlet GIS ID %s is dry in %s; using GIS ID %s with non-zero flow.",
-                        outlet_gis_id,
-                        cand.name,
-                        best_gid,
-                    )
-                    diagnostics["selected_outlet_gis_id"] = int(best_gid)
-                    diagnostics["outlet_autodetected"] = True
-                    diagnostics["outlet_selection_reason"] = "requested_outlet_dry"
-                    diagnostics["sim_source_file"] = cand.name
-                    return alt, diagnostics
+        if allow_dry_autodetect:
+            best_gid = _pick_best_flowing_gis_id(table, outlet_gis_id, txtinout_dir)
+            if best_gid is not None:
+                alt = _extract_flo_out_rows(table, best_gid)
+                if not alt.empty:
+                    alt["sim"] = _normalize_discharge_units(alt["sim"], cand.name)
+                    if float(alt["sim"].abs().sum()) > 0.0:
+                        log.warning(
+                            "Configured outlet GIS ID %s is dry in %s; using GIS ID %s with non-zero flow.",
+                            outlet_gis_id,
+                            cand.name,
+                            best_gid,
+                        )
+                        diagnostics["selected_outlet_gis_id"] = int(best_gid)
+                        diagnostics["outlet_autodetected"] = True
+                        diagnostics["outlet_selection_reason"] = "requested_outlet_dry"
+                        diagnostics["sim_source_file"] = cand.name
+                        diagnostics["sim_source_sha256"] = _sha256_file(cand)
+                        return alt, diagnostics
         last_df = df
     return last_df, diagnostics
+
+
+def _sha256_file(path: Path) -> str | None:
+    if not path.exists() or not path.is_file():
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _safe_nse(df: pd.DataFrame) -> float:
+    """Return NSE for an aligned obs/sim dataframe, or NaN if unavailable."""
+    if df.empty or "obs" not in df.columns or "sim" not in df.columns:
+        return float("nan")
+    try:
+        return float(nse(df["obs"].tolist(), df["sim"].tolist()))
+    except Exception:
+        return float("nan")
+
+
+def _select_best_terminal_by_nse(
+    sim_source_path: Path,
+    obs_series: pd.Series,
+    requested_outlet_gis_id: int,
+) -> tuple[int, pd.DataFrame, float] | None:
+    """Select terminal outlet with best NSE against observed discharge."""
+    if not sim_source_path.exists():
+        return None
+    txtinout_dir = sim_source_path.parent
+    terminal_ids = _terminal_ids_from_chandeg_con(txtinout_dir)
+    if not terminal_ids:
+        return None
+
+    table = read_output_file(sim_source_path)
+    from swatplus_builder.output.plots.utils import align_timeseries
+
+    best_gid: int | None = None
+    best_df: pd.DataFrame | None = None
+    best_nse = float("nan")
+    for gid in terminal_ids:
+        if int(gid) == int(requested_outlet_gis_id):
+            continue
+        cand = _extract_flo_out_rows(table, int(gid))
+        if cand.empty:
+            continue
+        cand["sim"] = _normalize_discharge_units(cand["sim"], sim_source_path.name)
+        if float(cand["sim"].abs().sum()) <= 0.0:
+            continue
+        aligned = align_timeseries(obs_series, cand["sim"])
+        score = _safe_nse(aligned)
+        if pd.isna(score):
+            continue
+        if pd.isna(best_nse) or float(score) > float(best_nse):
+            best_gid = int(gid)
+            best_df = cand
+            best_nse = float(score)
+
+    if best_gid is None or best_df is None or pd.isna(best_nse):
+        return None
+    return best_gid, best_df, best_nse

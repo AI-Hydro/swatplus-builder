@@ -70,6 +70,7 @@ docs/TROUBLESHOOTING_AND_WORKFLOW.md
 
 # Local-only notes (never commit)
 local-docs/
+Research_article/
 
 # Allow small test fixtures explicitly
 !tests/fixtures/**/*.sqlite

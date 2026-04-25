@@ -570,6 +570,7 @@ def cmd_calibrate(
             warm_start=True,
             sim_output_file=objective_sim_file,
             outlet_gis_id=int(outlet_gis_id),
+            binary=_P(binary).expanduser().resolve() if binary is not None else None,
         )
         from .errors import SwatBuilderError
 

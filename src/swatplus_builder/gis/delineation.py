@@ -255,6 +255,8 @@ def delineate(
     stats: dict[str, float] = {
         "n_subbasins": float(len(subbasins_gdf)),
         "n_channels": float(len(channels_gdf)),
+        "n_routing_edges": float(graph.number_of_edges()),
+        "n_terminals": float(sum(1 for n in graph.nodes if graph.out_degree(n) == 0)),
         "total_area_km2": round(total_area_km2, 3),
         "mean_slope_m_m": round(mean_slope, 5),
         "outlet_lon": snapped_lon,

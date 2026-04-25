@@ -57,6 +57,7 @@ class BackendRequest(BaseModel):
     obs_column: str = "discharge"
     seed: int = 42
     outlet_gis_id: int = 1
+    binary: Path | None = None
 
 
 class BackendResult(BaseModel):
@@ -100,6 +101,7 @@ class CalibratorRequest(BaseModel):
     warm_start: bool = True
     sim_output_file: str = "basin_sd_cha_day.txt"
     outlet_gis_id: int = 1
+    binary: Path | None = None
 
 
 class CalibrationBackend(Protocol):
@@ -145,6 +147,7 @@ class PySwatPlusBackend:
         txtinout_for_backend = _prepare_txtinout_for_pyswatplus(
             base_txtinout=txtinout_dir,
             calsim_dir=calsim_dir,
+            binary_override=request.binary,
         )
 
         _apply_platform_compatibility_patches(mod)
@@ -211,6 +214,9 @@ class PySwatPlusBackend:
             obs_column=request.obs_column,
             outlet_gis_id=int(request.outlet_gis_id),
             pop_size=int(request.pop_size),
+            staged_txtinout=txtinout_for_backend,
+            base_txtinout=txtinout_dir,
+            binary=request.binary,
         )
         return BackendResult(evaluations=evaluations, parity_log_csv=parity_log_csv)
 
@@ -281,6 +287,11 @@ class Calibrator:
                 sim_output_file=request.sim_output_file,
                 seed=request.seed,
                 outlet_gis_id=int(request.outlet_gis_id),
+                binary=(
+                    request.binary.expanduser().resolve()
+                    if request.binary is not None
+                    else None
+                ),
             )
         )
         if not result.evaluations:
@@ -565,6 +576,9 @@ def _apply_metric_parity(
     obs_column: str,
     outlet_gis_id: int,
     pop_size: int,
+    staged_txtinout: Path | None = None,
+    base_txtinout: Path | None = None,
+    binary: Path | None = None,
 ) -> Path:
     import pandas as pd
 
@@ -589,6 +603,7 @@ def _apply_metric_parity(
         )
 
     parity_rows: list[dict[str, object]] = []
+    previous_output_hash: str | None = None
     for ev in evaluations:
         raw_nse = ev.metrics.get("nse")
         sim_idx = int(ev.generation) * int(pop_size) + int(ev.individual) + 1
@@ -600,6 +615,25 @@ def _apply_metric_parity(
                 sim_index=sim_idx,
                 path=str(sim_file),
             )
+
+        changed_files: list[str] = []
+        if staged_txtinout is not None and staged_txtinout.exists():
+            changed_files = _detect_changed_input_files(
+                baseline_txtinout=staged_txtinout,
+                sim_txtinout=sim_dir,
+            )
+            significant_changes = [f for f in changed_files if Path(f).name.lower() not in {"file.cio"}]
+            if not significant_changes:
+                raise SwatBuilderPipelineError(
+                    "Calibration proposal did not modify any SWAT+ input file.",
+                    sim_index=sim_idx,
+                    generation=int(ev.generation),
+                    individual=int(ev.individual),
+                    parameters=ev.parameters,
+                    staged_txtinout=str(staged_txtinout),
+                    sim_dir=str(sim_dir),
+                )
+
         align_df, metrics, _diagnostics = evaluate_run(
             sim_file,
             obs_series,
@@ -609,6 +643,9 @@ def _apply_metric_parity(
         nse = float(metrics["nse"]) if isinstance(metrics.get("nse"), (int, float)) else float("nan")
         kge = float(metrics["kge"]) if isinstance(metrics.get("kge"), (int, float)) else float("nan")
         ev.metrics = {"nse": nse, "kge": kge}
+        output_hash = _hash_file(sim_file)
+        output_changed = previous_output_hash != output_hash if previous_output_hash is not None else True
+        previous_output_hash = output_hash
 
         first_date = str(align_df.index.min().date()) if len(align_df.index) else ""
         last_date = str(align_df.index.max().date()) if len(align_df.index) else ""
@@ -636,16 +673,160 @@ def _apply_metric_parity(
                 "pyswatplus_raw_objective_nse": float(raw_nse)
                 if isinstance(raw_nse, (int, float))
                 else None,
+                "input_changed_files_count": int(len(changed_files)),
+                "input_changed_files_sample": ";".join(changed_files[:12]),
+                "sim_output_sha256": output_hash,
+                "sim_output_mtime_utc": datetime.fromtimestamp(
+                    sim_file.stat().st_mtime,
+                    tz=timezone.utc,
+                ).isoformat(),
+                "sim_output_changed_vs_previous_eval": bool(output_changed),
             }
         )
-        shutil.rmtree(sim_dir, ignore_errors=True)
+        if os.getenv("SWATPLUS_BUILDER_KEEP_CAL_SIM_DIRS", "0") != "1":
+            shutil.rmtree(sim_dir, ignore_errors=True)
+
+    if _needs_authoritative_rerun(evaluations=evaluations, parity_rows=parity_rows):
+        if base_txtinout is not None:
+            parity_rows = _rerun_metric_parity_with_direct_objective(
+                evaluations=evaluations,
+                obs_series=obs_series,
+                base_txtinout=base_txtinout,
+                calsim_dir=calsim_dir,
+                sim_output_file=sim_output_file,
+                outlet_gis_id=int(outlet_gis_id),
+                binary=binary,
+            )
 
     parity_log_csv = calsim_dir.parent / "metric_parity_log.csv"
     pd.DataFrame(parity_rows).to_csv(parity_log_csv, index=False)
     return parity_log_csv
 
 
-def _prepare_txtinout_for_pyswatplus(*, base_txtinout: Path, calsim_dir: Path) -> Path:
+def _needs_authoritative_rerun(
+    *,
+    evaluations: list[EvaluationRecord],
+    parity_rows: list[dict[str, object]],
+) -> bool:
+    if not evaluations or not parity_rows:
+        return False
+    unique_param_vectors = {
+        json.dumps({k: float(v) for k, v in sorted(ev.parameters.items())}, sort_keys=True)
+        for ev in evaluations
+    }
+    unique_nse = {
+        round(float(ev.metrics.get("nse")), 12)
+        for ev in evaluations
+        if isinstance(ev.metrics.get("nse"), (int, float))
+    }
+    unique_output_hash = {
+        str(row.get("sim_output_sha256", ""))
+        for row in parity_rows
+        if isinstance(row.get("sim_output_sha256"), str)
+    }
+    return len(unique_param_vectors) > 1 and len(unique_nse) <= 1 and len(unique_output_hash) <= 1
+
+
+def _rerun_metric_parity_with_direct_objective(
+    *,
+    evaluations: list[EvaluationRecord],
+    obs_series: object,
+    base_txtinout: Path,
+    calsim_dir: Path,
+    sim_output_file: str,
+    outlet_gis_id: int,
+    binary: Path | None,
+) -> list[dict[str, object]]:
+    import pandas as pd
+
+    from .real_engine import make_real_objective, params_hash
+
+    rerun_root = calsim_dir.parent / "objective_reruns"
+    objective = make_real_objective(
+        base_txtinout=base_txtinout,
+        observed_series=obs_series,
+        work_root=rerun_root,
+        outlet_gis_id=int(outlet_gis_id),
+        binary=binary,
+        objective_sim_file=sim_output_file,
+        strict_objective_file=False,
+        allow_outlet_autodetect=False,
+    )
+
+    parity_rows: list[dict[str, object]] = []
+    previous_output_hash: str | None = None
+    for ev in evaluations:
+        raw_nse = ev.metrics.get("nse")
+        metrics = objective({k: float(v) for k, v in ev.parameters.items()})
+        nse = float(metrics["nse"]) if isinstance(metrics.get("nse"), (int, float)) else float("nan")
+        kge = float(metrics["kge"]) if isinstance(metrics.get("kge"), (int, float)) else float("nan")
+        ev.metrics = {"nse": nse, "kge": kge}
+
+        run_hash = params_hash({k: float(v) for k, v in ev.parameters.items()})
+        run_txt = rerun_root / run_hash / "TxtInOut"
+        align_file = run_txt / "alignment_calibration.csv"
+        sim_file = run_txt / sim_output_file
+        if not align_file.exists() or not sim_file.exists():
+            raise SwatBuilderPipelineError(
+                "Authoritative rerun did not produce required alignment or simulation output files.",
+                run_hash=run_hash,
+                alignment_file=str(align_file),
+                sim_file=str(sim_file),
+            )
+        align_df = pd.read_csv(align_file, index_col=0, parse_dates=True)
+        changed_files = _detect_changed_input_files(
+            baseline_txtinout=base_txtinout,
+            sim_txtinout=run_txt,
+        )
+        output_hash = _hash_file(sim_file)
+        output_changed = previous_output_hash != output_hash if previous_output_hash is not None else True
+        previous_output_hash = output_hash
+        first_date = str(align_df.index.min().date()) if len(align_df.index) else ""
+        last_date = str(align_df.index.max().date()) if len(align_df.index) else ""
+        parity_rows.append(
+            {
+                "generation": int(ev.generation),
+                "individual": int(ev.individual),
+                "sim_index": int(ev.generation) * 10_000 + int(ev.individual) + 1,
+                "sim_output_file": sim_output_file,
+                "outlet_gis_id": int(outlet_gis_id),
+                "unit_convention": "flow_m3s",
+                "metric_source": "evaluate_run_real_objective_rerun",
+                "aligned_days": int(len(align_df)),
+                "obs_mean": float(align_df["obs"].mean()),
+                "obs_std": float(align_df["obs"].std(ddof=0)),
+                "obs_min": float(align_df["obs"].min()),
+                "obs_max": float(align_df["obs"].max()),
+                "sim_mean": float(align_df["sim"].mean()),
+                "sim_std": float(align_df["sim"].std(ddof=0)),
+                "sim_min": float(align_df["sim"].min()),
+                "sim_max": float(align_df["sim"].max()),
+                "first_date": first_date,
+                "last_date": last_date,
+                "bridge_reported_nse": nse,
+                "bridge_reported_kge": kge,
+                "pyswatplus_raw_objective_nse": float(raw_nse)
+                if isinstance(raw_nse, (int, float))
+                else None,
+                "input_changed_files_count": int(len(changed_files)),
+                "input_changed_files_sample": ";".join(changed_files[:12]),
+                "sim_output_sha256": output_hash,
+                "sim_output_mtime_utc": datetime.fromtimestamp(
+                    sim_file.stat().st_mtime,
+                    tz=timezone.utc,
+                ).isoformat(),
+                "sim_output_changed_vs_previous_eval": bool(output_changed),
+            }
+        )
+    return parity_rows
+
+
+def _prepare_txtinout_for_pyswatplus(
+    *,
+    base_txtinout: Path,
+    calsim_dir: Path,
+    binary_override: Path | None = None,
+) -> Path:
     if not base_txtinout.exists():
         raise SwatBuilderInputError("txtinout_dir does not exist", path=str(base_txtinout))
     staged = calsim_dir.parent / "_txtinout_staged"
@@ -665,7 +846,8 @@ def _prepare_txtinout_for_pyswatplus(*, base_txtinout: Path, calsim_dir: Path) -
 
     from ..run.swatplus import locate_binary
 
-    binary = locate_binary()
+    binary = binary_override if binary_override is not None else locate_binary()
+    binary = Path(binary).expanduser().resolve()
     target = staged / Path(binary).name
     shutil.copy2(binary, target)
     os.chmod(target, os.stat(target).st_mode | 0o111)
@@ -697,9 +879,75 @@ def _prepare_txtinout_for_objective(txtinout: Path) -> None:
         "channel_sd_day.txt",
         "basin_cha_day.txt",
         "basin_sd_cha_day.txt",
+        "channel_mon.txt",
+        "channel_sd_mon.txt",
+        "basin_cha_mon.txt",
+        "basin_sd_cha_mon.txt",
+        "channel_yr.txt",
+        "channel_sd_yr.txt",
+        "basin_cha_yr.txt",
+        "basin_sd_cha_yr.txt",
         "alignment_calibration.csv",
     ):
         (txtinout / name).unlink(missing_ok=True)
+
+
+def _detect_changed_input_files(*, baseline_txtinout: Path, sim_txtinout: Path) -> list[str]:
+    baseline_files = _collect_tracked_input_hashes(baseline_txtinout)
+    sim_files = _collect_tracked_input_hashes(sim_txtinout)
+    changed: list[str] = []
+    for rel in sorted(set(baseline_files) | set(sim_files)):
+        base_hash = baseline_files.get(rel)
+        sim_hash = sim_files.get(rel)
+        if base_hash != sim_hash:
+            changed.append(rel)
+    return changed
+
+
+def _collect_tracked_input_hashes(folder: Path) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for path in folder.rglob("*"):
+        if not path.is_file():
+            continue
+        rel = str(path.relative_to(folder))
+        if not _is_tracked_input_file(rel):
+            continue
+        out[rel] = _hash_file(path)
+    return out
+
+
+def _is_tracked_input_file(rel_path: str) -> bool:
+    name = Path(rel_path).name.lower()
+    if name.endswith((".dylib", ".so", ".dll", ".sqlite")):
+        return False
+    if name in {
+        "simulation.out",
+        "channel_day.txt",
+        "channel_sd_day.txt",
+        "basin_cha_day.txt",
+        "basin_sd_cha_day.txt",
+        "channel_mon.txt",
+        "channel_sd_mon.txt",
+        "basin_cha_mon.txt",
+        "basin_sd_cha_mon.txt",
+        "channel_yr.txt",
+        "channel_sd_yr.txt",
+        "basin_cha_yr.txt",
+        "basin_sd_cha_yr.txt",
+        "alignment_calibration.csv",
+        "optimization_history.json",
+        "metric_parity_log.csv",
+    }:
+        return False
+    return True
+
+
+def _hash_file(path: Path) -> str:
+    digest = sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _set_print_prt_for_daily_channel_outputs(path: Path) -> None:

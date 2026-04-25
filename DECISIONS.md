@@ -20,6 +20,77 @@ Status: Accepted
 
 ---
 
+[2026-04-24] Treat `pygeohydro.NWIS.get_streamflow` Output as m3/s (Remove Double Conversion)
+Context: Cross-basin investigations showed extreme apparent overestimation (up to ~50x) even when simulated channel flows were physically plausible in absolute magnitude. Direct inspection of `pygeohydro` output for site `01547700` showed returned values already in m3/s range, while our fetch path multiplied by the cfs→m3/s factor again.
+Decision: In `fetch_usgs_daily_q`, remove the extra cfs→m3/s conversion and treat `NWIS.get_streamflow` values as already normalized to m3/s.
+Alternatives considered:
+- Keep conversion and calibrate around apparent bias — rejected because it bakes a unit error into objective metrics.
+- Add dynamic unit guessing heuristics — rejected as less reliable than honoring the provider contract for this API call.
+Consequences:
+- Observed discharge aligns with realistic magnitudes and volume ratios.
+- NSE/KGE become interpretable again without artificial scaling bias.
+- Added regression test to guard against future double-conversion regressions.
+Status: Accepted
+
+---
+
+[2026-04-24] Apply LTE Soil Conductivity Realism Scaling in E2E Runner (Default 0.60)
+Context: After correcting observed-flow units, `01547700` still showed residual positive discharge bias with basin water yield close to precipitation. Sensitivity experiments showed scaling LTE `soils_lte.sol:scon` consistently reduced runoff overestimation and improved NSE while preserving structural stability.
+Decision: Add configurable post-`write_files` scaling of LTE soil conductivity (`SWATPLUS_LTE_SCON_SCALE`, default `0.60`) in `examples/real_basin_marsh_creek.py`, with metadata notes for traceability.
+Alternatives considered:
+- No structural adjustment; rely only on later calibration — rejected because baseline water-balance realism remained weak.
+- Force CN2/SURLAG defaults lower — rejected because sensitivity showed weak/no response in this setup.
+- Hardcode basin-specific tuning values — rejected to preserve reproducible, general pipeline behavior.
+Consequences:
+- Baseline volume bias in `01547700` reduced substantially (toward near-unity ratio) before calibration.
+- Tuning remains explicit and reversible via environment configuration.
+Status: Accepted
+
+---
+
+[2026-04-24] Replace Uniform-Forcing Stability Hack With Realism Gates and Distributed Forcing
+Context: The real-basin workflow previously forced all subbasins to one shared lat/lon/elevation and always proceeded even when delineation/soil overlays were structurally degraded. This stabilized execution but masked physically implausible setups and weakened cross-basin credibility.
+Decision: Remove forced coordinate homogenization and enforce pre-calibration realism gates in `examples/real_basin_marsh_creek.py`: (1) delineation must pass reference-area validation and topology sanity checks, (2) HRU coverage ratio must exceed a minimum threshold, (3) synthetic/high-fallback soils fail by default unless explicitly overridden via environment variable. Keep weather station sampling distributed with bounded station count.
+Alternatives considered:
+- Keep uniform forcing as default for reliability — rejected because it distorts spatial forcing and silently undermines physical realism.
+- Allow degraded HRU/soil states and flag only in metadata — rejected because downstream calibration would optimize against structurally invalid inputs.
+- Hard fail on any multi-terminal network — rejected because empirical checks showed this can force coarser delineations that worsen realism.
+Consequences:
+- Runs now fail early on structural realism violations instead of producing low-credibility calibration artifacts.
+- Metadata and validation outputs include explicit realism context for debugging and reproducibility.
+- Execution remains configurable for diagnostic overrides through explicit environment flags.
+Status: Accepted
+
+---
+
+[2026-04-24] Parse Terminal Channels by `gis_id` (Not Internal `id`) Across Evaluation and Batch Diagnostics
+Context: `chandeg.con` contains both internal object `id` and spatial `gis_id`; SWAT+ day outputs key on `gis_id`. Terminal parsing using `id` can silently misalign outlet diagnostics and fallback routing logic.
+Decision: Update terminal parsing in `output/eval.py` and `scripts/run_multibasin_e2e.py` to be header-aware and use `gis_id` when `obj_typ == out`, with legacy fallback behavior retained for older formats.
+Alternatives considered:
+- Keep `id` parsing and rely on empirical outlet switching — rejected because it can silently map terminals to wrong series.
+- Remove terminal parsing and use max-flow channel globally — rejected because it loses topology context and can select hydrologically irrelevant reaches.
+Consequences:
+- Outlet diagnostics and terminal-flow summaries align with SWAT+ output tables.
+- Regression tests now guard against `id`/`gis_id` confusion.
+Status: Accepted
+
+---
+
+[2026-04-24] Evaluate Non-Terminal Outlets With Terminal-NSE Guard Instead of Blind Max-Flow Switching
+Context: Multi-basin realism probes showed frequent configured `outlet_gis_id=1` values that are non-terminal in generated routing topology. A first fix that always switched non-terminal outlets to the highest-flow terminal outlet improved some basins but severely degraded others, proving max-flow switching is not a reliable proxy for gauge-representative outlet selection.
+Decision: Keep requested outlet series by default, mark non-terminal requests in diagnostics, and only auto-switch to a terminal outlet when either (a) requested outlet is dry (existing behavior) or (b) best terminal outlet yields strictly better NSE against observed series (`requested_outlet_non_terminal_best_nse`).
+Alternatives considered:
+- Always enforce terminal outlet by flow magnitude — rejected because it can select hydrologically mismatched outlets and worsen metrics dramatically.
+- Always keep requested outlet even when non-terminal — rejected because it leaves a silent structural mismatch unaddressed.
+- Require manual outlet ID selection for every basin — rejected because it blocks automated multi-basin workflows.
+Consequences:
+- Outlet selection remains topology-aware without forcing harmful switches.
+- Diagnostics now expose `requested_outlet_is_terminal` and reason codes distinguishing dry fallback vs non-terminal NSE-improving switch.
+- Cross-basin evaluations become more robust while preserving reproducibility.
+Status: Accepted
+
+---
+
 [2026-04-23] Canonical planning/progress docs are root-level
 Context: Execution protocol for this roadmap requires authoritative `ROADMAP.md`, `PROGRESS.md`, and `DECISIONS.md` at repository root. Existing logs were primarily under `docs/`, and some were gitignored.
 Decision: Treat root-level `ROADMAP.md`, `PROGRESS.md`, and `DECISIONS.md` as canonical for all future phase execution updates. Keep `docs/*` historical/local notes as reference until migration is complete.
@@ -294,4 +365,62 @@ Consequences:
 - Source files under `src/swatplus_builder/output/` are now tracked normally.
 - Top-level artifact directory `output/` remains ignored.
 - Vendored `database/output/` stubs stay ignored to avoid noisy tracking of unused vendor internals.
+Status: Accepted
+
+---
+
+[2026-04-24] Bridge Metrics Must Fall Back to Authoritative Direct Objective on Flat-Output Signature
+Context: pySWATPlus calibration proposals were varying numerically and writing distinct `calibration.cal` entries, yet produced byte-identical simulation outputs and flat objective history in this environment, blocking scientifically reliable calibration.
+Decision: Add a calibration-bridge fallback that detects flat-output signatures (`unique parameter vectors >1` with single output hash/metric) and recomputes evaluation metrics by rerunning each proposal via direct parameter injection + `evaluate_run` (`metric_source=evaluate_run_real_objective_rerun`).
+Alternatives considered:
+- Continue trusting raw pySWATPlus objective values — rejected because evidence shows flat/incorrect metric behavior.
+- Disable pySWATPlus calibration entirely — rejected because proposal generation remains useful when paired with authoritative evaluation.
+- Require manual post-processing outside the bridge — rejected because it breaks reproducibility and typed workflow guarantees.
+Consequences:
+- `evaluate_run` remains the authoritative metric source.
+- `history.csv` now reflects physically responsive metrics when direct-injection path is sensitive.
+- Calibration runtime increases due per-evaluation reruns, accepted as reliability-first tradeoff.
+Status: Accepted
+
+---
+
+[2026-04-24] Autoresearch Must Consult SWAT+ Playbook Rules Before Experiment Expansion
+Context: Repeated regressions came from revisiting rejected paths (flat-history expansion, non-authoritative metrics) without a machine-readable guardrail.
+Decision: Introduce `swatplus_playbook` skill (`recommend_next_action`) and integrate it into autoresearch loop proposal selection with append-only evidence updates.
+Alternatives considered:
+- Keep playbook human-only markdown with no runtime integration — rejected because agents would keep ignoring known lessons.
+- Hardcode checks in autoresearch without a dedicated skill — rejected because it reduces reuse and traceability.
+Consequences:
+- Autoresearch loop can reject known-bad paths (for example history proposals on flat histories).
+- New evidence is appended safely and can evolve rule statuses (`validated`, `tentative`, `rejected`, `superseded`).
+Status: Accepted
+
+---
+
+[2026-04-24] Cap LTE Effective Channel Length to Prevent Zero-Outflow Collapse
+Context: During timing/variability investigation, using GIS-derived LTE channel lengths (`hyd-sed-lte.cha:len` in ~0.1–4.4 km) produced complete channel outflow collapse (`flo_out=0`) despite non-zero upstream inflow. Threshold experiments showed a sharp transition: `len <= 0.001 km` produced routed flow, while `len >= 0.002 km` produced all-zero outflow.
+Decision: In vendored GIS import (`import_gis.py` and `import_gis_legacy.py`), compute raw `len2/1000` but cap LTE effective channel length at `0.001 km` with a small positive floor for missing/invalid values.
+Alternatives considered:
+- Preserve unconstrained GIS lengths — rejected because it reproducibly yields zero routed outflow in this LTE runtime path.
+- Force all lengths to a single tiny constant (`0.0005`) — rejected because it discards any remaining geometric signal and is less transparent than a cap.
+- Disable channel routing (`rte_cha=0`) — rejected because roadmap requires physically connected channel routing.
+Consequences:
+- Prevents silent all-zero hydrographs caused by LTE routing-length instability.
+- Keeps Marsh Creek E2E runs structurally stable with non-zero channel flow and reproducible metrics.
+- Channel-routing parameter sensitivity in current LTE path remains limited and requires future structural work.
+Status: Accepted
+
+---
+
+[2026-04-24] Reported outlet metrics must be strict-pinned from a recorded selection pass
+Context: Generated basins can expose multiple terminal channels and non-terminal requested outlets. Auto outlet switching is useful for discovering a plausible outlet but can make reported metrics non-reproducible if the exact selection context is not pinned and persisted.
+Decision: Standardize run reporting on a two-pass outlet workflow: (1) selection pass with `outlet_policy=auto` to determine candidate outlet; (2) authoritative scoring pass with `outlet_policy=strict` on the pinned outlet. Persist full outlet provenance in `outputs/outlet_provenance.json` and record provenance hashes/paths in `metadata.json`.
+Alternatives considered:
+- Continue single-pass auto evaluation for reported metrics — rejected because selection behavior can change with topology/input changes and is harder to audit.
+- Force strict scoring on requested outlet only — rejected because requested outlets are frequently non-terminal in generated topologies and can silently under-represent gauge flow.
+- Persist only selected outlet ID without source hashes — rejected because reproducibility requires source file and topology provenance.
+Consequences:
+- Reported `metrics.json` and `alignment.csv` are now tied to an explicit pinned outlet and policy.
+- Run artifacts include enough provenance to defensibly reproduce outlet selection/scoring decisions.
+- Existing legacy runs without provenance artifact remain usable but are weaker for auditability.
 Status: Accepted

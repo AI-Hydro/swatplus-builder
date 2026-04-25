@@ -1,8 +1,16 @@
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
-from swatplus_builder.artifacts import LocalArtifactStore
+from swatplus_builder.artifacts import (
+    ArtifactMetadata,
+    ArtifactMetrics,
+    ArtifactRecord,
+    LocalArtifactStore,
+    RunConfig,
+    compute_content_hash,
+)
 from swatplus_builder.autoresearch import (
     LoopRequest,
     LoopStoppingCriteria,
@@ -132,3 +140,61 @@ def test_autoresearch_loop_routes_to_surrogate_when_uncertainty_low(tmp_path: Pa
 
     assert calls["real"] == 0
     assert all(it.used_surrogate for it in result.iterations)
+
+
+def test_autoresearch_loop_consults_playbook_for_flat_history(tmp_path: Path) -> None:
+    store = LocalArtifactStore(tmp_path / "seeded")
+    for idx in range(3):
+        cfg = RunConfig.model_validate(
+            {
+                "basin_id": "usgs_01547700",
+                "simulation_start": date(2015, 1, 1),
+                "simulation_end": date(2015, 12, 31),
+                "parameters": {"CN2": {"value": 70.0 + idx, "scope": "hru"}},
+                "options": {"source": "seed"},
+            }
+        )
+        content_hash = compute_content_hash(cfg, engine_version="test", builder_git_sha=f"git-seed-{idx}")
+        store.write(
+            ArtifactRecord(
+                content_hash=content_hash,
+                config=cfg,
+                metadata=ArtifactMetadata(run_id=content_hash, timestamp_utc="2026-04-24T00:00:00Z"),
+                metrics=ArtifactMetrics(nse=0.1, kge=0.05),
+            )
+        )
+
+    req = LoopRequest(
+        basin_id="usgs_01547700",
+        simulation_start="2015-01-01",
+        simulation_end="2015-12-31",
+        artifacts_root=str(tmp_path / "seeded"),
+        proposal_source="history",
+        proposal_parameters=["CN2"],
+        stopping=LoopStoppingCriteria(n_iterations=2),
+    )
+
+    def _cn2_only_eval(parameters: dict[str, float], _iteration: int) -> dict[str, float]:
+        return {"nse": parameters["CN2"] / 100.0}
+
+    result = run_autoresearch_loop(req, evaluator=_cn2_only_eval, builder_git_sha="git-test")
+
+    assert all(it.proposal_source == "random" for it in result.iterations)
+
+
+def test_autoresearch_loop_appends_playbook_evidence(tmp_path: Path) -> None:
+    playbook = tmp_path / "playbook.md"
+    req = LoopRequest(
+        basin_id="usgs_01547700",
+        simulation_start="2015-01-01",
+        simulation_end="2015-12-31",
+        artifacts_root=str(tmp_path / "runs"),
+        proposal_parameters=["CN2", "ESCO", "SURLAG"],
+        playbook_path=str(playbook),
+        stopping=LoopStoppingCriteria(n_iterations=1),
+    )
+    _ = run_autoresearch_loop(req, evaluator=_deterministic_evaluator, builder_git_sha="git-test")
+
+    text = playbook.read_text(encoding="utf-8")
+    assert "Autoresearch iteration 0" in text
+    assert "status: `tentative`" in text

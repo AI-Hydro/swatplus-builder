@@ -20,6 +20,12 @@ class RunMetadata(BaseModel):
     selected_outlet_gis_id: int | None = Field(default=None)
     outlet_autodetected: bool = Field(default=False)
     outlet_selection_reason: str | None = Field(default=None)
+    outlet_policy: str | None = Field(default=None)
+    outlet_provenance_path: str | None = Field(default=None)
+    outlet_provenance_sha256: str | None = Field(default=None)
+    sim_source_file: str | None = Field(default=None)
+    sim_source_sha256: str | None = Field(default=None)
+    chandeg_con_sha256: str | None = Field(default=None)
     routing_mode: str | None = Field(default=None)
     soil_mode: str | None = Field(default=None)
     pct_fallback_soils: float | None = Field(default=None, ge=0.0, le=1.0)
@@ -73,4 +79,3 @@ def write_metadata(path: Path | str, metadata: RunMetadata) -> Path:
 def read_metadata(path: Path | str) -> RunMetadata:
     p = Path(path)
     return RunMetadata.model_validate_json(p.read_text(encoding="utf-8"))
-
