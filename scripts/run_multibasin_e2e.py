@@ -240,9 +240,18 @@ def build_realism_flags(
     return flags
 
 
-def run_site(usgs_id: str, out_root: Path, log_path: Path, run_engine: bool) -> SiteResult:
+def run_site(
+    usgs_id: str,
+    out_root: Path,
+    log_path: Path,
+    run_engine: bool,
+    *,
+    sim_start: str,
+    sim_end: str,
+) -> SiteResult:
     started = time.time()
     site_dir = out_root / f"usgs_{usgs_id}"
+    area: float | None = None
 
     append_jsonl(log_path, {
         "timestamp_utc": now_utc(),
@@ -268,9 +277,14 @@ def run_site(usgs_id: str, out_root: Path, log_path: Path, run_engine: bool) -> 
 
         demo.STATION_ID = usgs_id
         demo.EXPECTED_AREA_KM2 = area
-        demo.SIM_START = "2015-01-01"
-        demo.SIM_END = "2015-12-31"
-        demo.main(site_dir.resolve(), run_engine=run_engine)
+        demo.SIM_START = sim_start
+        demo.SIM_END = sim_end
+        demo.main(
+            site_dir.resolve(),
+            run_engine=run_engine,
+            sim_start=sim_start,
+            sim_end=sim_end,
+        )
 
         txtinout = site_dir / "project" / "Scenarios" / "Default" / "TxtInOut"
         object_out, _lcha = parse_object_cnt(txtinout)
@@ -337,6 +351,7 @@ def run_site(usgs_id: str, out_root: Path, log_path: Path, run_engine: bool) -> 
             status="failed",
             run_dir=str(site_dir),
             elapsed_s=time.time() - started,
+            basin_area_km2=area,
             error=err,
         )
         append_jsonl(log_path, {
@@ -369,6 +384,8 @@ def main() -> int:
         default=f"multibasin_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
         help="Batch output folder name under tests/_artifacts/e2e_runs/",
     )
+    parser.add_argument("--start", default="2015-01-01", help="Simulation start date (YYYY-MM-DD).")
+    parser.add_argument("--end", default="2015-12-31", help="Simulation end date (YYYY-MM-DD).")
 
     args = parser.parse_args()
 
@@ -381,7 +398,13 @@ def main() -> int:
         "iteration": 0,
         "hypothesis": "Recent routing fixes should improve out-of-sample robustness across multiple USGS basins.",
         "action_taken": "Initialize batch run",
-        "evidence": {"sites": args.sites, "run_engine": args.run_engine, "batch_dir": str(out_root)},
+        "evidence": {
+            "sites": args.sites,
+            "run_engine": args.run_engine,
+            "batch_dir": str(out_root),
+            "start": args.start,
+            "end": args.end,
+        },
         "result": "in_progress",
         "next_step": "Run each site independently and capture diagnostics",
     })
@@ -389,7 +412,14 @@ def main() -> int:
     results: list[SiteResult] = []
     for sid in args.sites:
         print(f"\n=== Running USGS {sid} ===")
-        res = run_site(sid, out_root, log_path, run_engine=args.run_engine)
+        res = run_site(
+            sid,
+            out_root,
+            log_path,
+            run_engine=args.run_engine,
+            sim_start=args.start,
+            sim_end=args.end,
+        )
         results.append(res)
         print(f"{sid}: {res.status} ({res.elapsed_s:.1f}s)")
 
@@ -414,6 +444,7 @@ def main() -> int:
         "",
         f"- Generated: `{now_utc()}`",
         f"- Sites: `{', '.join(args.sites)}`",
+        f"- Period: `{args.start}` to `{args.end}`",
         f"- Success: `{n_ok}/{len(results)}`",
         f"- Investigation log: `{log_path}`",
         "",

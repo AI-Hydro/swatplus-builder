@@ -92,6 +92,12 @@ Scope: `swatplus-builder` alpha-stage pipeline behavior observed in project arti
   - terminal GIS outlet `10`: NSE about `-2386.71`,
   - terminal GIS outlet `39`: NSE about `-45727.06`.
   Interpretation: this pipeline can produce a gauge-representative internal channel object; publication-grade reporting must preserve and justify that provenance rather than blindly requiring terminal outlets.
+- `[validated]` Multi-year contrast-basin attempt (`usgs_03339000`, 2013-2015) failed before SWAT+ engine execution at the delineation/topology gate, not during calibration:
+  - artifact root: `tests/_artifacts/e2e_runs/phase3f_multiyear_20260427_contrast_03339000/`,
+  - NLDI basin area: `3340.879 km2`,
+  - generated watershed artifact at threshold `500` cells: `1` subbasin, `5331` channels, `19` terminals, total area `0.22 km2`, mean slope `0.0`,
+  - final retry raised `Delineation produced zero subbasins`.
+  Interpretation: this exposes a large/low-gradient basin portability blocker in outlet snapping/DEM-conditioned delineation. It is not evidence that the locked calibration path failed; the model never reached TxtInOut generation.
 
 ## 6. Open Questions
 
@@ -100,6 +106,7 @@ Scope: `swatplus-builder` alpha-stage pipeline behavior observed in project arti
 - `[open]` Best threshold policy for auto-switching proposal source when history appears flat.
 - `[open]` Whether locked benchmark artifacts should reject non-terminal pinned outlets at lock time or allow strict scoring with explicit `strict_requested_outlet_non_terminal` provenance.
 - `[open]` Whether physical realism improvement should next target baseflow/storage parameters, channel routing structure, or soil hydraulic conductivity; multi-year evidence shows metric lift without resolving BFI/low-flow/SON pathologies.
+- `[open]` How to make large-basin delineation robust enough for basins like `03339000`: candidates include stronger area-ratio preflight failure, larger outlet snap search, hydrofabric-guided snapping, NHDPlus flowline anchoring, or explicit user-provided pour points.
 
 ## 7. Deprecated or Rejected Assumptions
 
