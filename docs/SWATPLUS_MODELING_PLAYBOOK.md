@@ -1,6 +1,6 @@
 # SWAT+ Modeling Playbook (Evidence-Driven, Evolving)
 
-Last updated: 2026-04-24
+Last updated: 2026-04-27
 Scope: `swatplus-builder` alpha-stage pipeline behavior observed in project artifacts and tests.
 
 ## 1. Proven Working Patterns
@@ -42,6 +42,8 @@ Scope: `swatplus-builder` alpha-stage pipeline behavior observed in project arti
 - `[validated]` If calibration history has <=1 unique NSE over >=3 evaluations, run CN2 injection trace before expanding search.
 - `[validated]` If no SWAT+ input files changed for an evaluation, fail immediately.
 - `[validated]` For current locked-benchmark calibration runs, use real-engine DDS with only effective parameters (`CN2`, `ALPHA_BF`) and verify best solution by independent rerun against the same locked alignment/outlet context.
+- `[validated]` Locked calibration objectives must score with `outlet_policy="strict"` by default.
+  Evidence: 2026-04-27 fresh real-engine quick run exposed that objective scoring was relying on the evaluator default (`auto`); patch now passes strict unless `allow_outlet_autodetect=True`, with regression tests.
 - `[validated]` Treat pySWATPlus bridge outputs as non-authoritative for a lock when runtime fails or parity/trace artifacts are incomplete; do not use them to claim improvement.
 - `[tentative]` Prefer random proposals over history proposals when seeded history is flat.
 
@@ -60,12 +62,22 @@ Scope: `swatplus-builder` alpha-stage pipeline behavior observed in project arti
   - real-engine DDS (`CN2`, `ALPHA_BF`) improved NSE/KGE and verified by independent rerun,
   - persisted summary files under `tests/_artifacts/calibration_locked_20260424_effective_03339000/`.
 - `[tentative]` Multi-basin calibration lift currently modest; readiness indicates structural correctness, not high predictive skill yet.
+- `[validated]` Fresh 2026-04-27 real-engine locked quick check for `usgs_01547700` confirms parameter proposals produce distinct strict-pinned outputs:
+  - artifact root: `tests/_artifacts/phase3f_fresh_20260427/usgs_01547700_locked_quick_strict/`,
+  - 6 evaluations, 6 distinct NSE values, 0 NaN metric rows after strict-outlet patch,
+  - objective traces report requested outlet `1`, selected outlet `1`, `outlet_autodetected=false`.
+- `[tentative]` Six-evaluation quick calibration did not improve over the existing benchmark lock (`NSE 0.1256 -> 0.0775`); this is a smoke/provenance check, not a failed full calibration campaign.
+- `[validated]` Fresh calibrated-vs-baseline realism audit can now be generated from the best-solution rerun alignment:
+  - artifact root: `tests/_artifacts/phase3f_fresh_20260427/usgs_01547700_quick_realism_audit/`,
+  - both baseline and quick-calibrated alignments remain `pathological`,
+  - quick-calibrated run increased full-period volume overestimation (`PBIAS +54.8%`) and low-flow overestimation (`Q10 ratio 11.11`), reinforcing that Phase 3F physical realism work is still required before broader calibration claims.
 
 ## 6. Open Questions
 
 - `[open]` Why some basins remain strongly negative NSE after bridge hardening despite non-zero sensitivity.
 - `[open]` Whether additional physically meaningful parameters should be unlocked before broad calibration campaigns.
 - `[open]` Best threshold policy for auto-switching proposal source when history appears flat.
+- `[open]` Whether locked benchmark artifacts should reject non-terminal pinned outlets at lock time or allow strict scoring with explicit `strict_requested_outlet_non_terminal` provenance.
 
 ## 7. Deprecated or Rejected Assumptions
 

@@ -61,6 +61,7 @@ def make_real_objective(
             obs,
             outlet_gis_id=outlet_gis_id,
             out_alignment_csv=txt / "alignment_calibration.csv",
+            outlet_policy="auto" if allow_outlet_autodetect else "strict",
             return_diagnostics=True,
         )
         actual_file = str(diagnostics.get("sim_source_file"))
