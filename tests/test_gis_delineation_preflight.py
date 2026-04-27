@@ -154,7 +154,7 @@ class TestChannelExplosionGate:
 
 class TestTerminalExplosionGate:
     def test_19_terminals_fails(self):
-        """03339000 had 19 routing terminals."""
+        """Small basin (43 subbasins): effective threshold = max(5, 3) = 5 → 19 fails."""
         with pytest.raises(SwatBuilderPipelineError, match="[Tt]erminal"):
             check_topology_realism(_stats(n_terminals=19))
 
@@ -163,6 +163,7 @@ class TestTerminalExplosionGate:
             check_topology_realism(_stats(n_terminals=10))
         ctx = exc_info.value.context
         assert ctx["n_terminals"] == 10
+        # effective_max_terminals = max(5, int(43 * 0.08)) = max(5, 3) = 5
         assert ctx["max_terminals"] == 5
 
     def test_exactly_at_limit_passes(self):
@@ -174,6 +175,34 @@ class TestTerminalExplosionGate:
 
     def test_custom_max_terminals(self):
         check_topology_realism(_stats(n_terminals=8), max_terminals=10)
+
+    def test_03339000_large_basin_258_terminals_passes(self):
+        """03339000 after snap fix: 4023 subbasins, 258 terminals.
+
+        Rate-based threshold: max(5, int(4023 * 0.08)) = 321 → 258 passes.
+        These are boundary terminals from DEM truncation, not fragmentation.
+        """
+        check_topology_realism(
+            _stats(n_subbasins=4023, n_channels=5333, n_terminals=258, total_area_km2=2513.8),
+            expected_area_km2=3340.879,
+        )
+
+    def test_truly_fragmented_large_basin_fails(self):
+        """Even a large basin fails when terminal rate exceeds 8%."""
+        # 4023 subbasins × 8% = 321 effective threshold; 400 > 321 → fails.
+        with pytest.raises(SwatBuilderPipelineError, match="[Tt]erminal"):
+            check_topology_realism(
+                _stats(n_subbasins=4023, n_channels=5333, n_terminals=400, total_area_km2=2513.8),
+                expected_area_km2=3340.879,
+            )
+
+    def test_rate_based_threshold_scales_with_basin_size(self):
+        """Effective threshold = max(abs, n_sub * rate)."""
+        # 1000 subbasins × 8% = 80; terminal count of 70 passes.
+        check_topology_realism(_stats(n_subbasins=1000, n_channels=1200, n_terminals=70))
+        # Terminal count of 85 fails.
+        with pytest.raises(SwatBuilderPipelineError, match="[Tt]erminal"):
+            check_topology_realism(_stats(n_subbasins=1000, n_channels=1200, n_terminals=85))
 
 
 # ---------------------------------------------------------------------------

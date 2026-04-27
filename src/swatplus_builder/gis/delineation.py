@@ -71,6 +71,7 @@ def check_topology_realism(
     min_area_ratio: float = 0.10,
     max_channels_per_subbasin: float = 50.0,
     max_terminals: int = 5,
+    max_terminal_rate: float = 0.08,
 ) -> None:
     """Fail loud when delineation topology is physically implausible.
 
@@ -123,12 +124,17 @@ def check_topology_realism(
                 **context,
             )
 
-    # 3. Terminal explosion: a single-outlet basin should have exactly 1 terminal.
-    context["max_terminals"] = max_terminals
-    if int(n_ter) > max_terminals:
+    # 3. Terminal explosion: for large basins, DEM-boundary truncation creates legitimate
+    #    boundary terminals. Use rate-based threshold: max(abs, n_sub * rate).
+    #    For small basins (<= 60 subbasins) the absolute max_terminals floor applies.
+    effective_max_terminals = max(max_terminals, int(n_sub * max_terminal_rate))
+    context["max_terminals"] = effective_max_terminals
+    context["max_terminal_rate"] = max_terminal_rate
+    if int(n_ter) > effective_max_terminals:
         raise SwatBuilderPipelineError(
             f"Multiple routing terminals: {int(n_ter)} terminals detected "
-            f"(threshold: {max_terminals}). "
+            f"(threshold: {effective_max_terminals} = max({max_terminals}, "
+            f"{int(n_sub)}×{max_terminal_rate:.0%})). "
             "Likely cause: disconnected subgraphs from a fragmented delineation. "
             "Try increasing snap_dist_m or using a coarser stream_threshold_cells.",
             **context,
@@ -146,6 +152,7 @@ def delineate(
     min_area_ratio: float = 0.10,
     max_channels_per_subbasin: float = 50.0,
     max_terminals: int = 5,
+    max_terminal_rate: float = 0.08,
     settings: Settings = DEFAULT_SETTINGS,
 ) -> WatershedResult:
     """Delineate subbasins and channels from a DEM and a pour point.
@@ -168,9 +175,13 @@ def delineate(
                                 watershed must cover. Default 0.10 (10%).
         max_channels_per_subbasin: Maximum channels-per-subbasin ratio before raising a
                                 channel-explosion error. Default 50.
-        max_terminals:          Maximum number of routing-graph terminals before raising.
-                                A correctly delineated single-outlet basin has exactly 1.
-                                Default 5 to allow minor edge cases.
+        max_terminals:          Absolute minimum maximum routing-graph terminals before raising.
+                                For large basins the effective limit is
+                                max(max_terminals, n_subbasins × max_terminal_rate).
+                                Default 5.
+        max_terminal_rate:      Fraction of subbasins allowed to be terminals. DEM-boundary-
+                                truncated large basins legitimately have boundary terminals.
+                                Default 0.08 (8%).
         settings:               Runtime overrides (backend, verbosity, …).
 
     Returns:
@@ -401,6 +412,7 @@ def delineate(
         min_area_ratio=min_area_ratio,
         max_channels_per_subbasin=max_channels_per_subbasin,
         max_terminals=max_terminals,
+        max_terminal_rate=max_terminal_rate,
     )
 
     result = WatershedResult(
