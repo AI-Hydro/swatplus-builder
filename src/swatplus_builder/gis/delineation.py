@@ -63,6 +63,78 @@ _D8_OFFSETS: dict[int, tuple[int, int]] = {
 # Public entry point
 # ---------------------------------------------------------------------------
 
+def check_topology_realism(
+    stats: dict[str, float],
+    *,
+    expected_area_km2: float | None = None,
+    usgs_id: str | None = None,
+    min_area_ratio: float = 0.10,
+    max_channels_per_subbasin: float = 50.0,
+    max_terminals: int = 5,
+) -> None:
+    """Fail loud when delineation topology is physically implausible.
+
+    Raises:
+        SwatBuilderPipelineError: Any topology check fails.
+    """
+    n_sub = stats.get("n_subbasins", 0.0)
+    n_cha = stats.get("n_channels", 0.0)
+    n_ter = stats.get("n_terminals", 0.0)
+    gen_area = stats.get("total_area_km2", 0.0)
+
+    context: dict[str, object] = {
+        "n_subbasins": int(n_sub),
+        "n_channels": int(n_cha),
+        "n_terminals": int(n_ter),
+        "generated_area_km2": gen_area,
+    }
+    if usgs_id:
+        context["usgs_id"] = usgs_id
+    if expected_area_km2 is not None:
+        context["expected_area_km2"] = expected_area_km2
+        context["min_area_ratio"] = min_area_ratio
+
+    # 1. Area ratio: generated watershed must be at least min_area_ratio of expected.
+    if expected_area_km2 is not None and expected_area_km2 > 0:
+        ratio = gen_area / expected_area_km2
+        context["area_ratio"] = round(ratio, 6)
+        if ratio < min_area_ratio:
+            raise SwatBuilderPipelineError(
+                f"Delineation area mismatch: generated {gen_area:.2f} km² is only "
+                f"{ratio:.4%} of expected {expected_area_km2:.1f} km² "
+                f"(threshold: {min_area_ratio:.0%}). "
+                "Likely cause: outlet snap failure or DEM clip boundary mismatch. "
+                "Try increasing snap_dist_m or lowering stream_threshold_cells.",
+                **context,
+            )
+
+    # 2. Channel explosion: channels per subbasin must stay below threshold.
+    if n_sub > 0:
+        ratio_cha = n_cha / n_sub
+        context["channels_per_subbasin"] = round(ratio_cha, 1)
+        context["max_channels_per_subbasin"] = max_channels_per_subbasin
+        if ratio_cha > max_channels_per_subbasin:
+            raise SwatBuilderPipelineError(
+                f"Channel explosion: {int(n_cha)} channels across {int(n_sub)} subbasin(s) "
+                f"({ratio_cha:.0f} channels/subbasin, threshold: {max_channels_per_subbasin:.0f}). "
+                "Likely cause: outlet snapped outside the intended drainage area, "
+                "producing a degenerate near-zero watershed with a dense stream network. "
+                "Try increasing snap_dist_m or adjusting stream_threshold_cells.",
+                **context,
+            )
+
+    # 3. Terminal explosion: a single-outlet basin should have exactly 1 terminal.
+    context["max_terminals"] = max_terminals
+    if int(n_ter) > max_terminals:
+        raise SwatBuilderPipelineError(
+            f"Multiple routing terminals: {int(n_ter)} terminals detected "
+            f"(threshold: {max_terminals}). "
+            "Likely cause: disconnected subgraphs from a fragmented delineation. "
+            "Try increasing snap_dist_m or using a coarser stream_threshold_cells.",
+            **context,
+        )
+
+
 def delineate(
     dem_path: Path | str,
     outlet: Outlet | tuple[float, float],
@@ -70,6 +142,10 @@ def delineate(
     *,
     stream_threshold_cells: int = 500,
     snap_dist_m: float = 500.0,
+    expected_area_km2: float | None = None,
+    min_area_ratio: float = 0.10,
+    max_channels_per_subbasin: float = 50.0,
+    max_terminals: int = 5,
     settings: Settings = DEFAULT_SETTINGS,
 ) -> WatershedResult:
     """Delineate subbasins and channels from a DEM and a pour point.
@@ -85,6 +161,16 @@ def delineate(
                                 Typical range: 100 (small basin, fine DEM) – 5000 (large basin).
         snap_dist_m:            Outlet snap radius in metres. The outlet point is moved to the
                                 nearest high-accumulation cell within this radius.
+        expected_area_km2:      NLDI or user-provided basin area in km². When supplied, the
+                                gate raises if the delineated area is < ``min_area_ratio``
+                                of this value.
+        min_area_ratio:         Minimum fraction of ``expected_area_km2`` the delineated
+                                watershed must cover. Default 0.10 (10%).
+        max_channels_per_subbasin: Maximum channels-per-subbasin ratio before raising a
+                                channel-explosion error. Default 50.
+        max_terminals:          Maximum number of routing-graph terminals before raising.
+                                A correctly delineated single-outlet basin has exactly 1.
+                                Default 5 to allow minor edge cases.
         settings:               Runtime overrides (backend, verbosity, …).
 
     Returns:
@@ -92,7 +178,7 @@ def delineate(
 
     Raises:
         SwatBuilderInputError:    DEM unreadable, outlet outside DEM extent, CRS invalid.
-        SwatBuilderPipelineError: Delineation produced zero subbasins.
+        SwatBuilderPipelineError: Delineation produced zero subbasins or topology check fails.
         SwatBuilderExternalError: WhiteboxTools binary missing or returned non-zero.
     """
     # Normalise inputs
@@ -268,6 +354,15 @@ def delineate(
     log.info("    Subbasins:      %d", int(stats["n_subbasins"]))
     log.info("    Channels:       %d", int(stats["n_channels"]))
     log.info("    Total area:     %.1f km²", stats["total_area_km2"])
+
+    check_topology_realism(
+        stats,
+        expected_area_km2=expected_area_km2,
+        usgs_id=outlet.usgs_id if hasattr(outlet, "usgs_id") else None,
+        min_area_ratio=min_area_ratio,
+        max_channels_per_subbasin=max_channels_per_subbasin,
+        max_terminals=max_terminals,
+    )
 
     result = WatershedResult(
         workdir=workdir,
