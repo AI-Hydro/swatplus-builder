@@ -68,6 +68,18 @@ docs/DECISIONS.md
 docs/PROGRESS.md
 docs/TROUBLESHOOTING_AND_WORKFLOW.md
 
+# Planning / phase docs — local only, never commit
+PROGRESS.md
+DECISIONS.md
+ROADMAP.md
+SKILL.md
+BACKLOG.md
+PHASE_*.md
+*_PLAN.md
+*_CLOSEOUT.md
+*_READINESS.md
+CALIBRATION_PLAN*.md
+
 # Local-only notes (never commit)
 local-docs/
 Research_article/
