@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import sys
+import traceback
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from hashlib import sha256
@@ -191,9 +192,17 @@ class PySwatPlusBackend:
             )
             _ = calibration.parameter_optimization()
         except Exception as exc:
+            _write_bridge_failure_artifact(
+                calsim_dir=calsim_dir,
+                exc=exc,
+                staged_txtinout=txtinout_for_backend,
+                request=request,
+                failure_stage="parameter_optimization",
+            )
             raise SwatBuilderExternalError(
                 "pySWATPlus calibration execution failed",
                 error=str(exc),
+                diagnostic_artifact=str(calsim_dir / "bridge_failure_diagnostic.json"),
             ) from exc
 
         hist_path = calsim_dir / "optimization_history.json"
@@ -985,6 +994,79 @@ def _set_print_prt_for_daily_channel_outputs(path: Path) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _write_bridge_failure_artifact(
+    calsim_dir: Path,
+    exc: BaseException,
+    staged_txtinout: Path | None,
+    request: BackendRequest,
+    failure_stage: str = "unknown",
+) -> None:
+    """Persist structured diagnostics when the pySWATPlus bridge fails.
+
+    Writes ``bridge_failure_diagnostic.json`` to ``calsim_dir`` so agents
+    can triage failures without re-running the calibration.  The artifact
+    includes stdout/stderr from the exception chain, a staged-TxtInOut
+    manifest, and a sanitized request summary.
+    """
+    try:
+        calsim_dir.mkdir(parents=True, exist_ok=True)
+
+        # Collect staged manifest (file names + sizes only; never content).
+        staged_manifest: list[dict[str, object]] = []
+        if staged_txtinout is not None and staged_txtinout.exists():
+            for p in sorted(staged_txtinout.rglob("*")):
+                if p.is_file():
+                    try:
+                        size = p.stat().st_size
+                    except OSError:
+                        size = -1
+                    staged_manifest.append({"path": str(p.relative_to(staged_txtinout)), "size_bytes": size})
+
+        # Collect chained traceback strings.
+        tb_lines = traceback.format_exception(type(exc), exc, exc.__traceback__)
+
+        # Sanitized request summary.
+        req_summary: dict[str, object] = {
+            "algorithm": request.algorithm,
+            "n_gen": request.n_gen,
+            "pop_size": request.pop_size,
+            "objectives": request.objectives,
+            "parameter_bounds": [str(p.get("name")) for p in request.parameter_bounds],
+            "sim_output_file": request.sim_output_file,
+            "outlet_gis_id": int(request.outlet_gis_id),
+            "seed": request.seed,
+            "txtinout_dir": str(request.txtinout_dir),
+            "calsim_dir": str(calsim_dir),
+            "staged_txtinout": str(staged_txtinout) if staged_txtinout else None,
+        }
+
+        from .bridge_diagnostics import classify_bridge_failure
+        failure_class, failure_detail = classify_bridge_failure(
+            error_type=type(exc).__name__,
+            error_message=str(exc),
+            staged_file_count=len(staged_manifest),
+            failure_stage=failure_stage,
+            traceback_text="".join(tb_lines),
+        )
+
+        artifact = {
+            "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+            "failure_stage": failure_stage,
+            "failure_class": failure_class.value,
+            "failure_detail": failure_detail,
+            "error_type": type(exc).__name__,
+            "error_message": str(exc),
+            "traceback": "".join(tb_lines),
+            "request_summary": req_summary,
+            "staged_txtinout_manifest": staged_manifest,
+            "staged_file_count": len(staged_manifest),
+        }
+        out_path = calsim_dir / "bridge_failure_diagnostic.json"
+        out_path.write_text(json.dumps(artifact, indent=2, default=str) + "\n", encoding="utf-8")
+    except Exception:
+        pass  # Never let diagnostic writing mask the original exception.
+
+
 def _apply_platform_compatibility_patches(mod: object) -> None:
     if not sys.platform.startswith("darwin"):
         return
@@ -1042,39 +1124,29 @@ def _apply_platform_compatibility_patches(mod: object) -> None:
     if txt_reader_mod is None:
         return
     if not getattr(txt_reader_mod, "_swatbuilder_env_patch", False):
-        import subprocess
-
-        from ..run.swatplus import _build_env
+        from ..run.swatplus import run_solver_subprocess
 
         logger = getattr(txt_reader_mod, "logger")
 
         def _patched_run_swat_exe(self: object) -> None:
-            env = _build_env(threads=1, exe=Path(self.exe_file))
+            # All solver invocations must go through run_solver_subprocess —
+            # never call the binary directly with subprocess.Popen/run.
+            exe = Path(self.exe_file).resolve()
+            txtinout = Path(self.root_dir).resolve()
             try:
-                process = subprocess.Popen(
-                    [str(Path(self.exe_file).resolve())],
-                    cwd=str(Path(self.root_dir).resolve()),
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    bufsize=1,
-                    text=True,
-                    env=env,
+                returncode, stdout_tail, stderr_tail = run_solver_subprocess(
+                    exe, txtinout, threads=1
                 )
-                if process.stdout:
-                    for line in process.stdout:
-                        clean_line = line.strip()
-                        if clean_line:
-                            logger.info(clean_line)
-                return_code = process.wait()
-                if return_code != 0:
-                    stderr = process.stderr.read() if process.stderr else None
-                    raise subprocess.CalledProcessError(
-                        return_code,
-                        process.args,
-                        stderr=stderr,
+                if stdout_tail:
+                    for line in stdout_tail.splitlines():
+                        if line.strip():
+                            logger.info(line.strip())
+                if returncode != 0:
+                    raise RuntimeError(
+                        f"SWAT+ engine exited {returncode}. stderr: {stderr_tail[-500:]}"
                     )
             except Exception as exc:
-                logger.error(f"Failed to run SWAT: {str(exc)}")
+                logger.error(f"Failed to run SWAT+: {exc}")
                 raise
 
         txt_reader_mod.TxtinoutReader._run_swat_exe = _patched_run_swat_exe

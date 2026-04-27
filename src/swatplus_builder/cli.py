@@ -40,10 +40,137 @@ app = typer.Typer(
 )
 
 
+def _git_sha(length: int = 8) -> str:
+    """Return short git SHA of HEAD, or 'unknown' if git is unavailable."""
+    import subprocess as _sp
+    try:
+        sha = _sp.check_output(
+            ["git", "rev-parse", f"--short={length}", "HEAD"],
+            stderr=_sp.DEVNULL,
+            text=True,
+        ).strip()
+        return sha if sha else "unknown"
+    except Exception:
+        return "unknown"
+
+
 @app.command("version")
-def cmd_version() -> None:
-    """Print version."""
-    rprint(f"[bold]swatplus-builder[/bold] v{__version__}")
+def cmd_version(
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit machine-readable JSON to stdout."
+    ),
+) -> None:
+    """Print version, git SHA, and Python runtime."""
+    import platform as _pl
+    sha = _git_sha()
+    py = _pl.python_version()
+    if json_output:
+        print(json.dumps({
+            "package": "swatplus-builder",
+            "version": __version__,
+            "git_sha": sha,
+            "python": py,
+        }))
+    else:
+        rprint(
+            f"[bold]swatplus-builder[/bold] v{__version__}  "
+            f"[dim]git:{sha}  python:{py}[/dim]"
+        )
+
+
+@app.command("health")
+def cmd_health(
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit machine-readable JSON (suppresses rich output)."
+    ),
+) -> None:
+    """Check runtime health: binary, datasets, GIS stack, MCP extras.
+
+    Exit codes:
+      0 — all checks pass
+      1 — degraded (non-critical items missing or not configured)
+      2 — unhealthy (critical failure: wrong Python version)
+    """
+    import os
+    import platform as _pl
+    import sys as _sys
+
+    checks: list[dict[str, object]] = []
+
+    def _check(name: str, critical: bool, ok: bool, detail: str) -> None:
+        checks.append({"name": name, "critical": critical, "ok": ok, "detail": detail})
+
+    # --- critical checks ---
+    py_ok = _sys.version_info >= (3, 10)
+    _check("python_version", critical=True, ok=py_ok, detail=_pl.python_version())
+
+    pkg_ok = True
+    try:
+        import swatplus_builder  # noqa: F401
+    except Exception as exc:  # pragma: no cover
+        pkg_ok = False
+    _check("package_import", critical=True, ok=pkg_ok, detail=f"v{__version__}" if pkg_ok else "import failed")
+
+    # --- optional: SWAT+ binary ---
+    exe_path = os.environ.get("SWATPLUS_EXE", "")
+    from pathlib import Path as _P
+    exe_ok = bool(exe_path) and _P(exe_path).is_file()
+    _check("swatplus_exe", critical=False, ok=exe_ok,
+           detail=exe_path if exe_path else "SWATPLUS_EXE not set")
+
+    # --- optional: artifacts dir ---
+    art_path = os.environ.get("SWATPLUS_BUILDER_ARTIFACTS", "")
+    art_ok = bool(art_path)
+    _check("artifacts_dir", critical=False, ok=art_ok,
+           detail=art_path if art_path else "SWATPLUS_BUILDER_ARTIFACTS not set")
+
+    # --- optional: datasets DB ---
+    db_path = os.environ.get("SWATPLUS_DATASETS_DB", "")
+    db_ok = bool(db_path) and _P(db_path).is_file()
+    _check("datasets_db", critical=False, ok=db_ok,
+           detail=db_path if db_path else "SWATPLUS_DATASETS_DB not set")
+
+    # --- optional: GIS stack ---
+    try:
+        import rasterio  # noqa: F401
+        import geopandas  # noqa: F401
+        gis_ok = True
+        gis_detail = "rasterio + geopandas"
+    except ImportError as exc:
+        gis_ok = False
+        gis_detail = f"missing: {exc.name}"
+    _check("gis_stack", critical=False, ok=gis_ok, detail=gis_detail)
+
+    # --- optional: MCP extras ---
+    try:
+        import fastmcp  # noqa: F401
+        mcp_ok = True
+        mcp_detail = "fastmcp"
+    except ImportError:
+        mcp_ok = False
+        mcp_detail = "fastmcp not installed (pip install swatplus-builder[mcp])"
+    _check("mcp_extras", critical=False, ok=mcp_ok, detail=mcp_detail)
+
+    critical_fail = any(c["critical"] and not c["ok"] for c in checks)
+    optional_fail = any(not c["critical"] and not c["ok"] for c in checks)
+    status = "unhealthy" if critical_fail else ("degraded" if optional_fail else "healthy")
+    exit_code = 2 if critical_fail else (1 if optional_fail else 0)
+
+    if json_output:
+        print(json.dumps({
+            "status": status,
+            "exit_code": exit_code,
+            "checks": checks,
+        }, indent=2))
+        raise typer.Exit(exit_code)
+
+    status_color = {"healthy": "green", "degraded": "yellow", "unhealthy": "red"}[status]
+    rprint(f"[bold]swat health[/bold]  [{status_color}]{status}[/{status_color}]")
+    for c in checks:
+        icon = "[green]✓[/green]" if c["ok"] else ("[red]✗[/red]" if c["critical"] else "[yellow]![/yellow]")
+        label = "[bold red]CRITICAL[/bold red]" if c["critical"] and not c["ok"] else ""
+        rprint(f"  {icon}  {c['name']:<24} {c['detail']}  {label}")
+    raise typer.Exit(exit_code)
 
 
 @app.command("inspect")
@@ -800,10 +927,17 @@ def cmd_sensitivity(
     from .errors import SwatBuilderError
     from .sensitivity import SensitivityAnalyzer, SensitivityRequest
 
+    from .params import get_parameter as _gp
     param_list = [p.strip() for p in parameters.split(",") if p.strip()]
     if not param_list:
         rprint("[red]error:[/red] at least one parameter is required")
         raise typer.Exit(2)
+    try:
+        for p in param_list:
+            _gp(p)
+    except KeyError as exc:
+        rprint(f"[red]error:[/red] unknown parameter {exc}")
+        raise typer.Exit(2) from exc
     rprint(f"[bold]swat sensitivity[/bold] → basin={basin} n_samples={n_samples}")
     req = SensitivityRequest(
         basin_id=basin,
@@ -821,7 +955,7 @@ def cmd_sensitivity(
         if hint:
             msg = f"{msg}. {hint}"
         rprint(f"[red]error:[/red] {msg}")
-        raise typer.Exit(2) from exc
+        raise typer.Exit(1) from exc
     top = res.ranked[0].parameter if res.ranked else "n/a"
     rprint(
         f"[green]complete[/green] cache_hit={res.cache_hit} top_parameter={top} "
@@ -861,7 +995,7 @@ def cmd_diagnose(
         diags = diagnose(target)
     except SwatBuilderError as exc:
         rprint(f"[red]error:[/red] {exc}")
-        raise typer.Exit(2) from exc
+        raise typer.Exit(1) from exc
     report = (
         _P(out_md).expanduser().resolve()
         if out_md is not None
@@ -869,6 +1003,359 @@ def cmd_diagnose(
     )
     write_diagnostics_report(diags, report)
     rprint(f"[green]complete[/green] diagnoses={len(diags)} report={report}")
+
+
+@app.command("bridge-diagnose")
+def cmd_bridge_diagnose(
+    root: str = typer.Option(
+        ...,
+        "--root",
+        help="Directory to scan for bridge_failure_diagnostic.json artifacts.",
+    ),
+    out_dir: str = typer.Option(
+        None,
+        "--out-dir",
+        "-o",
+        help="Directory to write bridge_diagnostics.json + bridge_diagnostics_summary.md (defaults to --root).",
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit machine-readable JSON to stdout (suppresses rich output)."
+    ),
+) -> None:
+    """Classify and summarize pySWATPlus bridge failures across a run tree.
+
+    Scans ``--root`` recursively for ``bridge_failure_diagnostic.json`` artifacts,
+    classifies each failure into a deterministic class (IMPORT_ERROR,
+    BINARY_NOT_FOUND, STAGING_MISMATCH, RUNTIME_CRASH, OUTPUT_MISSING,
+    EMPTY_HISTORY, UNKNOWN), and writes a summary report.
+
+    Exit codes:
+      0 — no failures found (or summary written successfully)
+      1 — failures found (check report for details)
+    """
+    from pathlib import Path as _P
+
+    from .calibration.bridge_diagnostics import build_bridge_diagnostics_summary
+
+    root_path   = _P(root).expanduser().resolve()
+    out_path    = _P(out_dir).expanduser().resolve() if out_dir else None
+
+    if not json_output:
+        rprint(f"[bold]swat bridge-diagnose[/bold] → scanning {root_path}")
+
+    summary = build_bridge_diagnostics_summary(root_path, out_dir=out_path or root_path)
+
+    if json_output:
+        print(json.dumps(summary.model_dump(), indent=2, default=str))
+        raise typer.Exit(1 if summary.total_failures else 0)
+
+    if summary.total_failures == 0:
+        rprint("[green]ok[/green] no bridge failure artifacts found.")
+        return
+
+    rprint(f"[yellow]failures={summary.total_failures}[/yellow]  by class:")
+    for cls, cnt in sorted(summary.by_class.items(), key=lambda x: -x[1]):
+        rprint(f"  [cyan]{cls:<20}[/cyan] {cnt}")
+    rprint(f"\n[bold]Recommendation:[/bold] {summary.recommendation}")
+    written = (out_path or root_path) / "bridge_diagnostics_summary.md"
+    rprint(f"\n[green]report[/green] → {written}")
+    raise typer.Exit(1)
+
+
+@app.command("lock-benchmark")
+def cmd_lock_benchmark(
+    txtinout: str = typer.Option(..., "--txtinout", help="Prepared TxtInOut directory."),
+    observed_csv: str = typer.Option(
+        ...,
+        "--observed-csv",
+        help="Observed daily discharge CSV (DatetimeIndex + 'discharge' column).",
+    ),
+    out_dir: str = typer.Option(..., "--out-dir", "-o", help="Root directory for lock artifacts."),
+    basin_id: str = typer.Option(..., "--basin-id", help="Basin identifier (e.g., usgs_01547700)."),
+    outlet_gis_id: int = typer.Option(1, "--outlet-gis-id", help="Gauge outlet channel GIS ID."),
+    sim_source_file: str = typer.Option(
+        "basin_sd_cha_day.txt",
+        "--sim-source-file",
+        help="Objective sim output file name inside TxtInOut.",
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit machine-readable JSON to stdout (suppresses rich output)."
+    ),
+) -> None:
+    """Lock a baseline benchmark: two-pass outlet evaluation → artifact.
+
+    Runs auto-outlet selection then strict-pinned scoring. Persists
+    ``benchmark/benchmark_lock.json``, ``alignment.csv``, ``metrics.json``,
+    and ``outlet_provenance.json`` under ``--out-dir``.
+    """
+    from pathlib import Path as _P
+
+    import pandas as pd
+
+    from .calibration.locked_benchmark import lock_benchmark
+    from .errors import SwatBuilderError
+
+    if not json_output:
+        rprint(f"[bold]swat lock-benchmark[/bold] → basin={basin_id} outlet={outlet_gis_id}")
+    try:
+        obs_df = pd.read_csv(observed_csv, index_col=0, parse_dates=True)
+        obs_col = "discharge" if "discharge" in obs_df.columns else obs_df.columns[0]
+        obs_series = pd.Series(
+            obs_df[obs_col].astype(float).values,
+            index=pd.to_datetime(obs_df.index).normalize(),
+            name="obs",
+        ).dropna()
+        lock = lock_benchmark(
+            txtinout_dir=_P(txtinout),
+            obs_series=obs_series,
+            out_dir=_P(out_dir),
+            basin_id=basin_id,
+            outlet_gis_id=outlet_gis_id,
+            sim_source_file=sim_source_file,
+        )
+    except SwatBuilderError as exc:
+        if json_output:
+            import sys
+            print(json.dumps({"status": "error", "error": str(exc)}), file=sys.stderr)
+        else:
+            rprint(f"[red]error:[/red] {exc}")
+        raise typer.Exit(1) from exc
+    if json_output:
+        print(json.dumps(lock.model_dump()))
+    else:
+        rprint(
+            f"[green]locked[/green] nse={lock.baseline_nse:.4f} kge={lock.baseline_kge:.4f} "
+            f"outlet={lock.outlet_gis_id} artifact={lock.benchmark_dir}"
+        )
+
+
+@app.command("locked-calibrate")
+def cmd_locked_calibrate(
+    benchmark_dir: str = typer.Option(
+        ..., "--benchmark-dir", help="Directory containing benchmark_lock.json."
+    ),
+    base_txtinout: str = typer.Option(
+        ..., "--base-txtinout", help="Source TxtInOut directory (fresh copy per evaluation)."
+    ),
+    out_dir: str = typer.Option(..., "--out-dir", "-o", help="Root for calibration + verification artifacts."),
+    parameters: str = typer.Option(
+        "CN2,ALPHA_BF",
+        "--parameters",
+        help="Comma-separated effective parameter names.",
+    ),
+    n_evaluations: int = typer.Option(30, "--n-evals", help="Total real-engine evaluations."),
+    binary: str = typer.Option(None, "--binary", help="Override SWAT+ engine binary path."),
+    timeout_s: float = typer.Option(3600.0, "--timeout-s", help="Per-evaluation engine timeout."),
+    skip_verify: bool = typer.Option(False, "--skip-verify", help="Skip independent verification step."),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit machine-readable JSON to stdout (suppresses rich output)."
+    ),
+) -> None:
+    """Lock → calibrate → verify workflow in one command.
+
+    Loads an existing benchmark lock, runs real-engine DDS calibration
+    against the locked alignment, then independently re-runs the best
+    solution to confirm metric improvement. Writes:
+    ``calibration_reports_locked/``, ``verification_summary.json``,
+    ``comparison_metrics.csv``, and ``CALIBRATION_VERIFICATION.md``.
+    """
+    from pathlib import Path as _P
+
+    from .calibration.locked_benchmark import (
+        CalibrationEvidence,
+        calibrate_against_lock,
+        verify_calibration,
+    )
+    from .errors import SwatBuilderError
+
+    param_list = [p.strip() for p in parameters.split(",") if p.strip()]
+    if not param_list:
+        if not json_output:
+            rprint("[red]error:[/red] at least one parameter is required")
+        raise typer.Exit(2)
+
+    if not json_output:
+        rprint(
+            f"[bold]swat locked-calibrate[/bold] → params={','.join(param_list)} "
+            f"n_evals={n_evaluations}"
+        )
+    try:
+        evidence: CalibrationEvidence = calibrate_against_lock(
+            lock=_P(benchmark_dir),
+            base_txtinout=_P(base_txtinout),
+            out_dir=_P(out_dir),
+            parameters=param_list,
+            n_evaluations=n_evaluations,
+            binary=_P(binary) if binary else None,
+            timeout_s=timeout_s,
+        )
+    except SwatBuilderError as exc:
+        if not json_output:
+            rprint(f"[red]error:[/red] {exc}")
+        raise typer.Exit(1) from exc
+
+    if not json_output:
+        rprint(
+            f"[green]calibrated[/green] n={evidence.n_evaluations} "
+            f"best_nse={evidence.best_nse:.4f} report={evidence.outdir}"
+        )
+
+    verification_result = None
+    if not skip_verify:
+        try:
+            verification_result = verify_calibration(
+                lock=_P(benchmark_dir),
+                best_solution_json=_P(evidence.best_solution_json),
+                base_txtinout=_P(base_txtinout),
+                out_dir=_P(out_dir),
+                binary=_P(binary) if binary else None,
+                timeout_s=timeout_s,
+            )
+        except SwatBuilderError as exc:
+            if not json_output:
+                rprint(f"[yellow]warning:[/yellow] verification failed: {exc}")
+
+    if json_output:
+        out: dict[str, object] = {
+            "status": "success",
+            "calibration": evidence.model_dump(),
+            "verification": verification_result.model_dump() if verification_result else None,
+        }
+        print(json.dumps(out))
+    elif verification_result is not None:
+        status = "IMPROVED" if verification_result.improved else "NO IMPROVEMENT"
+        rprint(
+            f"[green]verified[/green] status={status} "
+            f"delta_nse={verification_result.delta_nse:+.4f} "
+            f"delta_kge={verification_result.delta_kge:+.4f} "
+            f"report={verification_result.verification_summary_path}"
+        )
+
+
+@app.command("readiness-table")
+def cmd_readiness_table(
+    locks_root: str = typer.Option(
+        ..., "--locks-root", help="Root directory to scan for verification_summary.json files."
+    ),
+    out_md: str = typer.Option(
+        None,
+        "--out-md",
+        help="Optional path to write the markdown readiness table.",
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit machine-readable JSON to stdout (suppresses rich output)."
+    ),
+) -> None:
+    """Build a compact multi-lock readiness table.
+
+    Scans ``--locks-root`` recursively for ``verification_summary.json`` and
+    ``benchmark_lock.json`` artifacts, then prints a markdown table of
+    baseline vs calibrated NSE/KGE deltas and verification status.
+    """
+    from pathlib import Path as _P
+
+    from .calibration.locked_benchmark import build_readiness_table
+
+    if not json_output:
+        rprint(f"[bold]swat readiness-table[/bold] → root={locks_root}")
+    rows = build_readiness_table(
+        _P(locks_root),
+        out_md=_P(out_md) if out_md else None,
+    )
+    if json_output:
+        print(json.dumps({"row_count": len(rows), "rows": [r.model_dump() for r in rows]}))
+        return
+    if not rows:
+        rprint("[yellow]warning:[/yellow] no lock or verification artifacts found under root.")
+        return
+
+    rprint(
+        f"\n| {'Basin':<20} | {'Baseline NSE':>12} | {'Cal. NSE':>10} | {'ΔNSE':>8} | {'Status':<25} |"
+    )
+    rprint(f"| {'-'*20} | {'-'*12} | {'-'*10} | {'-'*8} | {'-'*25} |")
+    for r in rows:
+        b = f"{r.baseline_nse:>12.4f}" if r.baseline_nse is not None else f"{'n/a':>12}"
+        c = f"{r.calibrated_nse:>10.4f}" if r.calibrated_nse is not None else f"{'n/a':>10}"
+        d = f"{r.delta_nse:>+8.4f}" if r.delta_nse is not None else f"{'n/a':>8}"
+        rprint(f"| {r.basin_id:<20} | {b} | {c} | {d} | {r.verification_status:<25} |")
+    if out_md:
+        rprint(f"\n[green]table written[/green] → {out_md}")
+
+
+@app.command("realism-audit")
+def cmd_realism_audit(
+    alignment_csvs: str = typer.Option(
+        ...,
+        "--alignment-csvs",
+        help=(
+            "Comma-separated list of alignment CSV paths, each prefixed with "
+            "basin_id:: (e.g. 'usgs_01547700::path/to/alignment.csv,...')."
+        ),
+    ),
+    out_dir: str = typer.Option(
+        "tests/_artifacts/realism_audit",
+        "--out-dir",
+        "-o",
+        help="Directory to write realism_audit.json + realism_audit.md.",
+    ),
+    split_year: int = typer.Option(
+        None,
+        "--split-year",
+        help="Year boundary for calibration/validation split (e.g. 2018 → cal<2018, val>=2018).",
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit machine-readable JSON to stdout."
+    ),
+) -> None:
+    """Physical realism audit from alignment CSV files (no binary required).
+
+    Computes NSE, KGE, PBIAS, BFI ratio, Q90/Q10 ratios, seasonal NSE,
+    and cal/val split metrics. Detects volume bias, baseflow pathology,
+    and peak/low-flow mismatch. Writes ``realism_audit.json`` + ``realism_audit.md``.
+    """
+    from pathlib import Path as _P
+
+    from .output.realism import audit_realism, run_realism_audit
+
+    entries = [e.strip() for e in alignment_csvs.split(",") if e.strip()]
+    basin_alignments = []
+    for entry in entries:
+        if "::" in entry:
+            basin_id, csv_path = entry.split("::", 1)
+            basin_alignments.append((basin_id.strip(), _P(csv_path.strip())))
+        else:
+            p = _P(entry.strip())
+            basin_alignments.append((p.parent.name, p))
+
+    if not basin_alignments:
+        rprint("[red]error:[/red] no alignment CSVs provided")
+        raise typer.Exit(2)
+
+    if not json_output:
+        rprint(f"[bold]swat realism-audit[/bold] → {len(basin_alignments)} basin(s)")
+
+    audits = run_realism_audit(basin_alignments, out_dir=_P(out_dir), split_year=split_year)
+
+    if json_output:
+        print(json.dumps({"audits": [a.model_dump() for a in audits]}, indent=2, default=str))
+        return
+
+    for a in audits:
+        f = a.period_full
+        verdict_color = "green" if "benchmark" in a.realism_verdict else (
+            "yellow" if "improving" in a.realism_verdict else "red"
+        )
+        rprint(
+            f"  [{verdict_color}]{a.basin_id}[/{verdict_color}]  "
+            f"NSE={f.nse:.3f if f.nse is not None else 'n/a'}  "
+            f"KGE={f.kge:.3f if f.kge is not None else 'n/a'}  "
+            f"PBIAS={f.pbias_pct:.1f if f.pbias_pct is not None else 'n/a'}%  "
+            f"BFI_ratio={f.bfi_ratio:.2f if f.bfi_ratio is not None else 'n/a'}  "
+            f"verdict={a.realism_verdict}"
+        )
+        for p in a.pathologies:
+            rprint(f"    [yellow]![/yellow] {p}")
+    rprint(f"\n[green]report[/green] → {out_dir}")
 
 
 if __name__ == "__main__":
