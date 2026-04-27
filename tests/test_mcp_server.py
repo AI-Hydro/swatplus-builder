@@ -17,8 +17,11 @@ from swatplus_builder.mcp.server import (
     CalibrateRequest,
     CompareRunsRequest,
     DiagnoseFailureRequest,
+    LockBenchmarkRequest,
+    LockedCalibrateRequest,
     ProposeParametersRequest,
     QueryArtifactsRequest,
+    ReadinessTableRequest,
     RunBasinRequest,
     ValidateRequest,
     create_mcp_server,
@@ -30,7 +33,7 @@ def _tool_map() -> dict[str, object]:
     return {tool.name: tool for tool in mcp._tool_manager.list_tools()}
 
 
-def test_mcp_server_registers_exactly_eight_tools() -> None:
+def test_mcp_server_registers_exactly_eleven_tools() -> None:
     tools = _tool_map()
     assert set(tools) == {
         "build_project",
@@ -41,6 +44,9 @@ def test_mcp_server_registers_exactly_eight_tools() -> None:
         "query_artifacts",
         "diagnose_failure",
         "validate",
+        "lock_benchmark",
+        "locked_calibrate",
+        "readiness_table",
     }
 
 
@@ -220,3 +226,89 @@ def test_validate_tool_uses_runner_and_returns_summary(monkeypatch, tmp_path: Pa
     assert response.basin_count == 1
     assert response.success_count == 1
     assert response.cache_hits == 0
+
+
+def test_lock_benchmark_tool_monkeypatched(monkeypatch, tmp_path: Path) -> None:
+    """lock_benchmark MCP tool must return a LockBenchmarkResponse via monkeypatched function."""
+    import swatplus_builder.mcp.server as mcp_server_mod
+
+    def fake_lock_benchmark(txtinout_dir, obs_series, out_dir, *, basin_id, outlet_gis_id, sim_source_file):
+        from swatplus_builder.calibration.locked_benchmark import BenchmarkLock
+
+        return BenchmarkLock(
+            basin_id=basin_id,
+            locked_at_utc="2026-04-24T00:00:00+00:00",
+            alignment_sha256="deadbeef",
+            metrics_sha256="cafebabe",
+            outlet_gis_id=outlet_gis_id,
+            sim_source_file=sim_source_file,
+            baseline_nse=0.12,
+            baseline_kge=-0.05,
+            benchmark_dir=str(tmp_path / "benchmark"),
+        )
+
+    monkeypatch.setattr(mcp_server_mod, "lock_benchmark", fake_lock_benchmark)
+
+    obs_csv = tmp_path / "obs.csv"
+    obs_csv.write_text("date,discharge\n2010-01-01,1.5\n2010-01-02,1.2\n", encoding="utf-8")
+
+    tools = _tool_map()
+    # rebuild with monkeypatch active
+    from swatplus_builder.mcp.server import create_mcp_server as _cms
+
+    tools = {t.name: t for t in _cms()._tool_manager.list_tools()}
+
+    resp = tools["lock_benchmark"].fn(
+        req=LockBenchmarkRequest(
+            txtinout_dir=str(tmp_path),
+            observed_csv=str(obs_csv),
+            out_dir=str(tmp_path / "out"),
+            basin_id="usgs_test01",
+            outlet_gis_id=1,
+            sim_source_file="basin_sd_cha_day.txt",
+        )
+    )
+    assert resp.status == "success"
+    assert resp.basin_id == "usgs_test01"
+    assert resp.baseline_nse == 0.12
+
+
+def test_readiness_table_tool_empty_dir(tmp_path: Path) -> None:
+    """readiness_table MCP tool must return empty list for directory with no artifacts."""
+    tools = _tool_map()
+    resp = tools["readiness_table"].fn(
+        req=ReadinessTableRequest(locks_root=str(tmp_path / "nonexistent"))
+    )
+    assert resp.row_count == 0
+    assert resp.rows == []
+
+
+def test_readiness_table_tool_finds_verification_artifacts(tmp_path: Path) -> None:
+    """readiness_table must discover verification_summary.json and return structured rows."""
+    import json
+
+    basin_dir = tmp_path / "usgs_01547700"
+    basin_dir.mkdir()
+    summary = {
+        "basin_id": "usgs_01547700",
+        "benchmark_nse": 0.125,
+        "benchmark_kge": 0.036,
+        "verified_nse": 0.210,
+        "verified_kge": 0.116,
+        "delta_nse": 0.085,
+        "delta_kge": 0.080,
+        "improved": True,
+        "verification_dir": str(basin_dir),
+        "verification_summary_path": str(basin_dir / "verification_summary.json"),
+    }
+    (basin_dir / "verification_summary.json").write_text(
+        json.dumps(summary) + "\n", encoding="utf-8"
+    )
+
+    tools = _tool_map()
+    resp = tools["readiness_table"].fn(
+        req=ReadinessTableRequest(locks_root=str(tmp_path))
+    )
+    assert resp.row_count == 1
+    assert resp.rows[0]["basin_id"] == "usgs_01547700"
+    assert resp.rows[0]["verification_status"] == "verified_improved"

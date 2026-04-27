@@ -12,6 +12,13 @@ from pydantic import BaseModel, Field
 
 from ..artifacts import ArtifactQuery, LocalArtifactStore
 from ..calibration.calibrator import Calibrator, CalibratorRequest
+from ..calibration.locked_benchmark import (
+    BenchmarkLock,
+    build_readiness_table,
+    calibrate_against_lock,
+    lock_benchmark,
+    verify_calibration,
+)
 from ..diagnostics import diagnose
 from ..orchestrate import run_pipeline
 from ..params import registry
@@ -117,6 +124,66 @@ class ValidateResponse(BaseModel):
     basin_count: int
     success_count: int
     cache_hits: int
+
+
+class LockBenchmarkRequest(BaseModel):
+    txtinout_dir: str = Field(..., description="Prepared SWAT+ TxtInOut directory path.")
+    observed_csv: str = Field(..., description="Observed discharge CSV (DatetimeIndex + 'discharge' column).")
+    out_dir: str = Field(..., description="Root directory for lock artifacts.")
+    basin_id: str = Field(..., description="Basin identifier (e.g. usgs_01547700).")
+    outlet_gis_id: int = Field(1, description="Gauge outlet channel GIS ID.")
+    sim_source_file: str = Field(
+        "basin_sd_cha_day.txt",
+        description="Simulation output file to score (basin_sd_cha_day.txt or channel_sd_day.txt).",
+    )
+
+
+class LockBenchmarkResponse(BaseModel):
+    status: Literal["success"] = "success"
+    basin_id: str
+    baseline_nse: float
+    baseline_kge: float
+    outlet_gis_id: int
+    alignment_sha256: str
+    benchmark_dir: str
+
+
+class LockedCalibrateRequest(BaseModel):
+    benchmark_dir: str = Field(..., description="Directory containing benchmark_lock.json.")
+    base_txtinout: str = Field(..., description="Source TxtInOut (fresh copy per evaluation).")
+    out_dir: str = Field(..., description="Root for calibration + verification artifacts.")
+    parameters: list[str] = Field(
+        default_factory=lambda: ["CN2", "ALPHA_BF"],
+        description="Effective parameter names (default: CN2, ALPHA_BF).",
+    )
+    n_evaluations: int = Field(30, ge=1, description="Total real-engine evaluations.")
+    binary: str | None = Field(None, description="Optional SWAT+ binary path override.")
+    timeout_s: float = Field(3600.0, description="Per-evaluation engine timeout (seconds).")
+    skip_verify: bool = Field(False, description="Skip independent verification step.")
+
+
+class LockedCalibrateResponse(BaseModel):
+    status: Literal["success"] = "success"
+    basin_id: str
+    n_evaluations: int
+    best_nse: float
+    best_kge: float | None = None
+    delta_nse: float | None = None
+    delta_kge: float | None = None
+    improved: bool | None = None
+    best_solution_json: str
+    outdir: str
+
+
+class ReadinessTableRequest(BaseModel):
+    locks_root: str = Field(..., description="Root directory to scan for lock and verification artifacts.")
+    out_md: str | None = Field(None, description="Optional path to write a markdown readiness table.")
+
+
+class ReadinessTableResponse(BaseModel):
+    row_count: int
+    rows: list[dict[str, object]]
+    out_md: str | None = None
 
 
 def create_mcp_server() -> FastMCP:
@@ -327,6 +394,111 @@ def create_mcp_server() -> FastMCP:
             basin_count=len(results),
             success_count=success_count,
             cache_hits=cache_hits,
+        )
+
+    @mcp.tool(
+        name="lock_benchmark",
+        description=(
+            "Lock a reproducible baseline benchmark for a basin: two-pass outlet evaluation "
+            "persists alignment.csv, metrics.json, outlet_provenance.json, and benchmark_lock.json. "
+            "Must be run before locked_calibrate. "
+            "Requires a prepared TxtInOut directory and an observed discharge CSV."
+        ),
+    )
+    def mcp_lock_benchmark(req: LockBenchmarkRequest) -> LockBenchmarkResponse:
+        import pandas as pd
+
+        obs_df = pd.read_csv(req.observed_csv, index_col=0, parse_dates=True)
+        obs_col = "discharge" if "discharge" in obs_df.columns else obs_df.columns[0]
+        obs_series = pd.Series(
+            obs_df[obs_col].astype(float).values,
+            index=pd.to_datetime(obs_df.index).normalize(),
+            name="obs",
+        ).dropna()
+        lock = lock_benchmark(
+            txtinout_dir=Path(req.txtinout_dir),
+            obs_series=obs_series,
+            out_dir=Path(req.out_dir),
+            basin_id=req.basin_id,
+            outlet_gis_id=req.outlet_gis_id,
+            sim_source_file=req.sim_source_file,
+        )
+        return LockBenchmarkResponse(
+            basin_id=lock.basin_id,
+            baseline_nse=lock.baseline_nse,
+            baseline_kge=lock.baseline_kge,
+            outlet_gis_id=lock.outlet_gis_id,
+            alignment_sha256=lock.alignment_sha256,
+            benchmark_dir=lock.benchmark_dir,
+        )
+
+    @mcp.tool(
+        name="locked_calibrate",
+        description=(
+            "Run the locked-benchmark calibration protocol: calibrate against a locked alignment "
+            "context then independently verify the best solution. Returns NSE/KGE deltas vs. "
+            "the locked baseline. Requires benchmark_dir from lock_benchmark. "
+            "Guardrail: only CN2 and ALPHA_BF are effective parameters until routing terms activate."
+        ),
+    )
+    def mcp_locked_calibrate(req: LockedCalibrateRequest) -> LockedCalibrateResponse:
+        evidence = calibrate_against_lock(
+            lock=Path(req.benchmark_dir),
+            base_txtinout=Path(req.base_txtinout),
+            out_dir=Path(req.out_dir),
+            parameters=req.parameters,
+            n_evaluations=req.n_evaluations,
+            binary=Path(req.binary) if req.binary else None,
+            timeout_s=req.timeout_s,
+        )
+        delta_nse: float | None = None
+        delta_kge: float | None = None
+        improved: bool | None = None
+        if not req.skip_verify:
+            try:
+                vr = verify_calibration(
+                    lock=Path(req.benchmark_dir),
+                    best_solution_json=Path(evidence.best_solution_json),
+                    base_txtinout=Path(req.base_txtinout),
+                    out_dir=Path(req.out_dir),
+                    binary=Path(req.binary) if req.binary else None,
+                    timeout_s=req.timeout_s,
+                )
+                delta_nse = vr.delta_nse
+                delta_kge = vr.delta_kge
+                improved = vr.improved
+            except Exception:
+                pass
+        return LockedCalibrateResponse(
+            basin_id=evidence.basin_id,
+            n_evaluations=evidence.n_evaluations,
+            best_nse=evidence.best_nse,
+            best_kge=evidence.best_kge,
+            delta_nse=delta_nse,
+            delta_kge=delta_kge,
+            improved=improved,
+            best_solution_json=evidence.best_solution_json,
+            outdir=evidence.outdir,
+        )
+
+    @mcp.tool(
+        name="readiness_table",
+        description=(
+            "Scan a directory tree for lock and verification artifacts, then return a structured "
+            "multi-basin readiness table (baseline vs. calibrated NSE/KGE deltas and verification "
+            "status). Optionally writes a markdown table. "
+            "Use to check calibration evidence coverage before phase advancement."
+        ),
+    )
+    def mcp_readiness_table(req: ReadinessTableRequest) -> ReadinessTableResponse:
+        rows = build_readiness_table(
+            Path(req.locks_root),
+            out_md=Path(req.out_md) if req.out_md else None,
+        )
+        return ReadinessTableResponse(
+            row_count=len(rows),
+            rows=[r.model_dump() for r in rows],
+            out_md=req.out_md,
         )
 
     return mcp

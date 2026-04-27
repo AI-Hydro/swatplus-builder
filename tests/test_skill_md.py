@@ -33,6 +33,31 @@ def test_skill_md_references_exact_mcp_tool_surface() -> None:
         "`query_artifacts`",
         "`diagnose_failure`",
         "`validate`",
+        "`lock_benchmark`",
+        "`locked_calibrate`",
+        "`readiness_table`",
     ]
     for tool in expected_tools:
         assert tool in text
+
+
+def test_skill_md_locked_benchmark_protocol_documented() -> None:
+    """SKILL.md must document the locked-benchmark protocol rules."""
+    text = Path("SKILL.md").read_text(encoding="utf-8")
+    required_sections = [
+        "## Locked-benchmark protocol rules",
+        "## CLI commands",
+        "lock_benchmark",
+        "locked_calibrate",
+        "readiness_table",
+        "CN2 and ALPHA_BF only",
+        "verify_calibration is mandatory",
+    ]
+    for item in required_sections:
+        assert item in text, f"SKILL.md missing required content: {item!r}"
+
+
+def test_skill_md_solver_wrapper_rule_documented() -> None:
+    """SKILL.md must reference the solver wrapper guardrail."""
+    text = Path("SKILL.md").read_text(encoding="utf-8")
+    assert "run_solver_subprocess" in text or "solver" in text.lower()

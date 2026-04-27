@@ -61,6 +61,7 @@ __all__ = [
     "locate_binary",
     "run",
     "run_project",
+    "run_solver_subprocess",
 ]
 
 BINARY_CANDIDATES: tuple[str, ...] = (
@@ -342,6 +343,62 @@ def run_project(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def run_solver_subprocess(
+    exe: Path,
+    txtinout: Path,
+    *,
+    threads: int = 1,
+    timeout_s: float | None = None,
+) -> tuple[int, str, str]:
+    """Lightweight solver invocation for internal/bridge use.
+
+    All solver binary calls — including pySWATPlus bridge invocations — must
+    go through this function or the full :func:`run` wrapper. Direct
+    ``subprocess.Popen``/``subprocess.run`` calls on the engine binary are
+    forbidden outside this module.
+
+    Args:
+        exe: Absolute path to the SWAT+ engine binary (already resolved).
+        txtinout: Working directory containing ``file.cio``.
+        threads: OMP thread count (clamped to >= 1).
+        timeout_s: Kill-and-raise after this many seconds. ``None`` waits forever.
+
+    Returns:
+        Tuple of ``(returncode, stdout_tail, stderr_tail)``.
+
+    Raises:
+        SwatBuilderExternalError: Process timed out or binary could not start.
+    """
+    threads = max(int(threads), 1)
+    env = _build_env(threads, exe)
+    try:
+        proc = subprocess.run(
+            [str(exe)],
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd=str(txtinout),
+            env=env,
+            timeout=timeout_s,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise SwatBuilderExternalError(
+            f"SWAT+ engine timed out after {timeout_s}s",
+            binary=str(exe),
+            txtinout_dir=str(txtinout),
+            timeout_s=timeout_s,
+        ) from exc
+    except OSError as exc:
+        raise SwatBuilderExternalError(
+            f"Failed to launch SWAT+ binary: {exc}",
+            binary=str(exe),
+            txtinout_dir=str(txtinout),
+        ) from exc
+    stdout_tail = (proc.stdout or "")[-_STDOUT_TAIL_BYTES:]
+    stderr_tail = (proc.stderr or "")[-_STDERR_TAIL_BYTES:]
+    return proc.returncode, stdout_tail, stderr_tail
 
 
 def _check_size_guardrails(

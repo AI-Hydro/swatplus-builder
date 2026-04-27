@@ -1,0 +1,47 @@
+# Development / local-run compose for swatplus-builder.
+#
+# Quick start:
+#   docker compose build
+#   docker compose run --rm swat version
+#   docker compose run --rm swat readiness-table --locks-root /data/artifacts --json
+#
+# Mounts:
+#   ./artifacts       → /data/artifacts  (persisted run/calibration artifacts)
+#   $SWATPLUS_BIN_DIR → /opt/swatplus    (SWAT+ engine binary directory)
+
+services:
+  swat:
+    build:
+      context: .
+      target: runtime
+    image: swatplus-builder:latest
+    volumes:
+      - ./artifacts:/data/artifacts
+      - ${SWATPLUS_BIN_DIR:-/opt/swatplus}:/opt/swatplus:ro
+      - ${SWATPLUS_DATASETS_DIR:-./data}:/data
+    environment:
+      SWATPLUS_EXE: /opt/swatplus/swatplus_exe
+      SWATPLUS_BUILDER_ARTIFACTS: /data/artifacts
+      SWATPLUS_DATASETS_DB: /data/swatplus_datasets.sqlite
+      OMP_NUM_THREADS: "4"
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
+
+  # MCP stdio server — connect an MCP-capable agent to this service.
+  mcp:
+    build:
+      context: .
+      target: runtime
+    image: swatplus-builder:latest
+    command: mcp
+    volumes:
+      - ./artifacts:/data/artifacts
+      - ${SWATPLUS_BIN_DIR:-/opt/swatplus}:/opt/swatplus:ro
+      - ${SWATPLUS_DATASETS_DIR:-./data}:/data
+    environment:
+      SWATPLUS_EXE: /opt/swatplus/swatplus_exe
+      SWATPLUS_BUILDER_ARTIFACTS: /data/artifacts
+      SWATPLUS_DATASETS_DB: /data/swatplus_datasets.sqlite
+    stdin_open: true
+    tty: false

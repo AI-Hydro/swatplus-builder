@@ -7,11 +7,12 @@ Public API:
 * :func:`locate_binary` — resolve the engine path from settings / env / PATH.
 """
 
-from .swatplus import BINARY_CANDIDATES, locate_binary, run, run_project
+from .swatplus import BINARY_CANDIDATES, locate_binary, run, run_project, run_solver_subprocess
 
 __all__ = [
     "BINARY_CANDIDATES",
     "locate_binary",
     "run",
     "run_project",
+    "run_solver_subprocess",
 ]

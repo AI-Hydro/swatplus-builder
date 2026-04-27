@@ -1,0 +1,34 @@
+# Version control
+.git
+.gitignore
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+*.venv
+
+# Test artifacts (never bundle in image)
+tests/_artifacts/
+_artifacts/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Dev / local data
+artifacts/
+data/
+*.sqlite
+*.db
+
+# Docs and CI config (not needed at runtime)
+docs/
+*.md
+.github/
+
+# IDE
+.vscode/
+.idea/
