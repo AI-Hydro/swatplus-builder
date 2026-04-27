@@ -18,6 +18,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 import sys
+from datetime import datetime, timezone
 
 logging.basicConfig(
     level=logging.INFO,
@@ -109,7 +110,7 @@ def fetch_sda_soils(mukeys: set[int], output_json: Path) -> bool:
         # Serialize profiles to JSON with metadata
         output_data = {
             "source": "sda_api_horizon_resolved",
-            "acquisition_date": __import__("datetime").datetime.utcnow().isoformat(),
+            "acquisition_date": datetime.now(timezone.utc).isoformat(),
             "mukeys_requested": sorted(mukeys),
             "mukeys_acquired": sorted(list(profiles.keys())),
             "n_profiles": len(profiles),
@@ -127,23 +128,28 @@ def fetch_sda_soils(mukeys: set[int], output_json: Path) -> bool:
                 "layers": [],
             }
             for layer in prof.layers:
+                layer_data = layer.model_dump() if hasattr(layer, "model_dump") else {}
+                soil_k = layer_data.get("soil_k", layer_data.get("k", 5.0))
+                carbon = layer_data.get("carbon", layer_data.get("om", 1.0))
                 layer_dict = {
-                    "layer_num": layer.layer_num,
-                    "dp": layer.dp,
-                    "rock": layer.rock if hasattr(layer, 'rock') else 0.0,
-                    "bd": layer.bd if hasattr(layer, 'bd') else 1.4,
-                    "awc": layer.awc,
-                    "k": layer.k,
-                    "n": layer.n if hasattr(layer, 'n') else 0.05,
-                    "usle_k": layer.usle_k if hasattr(layer, 'usle_k') else 0.3,
-                    "clay": layer.clay,
-                    "silt": layer.silt,
-                    "sand": layer.sand,
-                    "om": layer.om,
-                    "pst": layer.pst if hasattr(layer, 'pst') else 0.0,
-                    "theta_sat": layer.theta_sat if hasattr(layer, 'theta_sat') else 0.45,
-                    "theta_fc": layer.theta_fc if hasattr(layer, 'theta_fc') else 0.25,
-                    "theta_wp": layer.theta_wp if hasattr(layer, 'theta_wp') else 0.12,
+                    "layer_num": layer_data.get("layer_num", 0),
+                    "dp": layer_data.get("dp", 1000.0),
+                    "rock": layer_data.get("rock", 0.0),
+                    "bd": layer_data.get("bd", 1.4),
+                    "awc": layer_data.get("awc", 0.15),
+                    "k": soil_k,
+                    "soil_k": soil_k,
+                    "n": layer_data.get("n", 0.05),
+                    "usle_k": layer_data.get("usle_k", 0.3),
+                    "clay": layer_data.get("clay", 20.0),
+                    "silt": layer_data.get("silt", 40.0),
+                    "sand": layer_data.get("sand", 40.0),
+                    "om": carbon,
+                    "carbon": carbon,
+                    "pst": layer_data.get("pst", 0.0),
+                    "theta_sat": layer_data.get("theta_sat", 0.45),
+                    "theta_fc": layer_data.get("theta_fc", 0.25),
+                    "theta_wp": layer_data.get("theta_wp", 0.12),
                 }
                 profile_dict["layers"].append(layer_dict)
 

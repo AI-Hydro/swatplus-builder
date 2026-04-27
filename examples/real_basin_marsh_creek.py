@@ -162,6 +162,115 @@ def _set_lte_hru_column(txtinout_dir: Path, column: str, value: float) -> int:
     return updated
 
 
+def _load_external_soil_profiles(json_path: Path, mukeys: list[int]):
+    """Load pre-acquired soil profiles and fill missing mukeys with defaults."""
+    import json
+
+    from swatplus_builder.soil.params import horizon_from_chorizon
+    from swatplus_builder.types import SoilHorizon, SoilProfile
+
+    data = json.loads(json_path.read_text(encoding="utf-8"))
+    requested = set(mukeys)
+    profiles_by_mukey: dict[int, SoilProfile] = {}
+
+    for mukey_raw, profile_dict in data.get("profiles", {}).items():
+        try:
+            mukey = int(mukey_raw)
+        except (TypeError, ValueError):
+            continue
+        if mukey not in requested:
+            continue
+
+        layers = [
+            SoilHorizon(
+                layer_num=int(layer.get("layer_num", idx + 1)),
+                dp=float(layer.get("dp", 1000.0)),
+                bd=float(layer.get("bd", 1.4)),
+                awc=float(layer.get("awc", 0.15)),
+                soil_k=float(layer.get("soil_k", layer.get("k", 5.0))),
+                carbon=float(layer.get("carbon", layer.get("om", 1.0))),
+                clay=float(layer.get("clay", 20.0)),
+                silt=float(layer.get("silt", 40.0)),
+                sand=float(layer.get("sand", 40.0)),
+                rock=float(layer.get("rock", 0.0)),
+                alb=float(layer.get("alb", 0.13)),
+                usle_k=float(layer.get("usle_k", 0.3)),
+                ec=float(layer.get("ec", 0.0)),
+                caco3=layer.get("caco3"),
+                ph=layer.get("ph"),
+            )
+            for idx, layer in enumerate(profile_dict.get("layers", []))
+        ]
+        if not layers:
+            continue
+
+        profiles_by_mukey[mukey] = SoilProfile(
+            name=str(profile_dict.get("name") or f"gnatsgo_{mukey}"),
+            hyd_grp=_valid_hyd_group(profile_dict.get("hyd_grp")),
+            texture=profile_dict.get("texture"),
+            description=profile_dict.get("description"),
+            source=str(profile_dict.get("source") or data.get("source") or "external_soil_json"),
+            layers=layers,
+        )
+
+    missing = sorted(requested - set(profiles_by_mukey))
+    fallback_profiles = []
+    if missing:
+        fallback_profiles = [
+            SoilProfile(
+                name=f"gnatsgo_{mk}",
+                hyd_grp="D",
+                description="external soil JSON missing mukey; deterministic local fallback",
+                source="external_soil_json_missing_fallback",
+                layers=[
+                    horizon_from_chorizon(
+                        layer_num=1,
+                        hzdepb_cm=30.0,
+                        sandtotal_r=40.0,
+                        silttotal_r=40.0,
+                        claytotal_r=20.0,
+                        ksat_umps=5.0,
+                        dbthirdbar=1.4,
+                        wthirdbar_pct=30.0,
+                        wfifteenbar_pct=15.0,
+                        om_r=1.0,
+                    ),
+                    horizon_from_chorizon(
+                        layer_num=2,
+                        hzdepb_cm=100.0,
+                        sandtotal_r=40.0,
+                        silttotal_r=40.0,
+                        claytotal_r=20.0,
+                        ksat_umps=5.0,
+                        dbthirdbar=1.4,
+                        wthirdbar_pct=30.0,
+                        wfifteenbar_pct=15.0,
+                        om_r=1.0,
+                    ),
+                ],
+            )
+            for mk in missing
+        ]
+
+    profiles = [profiles_by_mukey[mk] for mk in sorted(profiles_by_mukey)] + fallback_profiles
+    soil_report = {
+        "source": "external_soil_json",
+        "external_json": str(json_path),
+        "requested_mukeys": len(mukeys),
+        "profiles_written": len(profiles),
+        "external_profiles": len(profiles_by_mukey),
+        "external_coverage_pct": len(profiles_by_mukey) / max(len(set(mukeys)), 1),
+        "aggregated": {"default_fallback": len(missing)},
+        "missing_mukeys": missing,
+    }
+    return profiles, soil_report
+
+
+def _valid_hyd_group(value: object) -> str:
+    code = str(value or "D").strip().upper()
+    return code if code in {"A", "B", "C", "D"} else "D"
+
+
 def fetch_basin_boundary(usgs_id: str, out_gpkg: Path):
     """Fetch the NLDI basin polygon for a USGS gauge."""
     import geopandas as gpd
@@ -403,17 +512,26 @@ def main(
     pct_fallback_soils = 0.0
     soil_fallback_warn_threshold = float(os.environ.get("SWATPLUS_SOIL_FALLBACK_WARN_THRESHOLD", "0.25"))
     try:
-        soil_res = fetch_soil_profiles_result(mukeys, config=SoilConfig(use_sda=True), settings=ref_settings)
-        write_soils(soil_res.profiles, db_path)
-        upsert_project_metadata(db_path, "soil_report", json.dumps(soil_res.soil_report))
+        external_soils_json = os.environ.get("SWATPLUS_EXTERNAL_SOILS_JSON")
+        if external_soils_json:
+            soil_profiles, soil_report = _load_external_soil_profiles(
+                Path(external_soils_json).expanduser().resolve(),
+                mukeys,
+            )
+        else:
+            soil_res = fetch_soil_profiles_result(mukeys, config=SoilConfig(use_sda=True), settings=ref_settings)
+            soil_profiles = soil_res.profiles
+            soil_report = soil_res.soil_report
+        write_soils(soil_profiles, db_path)
+        upsert_project_metadata(db_path, "soil_report", json.dumps(soil_report))
         from swatplus_builder.soil.plot import plot_depth_distribution
-        plot_depth_distribution(soil_res.profiles, out_path=outdir / "plots" / "soil_depth_preview.png")
-        requested = max(int(soil_res.soil_report.get("requested_mukeys", 0)), 1)
-        default_fallback = int(soil_res.soil_report.get("aggregated", {}).get("default_fallback", 0))
+        plot_depth_distribution(soil_profiles, out_path=outdir / "plots" / "soil_depth_preview.png")
+        requested = max(int(soil_report.get("requested_mukeys", 0)), 1)
+        default_fallback = int(soil_report.get("aggregated", {}).get("default_fallback", 0))
         pct_fallback_soils = min(max(default_fallback / requested, 0.0), 1.0)
         if pct_fallback_soils > 0.0:
             soil_mode = "fallback"
-        _ok(f"wrote {len(soil_res.profiles)} profiles", elapsed=time.time() - t0)
+        _ok(f"wrote {len(soil_profiles)} profiles", elapsed=time.time() - t0)
     except Exception as e:
         log.warning("Soils failed (%s). Seeding minimal.", e)
         seed_minimal_soils(db_path, {h.soil for h in tables.hrus})

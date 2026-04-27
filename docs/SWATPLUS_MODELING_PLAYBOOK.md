@@ -132,7 +132,38 @@ Scope: `swatplus-builder` alpha-stage pipeline behavior observed in project arti
   - delta NSE/KGE: `+0.053946/+0.030209`.
   Interpretation: contrast-basin calibration is real and reproducible, but still below benchmark-grade skill and remains constrained by synthetic soils and partial basin coverage.
 
-## 6. Open Questions
+## 7. Phase 3G Soil Realism Evidence (2026-04-27)
+
+- `[validated]` SDA acquisition can bypass the failing Planetary Computer gNATSGO profile path for `usgs_03339000`:
+  - acquisition artifact: `tests/_artifacts/phase3g_03339000_sda_soils_profiles.json`,
+  - requested mukeys: `81`,
+  - acquired SDA horizon profiles: `77`,
+  - coverage: `95.1%`.
+- `[validated]` External SDA profile injection can drive the normal E2E editor/import path without post-hoc database mutation:
+  - environment hook: `SWATPLUS_EXTERNAL_SOILS_JSON`,
+  - E2E artifact root: `tests/_artifacts/e2e_runs/phase3g_03339000_sda_real_soils_e2e_20260427_v2/usgs_03339000/`,
+  - profiles written: `81` (`77` external SDA + `4` deterministic local fallbacks),
+  - soil metadata: `soil_mode="fallback"`, `pct_fallback_soils=0.0494`,
+  - SWAT+ engine completed and produced 1095 aligned days.
+- `[validated]` First real-soil locked calibration for `usgs_03339000` improves over its real-soil baseline but does not outperform the previous synthetic-soil calibrated benchmark:
+  - lock artifact: `tests/_artifacts/phase3g_03339000_sda_lock/`,
+  - calibration artifact: `tests/_artifacts/phase3g_03339000_sda_cal_real/`,
+  - strict outlet GIS ID: `255`,
+  - baseline NSE/KGE: `0.156718/0.081250`,
+  - verified calibrated NSE/KGE: `0.273576/0.184651`,
+  - delta NSE/KGE: `+0.116858/+0.103401`,
+  - history rows: `10`, distinct NSE values: `10`,
+  - best parameters: `CN2=75.0`, `ALPHA_BF=1.0`.
+  Interpretation: real horizon soils increased parameter response relative to the real-soil baseline, but the stronger hypothesis that real soils alone would close the 03339000 skill gap is not supported by this run.
+- `[validated]` Real-soil calibration improves physical realism diagnostics but leaves material pathologies:
+  - realism audit: `tests/_artifacts/phase3g_03339000_sda_realism_audit/`,
+  - full-period BFI ratio improved from `1.34` to `1.17`,
+  - full-period Q10 ratio improved from `3.19` to `2.10`,
+  - full-period PBIAS remains nearly unchanged (`-27.1%` to `-27.0%`),
+  - verdict changed from `pathological` to `improving_with_pathologies`.
+- `[superseded]` The Phase 3F inference "synthetic soils are the dominant 03339000 calibration ceiling" is now too strong. Phase 3G evidence indicates soil realism helps but does not overcome outlet/coverage/structure limits by itself.
+
+## 8. Open Questions
 
 - `[open]` Why some basins remain strongly negative NSE after bridge hardening despite non-zero sensitivity.
 - `[open]` Whether additional physically meaningful parameters should be unlocked before broad calibration campaigns.
