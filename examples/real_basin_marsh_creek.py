@@ -201,7 +201,13 @@ def fetch_nlcd(basin, out_tif: Path, year: int = 2021):
     return out_tif
 
 
-def main(outdir: Path, run_engine: bool = False):
+def main(
+    outdir: Path,
+    run_engine: bool = False,
+    *,
+    sim_start: str = SIM_START,
+    sim_end: str = SIM_END,
+):
     import json
 
     from swatplus_builder.db.project import create_project_db, upsert_project_metadata
@@ -431,9 +437,9 @@ def main(outdir: Path, run_engine: bool = False):
         subs_for_weather = subs_for_weather[::step][:max_weather_stations]
     stations = [(float(s.lat), float(s.lon), float(s.elev)) for s in subs_for_weather]
     weather_bundle = fetch_gridmet(
-        stations, 
-        start=SIM_START, 
-        end=SIM_END,
+        stations,
+        start=sim_start,
+        end=sim_end,
         settings=ref_settings
     )
     
@@ -486,8 +492,8 @@ def main(outdir: Path, run_engine: bool = False):
         # Patch print.prt: set nyskip=0, dates matching the simulation period,
         # and enable daily channel outputs.
         from datetime import datetime as _dt
-        d_start = _dt.strptime(SIM_START, "%Y-%m-%d")
-        d_end   = _dt.strptime(SIM_END,   "%Y-%m-%d")
+        d_start = _dt.strptime(sim_start, "%Y-%m-%d")
+        d_end = _dt.strptime(sim_end, "%Y-%m-%d")
         start_jday, start_year = d_start.timetuple().tm_yday, d_start.year
         end_jday,   end_year   = d_end.timetuple().tm_yday,   d_end.year
 
@@ -629,7 +635,7 @@ def main(outdir: Path, run_engine: bool = False):
     for d in [plots_dir, outputs_dir, reports_dir]: d.mkdir(parents=True, exist_ok=True)
 
     import json
-    q_obs = fetch_usgs_daily_q(STATION_ID, SIM_START, SIM_END, outputs_dir / "obs_q.csv")
+    q_obs = fetch_usgs_daily_q(STATION_ID, sim_start, sim_end, outputs_dir / "obs_q.csv")
     sim_path = wf.txtinout_dir / "channel_sd_day.txt"
     if not sim_path.exists():
         sim_path = wf.txtinout_dir / "channel_day.txt"
@@ -762,9 +768,16 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("outdir", nargs="?", default="./marsh_creek_output", type=Path)
     p.add_argument("--run", action="store_true", help="Also run the SWAT+ engine.")
+    p.add_argument("--start", default=SIM_START, help="Simulation start date (YYYY-MM-DD).")
+    p.add_argument("--end", default=SIM_END, help="Simulation end date (YYYY-MM-DD).")
     args = p.parse_args()
     try:
-        main(args.outdir.resolve(), run_engine=args.run)
+        main(
+            args.outdir.resolve(),
+            run_engine=args.run,
+            sim_start=args.start,
+            sim_end=args.end,
+        )
     except Exception as e:
         log.exception("Pipeline failed: %s", e)
         sys.exit(1)

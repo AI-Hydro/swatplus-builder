@@ -21,18 +21,17 @@ See :file:`examples/real_basin_marsh_creek.py` for a hands-on demo.
 
 from __future__ import annotations
 
+import inspect
 import os
 import sys
 from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.skipif(
+@pytest.mark.skipif(
     os.environ.get("SWATPLUS_BUILDER_RUN_REAL_BASIN") != "1",
     reason="Set SWATPLUS_BUILDER_RUN_REAL_BASIN=1 to run the real-basin E2E.",
 )
-
-
 @pytest.mark.slow
 def test_marsh_creek_full_pipeline(tmp_path: Path) -> None:
     pytest.importorskip("whitebox")
@@ -84,3 +83,17 @@ def test_marsh_creek_full_pipeline(tmp_path: Path) -> None:
         f"no expected NLCD-derived plant codes in hru-lte.hru; "
         f"got none of {expected_codes}"
     )
+
+
+def test_marsh_creek_main_accepts_custom_simulation_window() -> None:
+    """Custom windows are needed for Phase 3F multi-year evidence runs."""
+    examples_dir = Path(__file__).parent.parent / "examples"
+    sys.path.insert(0, str(examples_dir))
+    try:
+        import real_basin_marsh_creek as demo  # type: ignore
+    finally:
+        sys.path.pop(0)
+
+    sig = inspect.signature(demo.main)
+    assert sig.parameters["sim_start"].default == demo.SIM_START
+    assert sig.parameters["sim_end"].default == demo.SIM_END

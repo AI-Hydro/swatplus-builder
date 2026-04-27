@@ -71,6 +71,27 @@ Scope: `swatplus-builder` alpha-stage pipeline behavior observed in project arti
   - artifact root: `tests/_artifacts/phase3f_fresh_20260427/usgs_01547700_quick_realism_audit/`,
   - both baseline and quick-calibrated alignments remain `pathological`,
   - quick-calibrated run increased full-period volume overestimation (`PBIAS +54.8%`) and low-flow overestimation (`Q10 ratio 11.11`), reinforcing that Phase 3F physical realism work is still required before broader calibration claims.
+- `[validated]` First fresh multi-year Phase 3F run (`usgs_01547700`, 2013-2015) completed end-to-end with real GridMET forcing, real SWAT+ engine execution, 1095 aligned days, and 12 generated diagnostic figures:
+  - artifact root: `tests/_artifacts/phase3f_multiyear_20260427/usgs_01547700_2013_2015/`,
+  - baseline full-period NSE/KGE: `0.009954/-0.014585`,
+  - independent-year split: calibration period 2013-2014 (`730` days), validation period 2015 (`365` days).
+- `[validated]` Multi-year locked real-engine calibration smoke (`CN2`, `ALPHA_BF`, 10 evaluations) produced distinct metrics and verified improvement:
+  - artifact root: `tests/_artifacts/phase3f_multiyear_20260427/usgs_01547700_2013_2015_locked_cal_quick/`,
+  - baseline NSE/KGE: `0.009954/-0.014585`,
+  - verified calibrated NSE/KGE: `0.145155/0.038083`,
+  - delta NSE/KGE: `+0.135201/+0.052668`,
+  - history rows: `10`, unique NSE values: `10`.
+- `[validated]` Multi-year calibrated-vs-baseline realism audit shows calibration improves metrics but does not solve physical pathologies:
+  - artifact root: `tests/_artifacts/phase3f_multiyear_20260427/usgs_01547700_2013_2015_calibrated_realism_audit/`,
+  - full-period PBIAS improves only slightly (`+21.0% -> +19.6%`),
+  - BFI overestimation remains (`BFI ratio ~1.43`),
+  - low-flow severe overestimation remains (`Q10 ratio ~9.8`),
+  - SON seasonal skill remains severely negative.
+- `[validated]` For the generated 2013-2015 Marsh Creek topology, forced terminal-outlet scoring is not defensible:
+  - strict internal GIS outlet `1`: NSE `0.009954`,
+  - terminal GIS outlet `10`: NSE about `-2386.71`,
+  - terminal GIS outlet `39`: NSE about `-45727.06`.
+  Interpretation: this pipeline can produce a gauge-representative internal channel object; publication-grade reporting must preserve and justify that provenance rather than blindly requiring terminal outlets.
 
 ## 6. Open Questions
 
@@ -78,6 +99,7 @@ Scope: `swatplus-builder` alpha-stage pipeline behavior observed in project arti
 - `[open]` Whether additional physically meaningful parameters should be unlocked before broad calibration campaigns.
 - `[open]` Best threshold policy for auto-switching proposal source when history appears flat.
 - `[open]` Whether locked benchmark artifacts should reject non-terminal pinned outlets at lock time or allow strict scoring with explicit `strict_requested_outlet_non_terminal` provenance.
+- `[open]` Whether physical realism improvement should next target baseflow/storage parameters, channel routing structure, or soil hydraulic conductivity; multi-year evidence shows metric lift without resolving BFI/low-flow/SON pathologies.
 
 ## 7. Deprecated or Rejected Assumptions
 
