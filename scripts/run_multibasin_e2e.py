@@ -56,6 +56,8 @@ class SiteResult:
     kge: float | None = None
     sim_obs_volume_ratio: float | None = None
     realism_flags: str | None = None
+    topology_failure_class: str | None = None
+    topology_failure_detail: str | None = None
     error: str | None = None
 
 
@@ -345,13 +347,41 @@ def run_site(
         return result
 
     except Exception as exc:
+        from swatplus_builder.errors import SwatBuilderPipelineError
+
         err = "".join(traceback.format_exception(exc)).strip()
+        topo_class: str | None = None
+        topo_detail: str | None = None
+        failed_status = "failed"
+
+        if isinstance(exc, SwatBuilderPipelineError):
+            msg = str(exc).lower()
+            ctx = getattr(exc, "context", {})
+            if "area mismatch" in msg:
+                topo_class = "area_mismatch"
+                ratio = ctx.get("area_ratio", "?")
+                gen = ctx.get("generated_area_km2", "?")
+                exp = ctx.get("expected_area_km2", "?")
+                topo_detail = f"generated={gen} km2, expected={exp} km2, ratio={ratio}"
+                failed_status = "topology_gate_failure"
+            elif "channel explosion" in msg:
+                topo_class = "channel_explosion"
+                ratio = ctx.get("channels_per_subbasin", "?")
+                topo_detail = f"channels_per_subbasin={ratio}"
+                failed_status = "topology_gate_failure"
+            elif "terminal" in msg and "terminal" in str(ctx.get("n_terminals", "").__class__):
+                topo_class = "terminal_explosion"
+                topo_detail = f"n_terminals={ctx.get('n_terminals', '?')}"
+                failed_status = "topology_gate_failure"
+
         result = SiteResult(
             usgs_id=usgs_id,
-            status="failed",
+            status=failed_status,
             run_dir=str(site_dir),
             elapsed_s=time.time() - started,
             basin_area_km2=area,
+            topology_failure_class=topo_class,
+            topology_failure_detail=topo_detail,
             error=err,
         )
         append_jsonl(log_path, {
@@ -359,9 +389,16 @@ def run_site(
             "iteration": usgs_id,
             "hypothesis": "Pipeline failure indicates unresolved structural or data-compatibility edge case.",
             "action_taken": "Captured exception traceback",
-            "evidence": {"error": str(exc)},
+            "evidence": {
+                "error": str(exc),
+                "topology_failure_class": topo_class,
+                "topology_failure_detail": topo_detail,
+            },
             "result": "rejected",
-            "next_step": "Proceed to next basin and summarize failure pattern",
+            "next_step": (
+                "Investigate outlet snapping / DEM extent for topology_gate_failure; "
+                "proceed to next basin."
+            ) if topo_class else "Proceed to next basin and summarize failure pattern",
         })
         return result
 
@@ -439,6 +476,8 @@ def main() -> int:
             w.writerow(asdict(r))
 
     n_ok = sum(1 for r in results if r.status == "success")
+    n_topo = sum(1 for r in results if r.status == "topology_gate_failure")
+    n_fail = len(results) - n_ok - n_topo
     lines = [
         "# Multi-Basin E2E Batch",
         "",
@@ -446,20 +485,41 @@ def main() -> int:
         f"- Sites: `{', '.join(args.sites)}`",
         f"- Period: `{args.start}` to `{args.end}`",
         f"- Success: `{n_ok}/{len(results)}`",
+        f"- Topology gate failures: `{n_topo}`",
+        f"- Other failures: `{n_fail}`",
         f"- Investigation log: `{log_path}`",
         "",
         "## Results",
         "",
-        "| USGS | Status | Elapsed (s) | object_out | Terminal with flow | Terminal total | Max terminal flo_out |",
-        "|---|---:|---:|---:|---:|---:|---:|",
+        "| USGS | Status | Elapsed (s) | object_out | Terminal with flow | Terminal total | Max terminal flo_out | Topology failure |",
+        "|---|---:|---:|---:|---:|---:|---:|---|",
     ]
     for r in results:
+        topo_col = r.topology_failure_class or ""
+        if r.topology_failure_detail:
+            topo_col = f"{topo_col}: {r.topology_failure_detail}"
         lines.append(
             f"| {r.usgs_id} | {r.status} | {r.elapsed_s:.1f} | {r.object_out if r.object_out is not None else ''} | "
             f"{r.terminal_channels_with_flow if r.terminal_channels_with_flow is not None else ''} | "
             f"{r.terminal_channels_total if r.terminal_channels_total is not None else ''} | "
-            f"{r.max_terminal_flo_out if r.max_terminal_flo_out is not None else ''} |"
+            f"{r.max_terminal_flo_out if r.max_terminal_flo_out is not None else ''} | "
+            f"{topo_col} |"
         )
+
+    if n_topo:
+        lines += [
+            "",
+            "## Topology Gate Failures",
+            "",
+            "| USGS | Class | Detail |",
+            "|---|---|---|",
+        ]
+        for r in results:
+            if r.topology_failure_class:
+                lines.append(
+                    f"| {r.usgs_id} | {r.topology_failure_class} | {r.topology_failure_detail or ''} |"
+                )
+
     summary_md.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     append_jsonl(log_path, {
