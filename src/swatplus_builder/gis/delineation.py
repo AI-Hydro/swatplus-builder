@@ -421,9 +421,12 @@ def delineate(
         if area_ratio < 0.90:
             log.warning(
                 "TOPOLOGY WARNING: delineated area %.1f km² is %.0f%% of expected %.1f km². "
-                "Likely DEM boundary truncation. Model may under-represent upstream inflow. "
-                "Consider expanding DEM clip extent.",
+                "Likely cause: routing graph fragmentation from D8 cycle removal — some "
+                "subbasins disconnected from the main outlet. Model will under-represent "
+                "upstream inflow for the missing %.0f%%. Consider FillDepressions instead "
+                "of BreachDepressionsLeastCost for low-gradient basins.",
                 total_area_km2, area_ratio * 100, expected_area_km2,
+                (1 - area_ratio) * 100,
             )
 
     result = WatershedResult(
