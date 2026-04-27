@@ -822,6 +822,45 @@ def _vectorize_channels(
 # Private helpers — topology
 # ---------------------------------------------------------------------------
 
+def _remove_back_edges(G: nx.DiGraph) -> None:
+    """Remove all back-edges from G in a single O(V+E) DFS coloring pass.
+
+    Uses tri-color DFS (WHITE=unvisited, GRAY=in-stack, BLACK=done).
+    A back-edge u→v exists when v is still GRAY (v is an ancestor of u in DFS).
+    Removing it breaks the cycle while keeping forward/cross edges intact.
+    """
+    WHITE, GRAY, BLACK = 0, 1, 2
+    color: dict[int, int] = {n: WHITE for n in G}
+    back_edges: list[tuple[int, int]] = []
+
+    # Iterative DFS to avoid Python recursion limit on large graphs.
+    for start in G.nodes:
+        if color[start] != WHITE:
+            continue
+        stack = [(start, iter(G.successors(start)))]
+        color[start] = GRAY
+        while stack:
+            node, children = stack[-1]
+            try:
+                child = next(children)
+                if color[child] == GRAY:
+                    back_edges.append((node, child))
+                elif color[child] == WHITE:
+                    color[child] = GRAY
+                    stack.append((child, iter(G.successors(child))))
+            except StopIteration:
+                color[node] = BLACK
+                stack.pop()
+
+    n_removed = 0
+    for u, v in back_edges:
+        if G.has_edge(u, v):
+            G.remove_edge(u, v)
+            n_removed += 1
+    if n_removed:
+        log.info("Removed %d back-edge(s) to make routing graph acyclic.", n_removed)
+
+
 def _build_topology(stream_links: Path, watershed_r: Path, channels_gdf=None) -> nx.DiGraph:
     """Build a DiGraph of channel links.
 
@@ -921,15 +960,12 @@ def _build_topology(stream_links: Path, watershed_r: Path, channels_gdf=None) ->
             except Exception as exc:
                 log.warning("Spatial topology (disk fallback) failed: %s", exc)
 
-    # Validate DAG, remove back-edges if needed
+    # Validate DAG, remove back-edges in a single O(V+E) coloring DFS.
+    # The prior iterative approach (find_cycle + remove one edge, repeat) is
+    # O(k × (V+E)) and hangs for large basins with many cycles.
     if not nx.is_directed_acyclic_graph(G):
         log.warning("Routing graph has cycles — removing back-edges.")
-        while not nx.is_directed_acyclic_graph(G):
-            try:
-                cycle = nx.find_cycle(G, orientation="original")
-                G.remove_edge(cycle[-1][0], cycle[-1][1])
-            except nx.NetworkXNoCycle:
-                break
+        _remove_back_edges(G)
 
     log.info(
         "Routing graph: %d nodes, %d edges, %d terminal",
