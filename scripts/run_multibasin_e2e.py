@@ -19,6 +19,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pandas as pd
 from pynhd import NLDI
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -35,13 +36,26 @@ class SiteResult:
     run_dir: str
     elapsed_s: float
     basin_area_km2: float | None = None
+    n_subbasins: int | None = None
     n_channels: int | None = None
+    n_terminals: int | None = None
     n_hrus: int | None = None
     object_out: int | None = None
     terminal_channels_with_flow: int | None = None
     terminal_channels_total: int | None = None
     max_terminal_flo_out: float | None = None
     mean_terminal_flo_out: float | None = None
+    selected_outlet_gis_id: int | None = None
+    outlet_policy: str | None = None
+    outlet_selection_reason: str | None = None
+    requested_outlet_is_terminal: bool | None = None
+    outlet_provenance_sha256: str | None = None
+    soil_mode: str | None = None
+    pct_fallback_soils: float | None = None
+    nse: float | None = None
+    kge: float | None = None
+    sim_obs_volume_ratio: float | None = None
+    realism_flags: str | None = None
     error: str | None = None
 
 
@@ -81,17 +95,25 @@ def parse_terminal_channel_ids(txtinout: Path) -> set[int]:
     if not p.exists():
         return set()
     terminals: set[int] = set()
-    for line in p.read_text(encoding="utf-8", errors="replace").splitlines()[2:]:
+    col_idx: dict[str, int] | None = None
+    for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
         parts = line.split()
-        if len(parts) < 16:
+        if not parts:
+            continue
+        if "gis_id" in parts and "obj_typ" in parts:
+            col_idx = {c: i for i, c in enumerate(parts)}
+            continue
+        if col_idx is None:
+            if len(parts) >= 14 and parts[0].isdigit() and parts[13] == "out":
+                terminals.add(int(parts[0]))
             continue
         try:
-            unit_id = int(parts[0])
-        except ValueError:
+            obj_typ = parts[col_idx["obj_typ"]]
+            if obj_typ != "out":
+                continue
+            terminals.add(int(parts[col_idx["gis_id"]]))
+        except (KeyError, IndexError, ValueError):
             continue
-        obj_typ = parts[13]
-        if obj_typ == "out":
-            terminals.add(unit_id)
     return terminals
 
 
@@ -128,16 +150,20 @@ def parse_terminal_flow_stats(txtinout: Path, terminal_ids: set[int]) -> tuple[i
     return sum(1 for v in vals if v > 0), len(terminal_ids), max(vals), (sum(vals) / len(vals))
 
 
-def read_optional_counts(run_dir: Path) -> tuple[int | None, int | None]:
+def read_optional_counts(run_dir: Path) -> tuple[int | None, int | None, int | None, int | None]:
     ws_json = run_dir / "delin" / "watershed_result.json"
     hru_json = run_dir / "delin" / "hrus" / "hru_catalog.json"
 
+    n_subbasins = None
     n_channels = None
+    n_terminals = None
     n_hrus = None
     if ws_json.exists():
         try:
             ws = json.loads(ws_json.read_text(encoding="utf-8"))
+            n_subbasins = int(ws.get("stats", {}).get("n_subbasins", 0))
             n_channels = int(ws.get("stats", {}).get("n_channels", 0))
+            n_terminals = int(ws.get("stats", {}).get("n_terminals", 0))
         except Exception:
             pass
     if hru_json.exists():
@@ -147,7 +173,71 @@ def read_optional_counts(run_dir: Path) -> tuple[int | None, int | None]:
         except Exception:
             pass
 
-    return n_channels, n_hrus
+    return n_subbasins, n_channels, n_terminals, n_hrus
+
+
+def load_eval_diagnostics(site_dir: Path) -> dict:
+    md = site_dir / "metadata.json"
+    m = site_dir / "reports" / "metrics.json"
+    out: dict = {}
+    if md.exists():
+        try:
+            out.update(json.loads(md.read_text(encoding="utf-8")))
+        except Exception:
+            pass
+    if m.exists():
+        try:
+            out["metrics"] = json.loads(m.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    alignment = site_dir / "outputs" / "alignment.csv"
+    if alignment.exists():
+        try:
+            df = pd.read_csv(alignment)
+            if {"obs", "sim"}.issubset(df.columns):
+                obs_sum = float(df["obs"].fillna(0.0).sum())
+                sim_sum = float(df["sim"].fillna(0.0).sum())
+                if abs(obs_sum) > 1e-12:
+                    out["sim_obs_volume_ratio"] = sim_sum / obs_sum
+        except Exception:
+            pass
+    return out
+
+
+def build_realism_flags(
+    diag: dict,
+    n_subbasins: int | None,
+    n_channels: int | None,
+    n_terminals: int | None,
+    n_hrus: int | None,
+) -> list[str]:
+    flags: list[str] = []
+    if diag.get("requested_outlet_is_terminal") is False:
+        flags.append("outlet_requested_non_terminal")
+
+    soil_mode = str(diag.get("soil_mode", ""))
+    if soil_mode == "synthetic":
+        flags.append("soil_synthetic_mode")
+    pct_fallback = float(diag.get("pct_fallback_soils", 0.0) or 0.0)
+    if pct_fallback > 0.10:
+        flags.append("soil_fallback_gt_10pct")
+
+    ratio = diag.get("sim_obs_volume_ratio")
+    if isinstance(ratio, (int, float)):
+        if ratio > 3.0:
+            flags.append("volume_bias_high")
+        elif ratio < 0.33:
+            flags.append("volume_bias_low")
+
+    if n_subbasins is not None and n_channels is not None and n_subbasins > 0:
+        if n_channels > 20 * n_subbasins:
+            flags.append("channels_per_subbasin_extreme")
+    if n_terminals is not None and n_terminals > 1:
+        flags.append("multiple_terminal_channels")
+    if n_hrus is not None and n_subbasins is not None and n_subbasins > 0:
+        if n_hrus <= n_subbasins:
+            flags.append("hru_count_suspiciously_low")
+    return flags
 
 
 def run_site(usgs_id: str, out_root: Path, log_path: Path, run_engine: bool) -> SiteResult:
@@ -186,7 +276,10 @@ def run_site(usgs_id: str, out_root: Path, log_path: Path, run_engine: bool) -> 
         object_out, _lcha = parse_object_cnt(txtinout)
         terminal_ids = parse_terminal_channel_ids(txtinout)
         nz, nt, vmax, vmean = parse_terminal_flow_stats(txtinout, terminal_ids)
-        n_channels, n_hrus = read_optional_counts(site_dir)
+        n_subbasins, n_channels, n_terminals, n_hrus = read_optional_counts(site_dir)
+        eval_diag = load_eval_diagnostics(site_dir)
+        metrics = eval_diag.get("metrics", {}) if isinstance(eval_diag.get("metrics"), dict) else {}
+        realism_flags = build_realism_flags(eval_diag, n_subbasins, n_channels, n_terminals, n_hrus)
 
         result = SiteResult(
             usgs_id=usgs_id,
@@ -194,13 +287,36 @@ def run_site(usgs_id: str, out_root: Path, log_path: Path, run_engine: bool) -> 
             run_dir=str(site_dir),
             elapsed_s=time.time() - started,
             basin_area_km2=area,
+            n_subbasins=n_subbasins,
             n_channels=n_channels,
+            n_terminals=n_terminals,
             n_hrus=n_hrus,
             object_out=object_out,
             terminal_channels_with_flow=nz,
             terminal_channels_total=nt,
             max_terminal_flo_out=vmax,
             mean_terminal_flo_out=vmean,
+            selected_outlet_gis_id=(
+                int(eval_diag["selected_outlet_gis_id"])
+                if "selected_outlet_gis_id" in eval_diag
+                else None
+            ),
+            outlet_policy=str(eval_diag.get("outlet_policy", "")) or None,
+            outlet_selection_reason=str(eval_diag.get("outlet_selection_reason", "")) or None,
+            requested_outlet_is_terminal=(
+                eval_diag["requested_outlet_is_terminal"]
+                if isinstance(eval_diag.get("requested_outlet_is_terminal"), bool)
+                else None
+            ),
+            outlet_provenance_sha256=str(eval_diag.get("outlet_provenance_sha256", "")) or None,
+            soil_mode=str(eval_diag.get("soil_mode", "")) or None,
+            pct_fallback_soils=float(eval_diag.get("pct_fallback_soils", 0.0) or 0.0),
+            nse=float(metrics["nse"]) if "nse" in metrics else None,
+            kge=float(metrics["kge"]) if "kge" in metrics else None,
+            sim_obs_volume_ratio=float(eval_diag["sim_obs_volume_ratio"])
+            if "sim_obs_volume_ratio" in eval_diag
+            else None,
+            realism_flags=";".join(realism_flags) if realism_flags else "",
         )
 
         append_jsonl(log_path, {
@@ -209,7 +325,7 @@ def run_site(usgs_id: str, out_root: Path, log_path: Path, run_engine: bool) -> 
             "hypothesis": "Successful run should produce non-zero terminal channel flow.",
             "action_taken": "Parsed object.cnt + chandeg.con + channel_sd_day.txt",
             "evidence": asdict(result),
-            "result": "accepted" if nz > 0 else "warning",
+            "result": "accepted" if nz > 0 and not realism_flags else "warning",
             "next_step": "Record and continue to next basin",
         })
         return result

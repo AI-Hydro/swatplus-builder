@@ -73,7 +73,10 @@ mcp = [
 swatplus = [
     # pySWATPlus: calibration parameter editing + sensitivity analysis
     # (optional; our run/swatplus.py handles direct subprocess execution)
-    "pySWATPlus>=0.3",
+    "pySWATPlus>=1.3.0",
+    # Verified companion dependencies used by pySWATPlus calibration/sensitivity.
+    "pymoo>=0.6.1",
+    "SALib>=1.5.0",
 ]
 viz = [
     # Soil depth distribution plots and post-run diagnostics.

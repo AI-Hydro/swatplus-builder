@@ -25,6 +25,7 @@ import os
 import stat
 import sys
 import textwrap
+import json
 from pathlib import Path
 
 import pytest
@@ -259,6 +260,63 @@ class TestRunSad:
         assert ei.value.context["returncode"] == 7
         # Even on failure we surface the diagnostics tail the engine wrote.
         assert "OK" in ei.value.context["diagnostics_tail"]
+
+
+class TestLargeBasinGuardrails:
+    def _make_run_layout(self, tmp_path: Path, *, n_subbasins: int, n_hrus: int) -> tuple[Path, Path]:
+        run_root = tmp_path / "run"
+        txt = run_root / "project" / "Scenarios" / "Default" / "TxtInOut"
+        txt.mkdir(parents=True)
+        (txt / "file.cio").write_text("file.cio: test\n")
+
+        delin = run_root / "delin"
+        (delin / "hrus").mkdir(parents=True)
+        (delin / "watershed_result.json").write_text(
+            json.dumps({"stats": {"n_subbasins": n_subbasins}}),
+            encoding="utf-8",
+        )
+        (delin / "hrus" / "hru_catalog.json").write_text(
+            json.dumps({"stats": {"n_hrus": n_hrus}}),
+            encoding="utf-8",
+        )
+        return run_root, txt
+
+    def test_guardrail_warns_and_continues_when_auto_adjust_true(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        from swatplus_builder.run.swatplus import run
+
+        _root, txt = self._make_run_layout(tmp_path, n_subbasins=700, n_hrus=9000)
+        shim = _write_shim(tmp_path / "ok_shim")
+
+        with caplog.at_level("WARNING"):
+            result = run(
+                txt,
+                binary=shim,
+                max_subbasins=500,
+                max_hrus=5000,
+                auto_adjust=True,
+            )
+
+        assert result.success
+        assert "Large-basin guardrail triggered" in caplog.text
+
+    def test_guardrail_fails_fast_when_auto_adjust_disabled(self, tmp_path: Path) -> None:
+        from swatplus_builder.errors import SwatBuilderInputError
+        from swatplus_builder.run.swatplus import run
+
+        _root, txt = self._make_run_layout(tmp_path, n_subbasins=700, n_hrus=9000)
+        shim = _write_shim(tmp_path / "unused_shim")
+
+        with pytest.raises(SwatBuilderInputError) as ei:
+            run(
+                txt,
+                binary=shim,
+                max_subbasins=500,
+                max_hrus=5000,
+                auto_adjust=False,
+            )
+        assert "guardrail triggered" in str(ei.value).lower()
 
     def test_timeout_raises_external_error(self, txtinout, tmp_path):
         from swatplus_builder.errors import SwatBuilderExternalError

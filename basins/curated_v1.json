@@ -1,0 +1,61 @@
+{
+  "version": "curated_v1",
+  "generated_utc": "2026-04-23T00:00:00Z",
+  "basins": [
+    {
+      "usgs_id": "01547700",
+      "basin_id": "usgs_01547700",
+      "bbox": [-77.95, 41.35, -77.55, 41.65],
+      "simulation_start": "2015-01-01",
+      "simulation_end": "2015-12-31",
+      "expected_nse_min": -1.0,
+      "notes": "Humid Northeast headwater reference basin used for early structural debugging."
+    },
+    {
+      "usgs_id": "01013500",
+      "basin_id": "usgs_01013500",
+      "bbox": [-69.65, 46.45, -69.20, 46.85],
+      "simulation_start": "2015-01-01",
+      "simulation_end": "2015-12-31",
+      "expected_nse_min": -1.0,
+      "notes": "Cold-climate basin (snow influence) for routing robustness checks."
+    },
+    {
+      "usgs_id": "03339000",
+      "basin_id": "usgs_03339000",
+      "bbox": [-87.45, 39.55, -87.00, 39.95],
+      "simulation_start": "2015-01-01",
+      "simulation_end": "2015-12-31",
+      "expected_nse_min": -1.0,
+      "notes": "Midwest mixed-regime structural regression basin used in CI routing gate."
+    },
+    {
+      "usgs_id": "01491000",
+      "basin_id": "usgs_01491000",
+      "bbox": [-75.60, 40.10, -75.20, 40.45],
+      "simulation_start": "2015-01-01",
+      "simulation_end": "2015-12-31",
+      "expected_nse_min": -1.0,
+      "notes": "Moderate lowland basin for mixed hydrograph response."
+    },
+    {
+      "usgs_id": "02087500",
+      "basin_id": "usgs_02087500",
+      "bbox": [-78.20, 36.20, -77.70, 36.70],
+      "simulation_start": "2015-01-01",
+      "simulation_end": "2015-12-31",
+      "expected_nse_min": -1.0,
+      "notes": "Humid Southeast basin for climate/regime diversity in suite."
+    },
+    {
+      "usgs_id": "02129000",
+      "basin_id": "usgs_02129000",
+      "bbox": [-81.35, 34.70, -80.90, 35.10],
+      "simulation_start": "2015-01-01",
+      "simulation_end": "2015-12-31",
+      "expected_nse_min": -1.0,
+      "notes": "Additional Southeast basin for baseflow and routing consistency checks."
+    }
+  ]
+}
+

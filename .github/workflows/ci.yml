@@ -52,3 +52,38 @@ jobs:
         run: pip install -e ".[dev]"
       - name: Smoke
         run: pytest -q tests/test_smoke.py
+
+  routing-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip openmpi-bin
+
+      - name: Install Python deps (full stack)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[all]"
+
+      - name: Bootstrap SWAT+ Linux engine (pinned release asset)
+        run: |
+          mkdir -p bin
+          curl -L -o /tmp/swatplus-linux.zip \
+            https://github.com/swat-model/swatplus/releases/download/61.0.2/swatplus-61.0.2-ifx-lin_x86_64-Rel.zip
+          unzip -o /tmp/swatplus-linux.zip -d /tmp
+          cp /tmp/swatplus-61.0.2-ifx-lin_x86_64-Rel bin/swatplus_exe
+          chmod +x bin/swatplus_exe
+
+      - name: Routing regression gate (multi-basin)
+        env:
+          SWATPLUS_BUILDER_RUN_ROUTING_REGRESSION: "1"
+        run: |
+          pytest -q tests/test_ci_routing_regression.py -s

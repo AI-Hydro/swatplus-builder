@@ -14,7 +14,7 @@ def fetch_usgs_daily_q(
     end_date: str, 
     out_csv: Optional[Path | str] = None
 ) -> pd.Series:
-    """Fetch daily mean discharge (parameter 00060) from NWIS and convert to cms.
+    """Fetch daily mean discharge (parameter 00060) from NWIS in m3/s.
     
     Args:
         usgs_id: 8-digit or longer USGS site number.
@@ -33,7 +33,8 @@ def fetch_usgs_daily_q(
     log.info("Fetching USGS NWIS daily streamflow for site %s (%s to %s)", usgs_id, start_date, end_date)
     
     nwis = NWIS()
-    # 00060 is discharge in cubic feet per second
+    # 00060 is discharge in cubic feet per second in NWIS raw services.
+    # pygeohydro NWIS.get_streamflow already normalizes to m3/s.
     q_df = nwis.get_streamflow(usgs_id, dates=(start_date, end_date), freq="dv")
     
     if q_df.empty:
@@ -44,8 +45,7 @@ def fetch_usgs_daily_q(
         # Fallback if structure changes
         usgs_col = q_df.columns[0]
         
-    # Convert cfs -> cms
-    q_cms = q_df[usgs_col] * 0.028316846592
+    q_cms = q_df[usgs_col].astype(float)
     q_cms.name = "obs"
     
     # Strip timezone for cleaner alignment with SWAT

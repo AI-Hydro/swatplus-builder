@@ -772,11 +772,11 @@ class GisImport(ExecutableApi):
 				if lon is None: lon = 0
 
 				# Channel tables
-				# SWAT+ Rev60/61 LTE routing can retain all water in-channel for this
-				# GIS topology when `len` is in the km-scale range. Using a short LTE
-				# conceptual channel length keeps routing conservative (inflow -> outflow)
-				# and avoids zero chandeg outflow while preserving network connectivity.
-				lte_len_km = (row.len2 / 1000) if row.len2 is not None and (row.len2 / 1000) > 0 and (row.len2 / 1000) <= 0.001 else 0.0005
+				# LTE channel routing in SWAT+ Rev60/61 can collapse to zero outflow
+				# when conceptual channel length is above ~0.001 km for this GIS topology.
+				# Keep a tiny positive floor and cap the effective LTE length.
+				raw_len_km = (row.len2 / 1000) if row.len2 is not None and (row.len2 / 1000) > 0 else 0.0005
+				lte_len_km = min(raw_len_km, 0.001)
 				hyd_cha = {
 					'id': i,
 					'name': 'hyd%s' % cha_name,
