@@ -415,6 +415,17 @@ def delineate(
         max_terminal_rate=max_terminal_rate,
     )
 
+    # Warn when area coverage is partial (passes gate but may affect calibration).
+    if expected_area_km2 and expected_area_km2 > 0:
+        area_ratio = total_area_km2 / expected_area_km2
+        if area_ratio < 0.90:
+            log.warning(
+                "TOPOLOGY WARNING: delineated area %.1f km² is %.0f%% of expected %.1f km². "
+                "Likely DEM boundary truncation. Model may under-represent upstream inflow. "
+                "Consider expanding DEM clip extent.",
+                total_area_km2, area_ratio * 100, expected_area_km2,
+            )
+
     result = WatershedResult(
         workdir=workdir,
         crs=proj_crs,
