@@ -79,6 +79,7 @@ PHASE_*.md
 *_CLOSEOUT.md
 *_READINESS.md
 CALIBRATION_PLAN*.md
+handover_docs.md
 
 # Local-only notes (never commit)
 local-docs/
