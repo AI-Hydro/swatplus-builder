@@ -98,6 +98,19 @@ Scope: `swatplus-builder` alpha-stage pipeline behavior observed in project arti
   - generated watershed artifact at threshold `500` cells: `1` subbasin, `5331` channels, `19` terminals, total area `0.22 km2`, mean slope `0.0`,
   - final retry raised `Delineation produced zero subbasins`.
   Interpretation: this exposes a large/low-gradient basin portability blocker in outlet snapping/DEM-conditioned delineation. It is not evidence that the locked calibration path failed; the model never reached TxtInOut generation.
+- `[validated]` After adaptive max-accumulation outlet snapping and scale-aware topology gates, `usgs_03339000` completed the full 2013-2015 real-engine E2E workflow and became the first successful multi-year contrast basin:
+  - final generated area: about `2513.8 km2` vs NLDI `3340.9 km2` (`~75%` coverage),
+  - topology gate passed with plausible channel density (`~1.33` channels/subbasin),
+  - baseline locked outlet: GIS ID `290`, `outlet_policy="strict"`,
+  - baseline NSE/KGE: `0.398815/0.424652`.
+- `[validated]` `usgs_03339000` locked real-engine calibration produced independently verified improvement with distinct parameter-response evaluations:
+  - artifact roots: `tests/_artifacts/phase3f_03339000_2013_2015_lock/` and `tests/_artifacts/phase3f_03339000_2013_2015_cal_quick/`,
+  - calibration parameters: `CN2`, `ALPHA_BF`,
+  - history rows: `10`, distinct NSE values: `10`,
+  - best parameters: `CN2=52.326847`, `ALPHA_BF=0.223211`,
+  - verified NSE/KGE: `0.452761/0.454862`,
+  - delta NSE/KGE: `+0.053946/+0.030209`.
+  Interpretation: contrast-basin calibration is real and reproducible, but still below benchmark-grade skill and remains constrained by synthetic soils and partial basin coverage.
 
 ## 6. Open Questions
 
