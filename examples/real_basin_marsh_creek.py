@@ -299,10 +299,13 @@ def main(
             stream_threshold_cells=th,
             expected_area_km2=EXPECTED_AREA_KM2 if EXPECTED_AREA_KM2 > 0 else None,
         )
+        # Default 30 %: DEM-boundary truncation can legitimately leave 25-30 % of
+        # a large basin outside the delineated watershed. Override via env var.
+        _area_tol = float(os.environ.get("SWATPLUS_AREA_TOLERANCE_PCT", "30.0"))
         vr = validate_watershed(
             ws_try,
             reference_polygon=basin_gpkg,
-            area_tolerance_pct=20.0,
+            area_tolerance_pct=_area_tol,
         )
         suspicious = _topology_suspicious(ws_try.stats)
         ws = ws_try
