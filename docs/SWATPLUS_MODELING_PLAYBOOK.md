@@ -163,8 +163,43 @@ Scope: `swatplus-builder` alpha-stage pipeline behavior observed in project arti
   - verdict changed from `pathological` to `improving_with_pathologies`.
 - `[superseded]` The Phase 3F inference "synthetic soils are the dominant 03339000 calibration ceiling" is now too strong. Phase 3G evidence indicates soil realism helps but does not overcome outlet/coverage/structure limits by itself.
 
-## 8. Open Questions
+## 8. Phase 3G Sprint 2: Outlet/Topology Comparability (2026-04-27)
 
+- `[validated]` **Different auto-detected outlets across E2E runs produce incomparable metrics**  
+  Phase 3F auto-detected outlet GIS ID 290 as best-NSE terminal; Phase 3G v2 auto-detected outlet GIS ID 255. Both outlets are terminal in both topologies (`terminal_outlet_ids` confirmed). Direct metric comparison between Phase 3F (outlet 290) and Phase 3G (outlet 255) is invalid — it conflates soil replacement with outlet selection.  
+  Artifact: `tests/_artifacts/phase3g_03339000_outlet_comparability/outlet_comparison.csv`
+
+- `[validated]` **Cross-outlet evaluation disentangles soil-replacement vs outlet-selection effects**  
+  Method: `evaluate_run` with `outlet_policy='strict'` applied to all four channel_sd_day.txt files (Phase 3F/3G baseline and calibrated best) at both outlets 255 and 290.  
+  Results (NSE):
+
+  | Condition | Outlet 255 | Outlet 290 | Dominant outlet |
+  | --- | ---: | ---: | --- |
+  | Phase 3F baseline (synthetic) | 0.3184 | **0.3988** | 290 |
+  | Phase 3G baseline (real SDA) | **0.1567** | 0.0564 | 255 (baseline only) |
+  | Phase 3F calibrated (CN2=52.33, ALPHA_BF=0.2232) | 0.3423 | **0.4528** | 290 |
+  | Phase 3G calibrated (CN2=75.0, ALPHA_BF=1.0) | 0.2736 | **0.3176** | 290 |
+
+- `[validated]` **Real SDA soils degraded calibration skill at both outlets (holding outlet constant)**  
+  Soil-replacement effect (Δ = Phase3G − Phase3F at the same outlet):  
+  - Outlet 255: baseline Δ = −0.1617, calibrated Δ = −0.0688  
+  - Outlet 290: baseline Δ = −0.3424, calibrated Δ = −0.1352  
+  Interpretation: real SSURGO soil horizons raised BFI_sim from ~0.61 to ~0.71 (observed BFI_obs = 0.537). The model routes too much flow through slow baseflow pathways with real hydraulic conductivity values, and this cannot be corrected by CN2/ALPHA_BF calibration alone.
+
+- `[validated]` **Phase 3G calibrated converged to boundary parameters (ALPHA_BF=1.0), signaling parameter identifiability failure at outlet 255**  
+  When calibration locks onto a boundary value (ALPHA_BF=1.0 = maximum), the optimizer is saturating the search space without finding a physical optimum. This indicates outlet 255 may not be the correct gauge-representative outlet.
+
+- `[validated]` **Phase 3G calibration objective_run directories share hash names with Phase 3F but contain genuinely different simulations**  
+  Content-addressable hash is computed from parameters + outlet only, not from soil source. Same hash directories appear in both calibrations but contain different channel_sd_day.txt files (confirmed by SHA256: `b4b3bbf1...` for Phase 3F eval 5 vs `7bc57e27...` for Phase 3G same-parameter run). Real SDA soils were genuinely executed in Phase 3G calibration.
+
+- `[decision]` **Do not run new calibration until GIS-correct outlet is confirmed**  
+  Outlet 290 consistently outperforms outlet 255 for both simulation types at the calibrated level. The correct outlet must be identified by comparing GIS ID 255 and GIS ID 290 channel endpoints against USGS gauge 03339000 coordinates (39.4789° N, 87.3931° W). Running calibration at the wrong outlet produces structurally invalid results regardless of soil quality.
+
+## 9. Open Questions
+
+- `[open]` Which outlet (255 or 290) geographically corresponds to USGS gauge 03339000 at Terre Haute, IN? Requires GIS coordinate comparison of channel endpoints in chandeg.con / GIS vector data.
+- `[open]` Why real SDA soils raised BFI_sim to 0.71 vs BFI_obs 0.537 — is this a soil hydraulic conductivity error, a routing configuration issue, or a model structure limitation?
+- `[open]` Whether CN2/ALPHA_BF calibration can recover any of the real-soil skill loss, or whether additional parameters (SOL_K, CH_K2, GW_DELAY) are required.
 - `[open]` Why some basins remain strongly negative NSE after bridge hardening despite non-zero sensitivity.
 - `[open]` Whether additional physically meaningful parameters should be unlocked before broad calibration campaigns.
 - `[open]` Best threshold policy for auto-switching proposal source when history appears flat.
@@ -172,7 +207,7 @@ Scope: `swatplus-builder` alpha-stage pipeline behavior observed in project arti
 - `[open]` Whether physical realism improvement should next target baseflow/storage parameters, channel routing structure, or soil hydraulic conductivity; multi-year evidence shows metric lift without resolving BFI/low-flow/SON pathologies.
 - `[open]` How to make large-basin delineation robust enough for basins like `03339000`: candidates include stronger area-ratio preflight failure, larger outlet snap search, hydrofabric-guided snapping, NHDPlus flowline anchoring, or explicit user-provided pour points.
 
-## 7. Deprecated or Rejected Assumptions
+## 10. Deprecated or Rejected Assumptions
 
 - `[rejected]` "If routing tables exist, channels are always active at runtime."  
   Rejection basis: prior zero-flow channel outputs despite populated routing artifacts.
