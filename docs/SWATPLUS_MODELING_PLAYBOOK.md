@@ -195,7 +195,50 @@ Scope: `swatplus-builder` alpha-stage pipeline behavior observed in project arti
 - `[decision]` **Do not run new calibration until GIS-correct outlet is confirmed**  
   Outlet 290 consistently outperforms outlet 255 for both simulation types at the calibrated level. The correct outlet must be identified by comparing GIS ID 255 and GIS ID 290 channel endpoints against USGS gauge 03339000 coordinates (39.4789° N, 87.3931° W). Running calibration at the wrong outlet produces structurally invalid results regardless of soil quality.
 
-## 9. Open Questions
+## 9. Phase 3G Sprint 3: Outlet Confirmation & Soil-Replacement Baseline (2026-04-28)
+
+- `[validated]` **Outlet confirmation via GIS drainage area: 255 vs 290**  
+  Evidence from chandeg.con in both Phase 3F and Phase 3G v2: GIS ID 290 is unambiguously the main-stem outlet (drainage area 862 ha vs 157 ha for 255 — a 5.5× difference). Both outlets are terminal in the watershed routing topology. Neither outlet is at the physical gauge (39.4789°N, 87.3931°W); both are in eastern Illinois, ~72–96 km NNW. The model's outlet snap (lat 40.104°N, lon 87.600°W) is displaced 72 km north from the real gauge, a pre-existing delineation limitation already documented in metadata.json (`area_diff_pct: -24.8%`, `centroid_distance_km: 9.2`). **Decision: outlet 290 is the model's main-stem terminus and anchor for calibration work.**  
+  Artifact: `tests/_artifacts/phase3g_03339000_outlet_comparability/outlet_confirmation.md`
+
+- `[validated]` **Re-locked Phase 3G baseline at outlet 290 (real SDA soils, 95.1% real SSURGO)**  
+  Lock artifact: `tests/_artifacts/phase3g_03339000_sda_outlet290_lock/`  
+  - Baseline NSE/KGE: 0.0564 / 0.2213 (strict outlet policy, outlet=290)  
+  - Matches Sprint 2 cross-eval prediction (phase3g @ outlet 290 baseline = 0.0564) exactly  
+  - This baseline is now directly comparable to Phase 3F baseline @ outlet 290 (NSE 0.3988)
+
+- `[validated]` **Re-calibrated Phase 3G at outlet 290 (CN2 + ALPHA_BF, 10 evals, real SDA soils)**  
+  Calibration artifact: `tests/_artifacts/phase3g_03339000_sda_outlet290_cal/`  
+  - Best-calibrated NSE/KGE: 0.3581 / 0.3334  
+  - Best parameters: CN2=48.77, ALPHA_BF=0.505  
+  - Δ NSE: +0.3016 (baseline 0.0564 → calibrated 0.3581)  
+  - BFI_sim: 0.6617 (vs BFI_obs 0.537 → ratio 1.232, excess baseflow)
+
+- `[validated]` **Definitive soil-replacement comparison at outlet 290: real SDA soils UNDERPERFORM synthetic**  
+
+  | Condition | Soil | Baseline NSE | Calibrated NSE | Δ NSE | BFI_sim ratio |
+  |---|---|---|---|---|---|
+  | Phase 3F | Synthetic (100%) | 0.3988 | 0.4528 | +0.0539 | 1.106 |
+  | Phase 3G | Real SDA (95.1%) | 0.0564 | 0.3581 | +0.3016 | 1.232 |
+  | **Difference** | | **−0.3424** | **−0.0947** | **+0.2477** | **+0.126** |
+
+  **Soil-replacement conclusion:** Real SSURGO soils produce a **catastrophically worse baseline** (NSE 0.0564 vs 0.3988, a −86% skill collapse). Calibration gains are 5.6× larger with real soils (+0.3016 vs +0.0539), indicating much higher parameter sensitivity. However, even after aggressive calibration (ALPHA_BF pushed to 0.505), Phase 3G calibrated (0.358) still underperforms Phase 3F calibrated (0.453) by 0.095 NSE. **Real soils are not the limiting factor.** The baseline collapse signals a structural mismatch (wrong outlet, routing, forcing, or basin coverage) that real soil hydraulics cannot overcome.
+
+- `[validated]` **BFI pathology worsens with real SDA soils; CN2/ALPHA_BF calibration insufficient**  
+  Real SSURGO hydraulic conductivity raises BFI_sim/BFI_obs ratio from 1.106 (synthetic) to 1.232 (real). The model routes 23% more flow through baseflow with real soils. CN2 (surface runoff partitioning) and ALPHA_BF (recession rate) cannot fully compensate for the underlying hydraulic conductivity mismatch. This indicates:
+  1. Real soils may not be correctly adjusted for this basin (SOL_AWC, SOL_K values may be off).
+  2. Model structure (2-aquifer cascade, GW routing, revap) may not match hydrologic response.
+  3. Parameters like GW_DELAY, GWQMN, SOL_K may be required to tune baseflow generation.
+
+- `[decision]` **Next step: structural diagnostics, not parameter expansion**  
+  Evidence shows that baseline NSE is the bottleneck, not calibration gain. Before attempting to fit more parameters (SOL_K, GW_DELAY, CH_K2), diagnose the baseline collapse:
+  1. **Multi-year cal/val split** — are current results overfitted within 2013-2015?
+  2. **Outlet validation** — is outlet 290 genuinely the gauge-representative terminus?
+  3. **Forcing audit** — does GridMET cumulative precipitation match observed streamflow volume over 3 years?
+  4. **Routing audit** — do automated topology/routing parameters match known basin structure?
+  Expanded calibration without understanding the baseline collapse will produce false confidence. Research-grade claims require isolating whether the problem is (a) soil/parameter tuning, (b) delineation/outlet, (c) forcing, or (d) model structure.
+
+## 10. Open Questions
 
 - `[open]` Which outlet (255 or 290) geographically corresponds to USGS gauge 03339000 at Terre Haute, IN? Requires GIS coordinate comparison of channel endpoints in chandeg.con / GIS vector data.
 - `[open]` Why real SDA soils raised BFI_sim to 0.71 vs BFI_obs 0.537 — is this a soil hydraulic conductivity error, a routing configuration issue, or a model structure limitation?
