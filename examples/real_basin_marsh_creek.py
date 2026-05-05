@@ -39,6 +39,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import random
 import shutil
 import sys
 import time
@@ -82,15 +83,6 @@ def _truthy_env(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
-def _adaptive_stream_threshold(area_km2: float, dem_resolution_m: int) -> int:
-    """Choose a stream threshold that scales with basin area."""
-    target_subbasins = max(8, min(250, int(round(area_km2 / 4.0))))
-    cell_area_m2 = float(dem_resolution_m * dem_resolution_m)
-    cells_total = max(area_km2 * 1_000_000.0 / max(cell_area_m2, 1.0), 1.0)
-    threshold = int(max(100, min(8000, round(cells_total / max(target_subbasins, 1)))))
-    return threshold
-
-
 def _topology_suspicious(ws_stats: dict) -> bool:
     n_sub = int(ws_stats.get("n_subbasins", 0) or 0)
     n_cha = int(ws_stats.get("n_channels", 0) or 0)
@@ -101,6 +93,33 @@ def _topology_suspicious(ws_stats: dict) -> bool:
     if float(ws_stats.get("total_area_km2", 0.0) or 0.0) > 5.0 and n_sub < 3:
         return True
     return False
+
+
+def _with_retries(label: str, fn, *args, **kwargs):
+    """Run fn with exponential backoff + jitter and return (result, attempts)."""
+    max_attempts = int(os.environ.get("SWATPLUS_FETCH_MAX_ATTEMPTS", "4"))
+    base_s = float(os.environ.get("SWATPLUS_FETCH_RETRY_BASE_S", "1.0"))
+    cap_s = float(os.environ.get("SWATPLUS_FETCH_RETRY_CAP_S", "20.0"))
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            return fn(*args, **kwargs), attempt
+        except Exception as exc:
+            if attempt >= max_attempts:
+                raise RuntimeError(f"{label} failed after {attempt} attempts: {exc}") from exc
+            delay = min(cap_s, base_s * (2 ** (attempt - 1)))
+            jitter = random.uniform(0.0, max(0.1, delay * 0.25))
+            sleep_s = delay + jitter
+            log.warning(
+                "%s attempt %d/%d failed: %s; retrying in %.1fs",
+                label,
+                attempt,
+                max_attempts,
+                exc,
+                sleep_s,
+            )
+            time.sleep(sleep_s)
 
 
 def _scale_lte_soil_scon(txtinout_dir: Path, scale: float) -> int:
@@ -271,6 +290,18 @@ def _valid_hyd_group(value: object) -> str:
     return code if code in {"A", "B", "C", "D"} else "D"
 
 
+def _normalize_soil_profiles_hydgrp(profiles):
+    """Normalize hydrologic group codes in-place to A/B/C/D."""
+    fixed = 0
+    for p in profiles:
+        raw = getattr(p, "hyd_grp", None)
+        norm = _valid_hyd_group(raw)
+        if raw != norm:
+            setattr(p, "hyd_grp", norm)
+            fixed += 1
+    return fixed
+
+
 def fetch_basin_boundary(usgs_id: str, out_gpkg: Path):
     """Fetch the NLDI basin polygon for a USGS gauge."""
     import geopandas as gpd
@@ -349,12 +380,14 @@ def main(
 
     outdir.mkdir(parents=True, exist_ok=True)
     t_all = time.time()
+    retry_attempts: dict[str, int] = {}
 
     # 1. Basin boundary (USGS NLDI)
     _section("1/11 Basin boundary from USGS NLDI")
     basin_gpkg = outdir / "raw" / "basin_boundary.gpkg"
     t0 = time.time()
-    basin = fetch_basin_boundary(STATION_ID, basin_gpkg)
+    basin, n = _with_retries("fetch_basin_boundary", fetch_basin_boundary, STATION_ID, basin_gpkg)
+    retry_attempts["fetch_basin_boundary"] = n
     actual_area_km2 = float(basin.to_crs('EPSG:5070').area.sum() / 1e6)
     _ok(f"basin_boundary.gpkg  area = {actual_area_km2:.1f} km²", elapsed=time.time() - t0)
     
@@ -370,7 +403,8 @@ def main(
     _section(f"2/11 DEM {DEM_RESOLUTION_M} m from USGS 3DEP")
     dem_tif = outdir / "raw" / "dem.tif"
     t0 = time.time()
-    fetch_dem(basin, dem_tif, resolution_m=DEM_RESOLUTION_M)
+    _, n = _with_retries("fetch_dem", fetch_dem, basin, dem_tif, resolution_m=DEM_RESOLUTION_M)
+    retry_attempts["fetch_dem"] = n
     _ok(f"dem.tif  ({dem_tif.stat().st_size / 1e6:.1f} MB)",
         elapsed=time.time() - t0)
 
@@ -378,7 +412,8 @@ def main(
     _section("3/11 NLCD 2021 landuse from MRLC")
     nlcd_tif = outdir / "raw" / "nlcd_2021.tif"
     t0 = time.time()
-    fetch_nlcd(basin, nlcd_tif, year=2021)
+    _, n = _with_retries("fetch_nlcd", fetch_nlcd, basin, nlcd_tif, year=2021)
+    retry_attempts["fetch_nlcd"] = n
     _ok(f"nlcd_2021.tif  ({nlcd_tif.stat().st_size / 1e6:.1f} MB)",
         elapsed=time.time() - t0)
 
@@ -387,19 +422,47 @@ def main(
     outlet = resolve_usgs_outlet(STATION_ID)
     t0 = time.time()
     base_threshold = int(os.environ.get("SWATPLUS_STREAM_THRESHOLD_CELLS", "2000"))
-    thresholds = [
-        base_threshold,
-        max(100, base_threshold // 2),
-        max(100, base_threshold // 4),
-        min(8000, base_threshold * 2),
-    ]
-    if actual_area_km2 < 20.0:
-        thresholds.insert(0, _adaptive_stream_threshold(actual_area_km2, DEM_RESOLUTION_M))
-    # Keep order while removing duplicates.
-    thresholds = list(dict.fromkeys(thresholds))
+    dem_conditioning = os.environ.get("SWATPLUS_DEM_CONDITIONING", "breach").strip().lower()
+    if dem_conditioning not in {"breach", "fill"}:
+        raise RuntimeError(
+            "SWATPLUS_DEM_CONDITIONING must be 'breach' or 'fill' "
+            f"(got {dem_conditioning!r})."
+        )
+    from swatplus_builder.gis.complexity import (
+        DiscretizationPolicy,
+        assess_topology_complexity,
+        stream_threshold_candidates,
+    )
+
+    complexity_policy = DiscretizationPolicy(
+        stream_threshold_area_pct=float(os.environ.get("SWATPLUS_STREAM_THRESHOLD_AREA_PCT", "2.0")),
+        max_acceptable_subbasins=int(os.environ.get("SWATPLUS_MAX_SUBBASINS", "500")),
+        min_acceptable_avg_subbasin_area_km2=float(
+            os.environ.get("SWATPLUS_MIN_AVG_SUBBASIN_AREA_KM2", "5.0")
+        ),
+    )
+    threshold_policy = os.environ.get("SWATPLUS_THRESHOLD_POLICY", "adaptive").strip().lower()
+    if threshold_policy in {"fixed", "legacy"}:
+        # Keep user-seeded threshold first, but allow coarse retries so the
+        # run can recover from over-discretization in strict fixed mode.
+        thresholds = [base_threshold, int(round(base_threshold * 1.5)), base_threshold * 2]
+        thresholds = list(dict.fromkeys([max(100, t) for t in thresholds]))
+    elif threshold_policy == "adaptive":
+        thresholds = stream_threshold_candidates(
+            actual_area_km2,
+            DEM_RESOLUTION_M,
+            seed_threshold=base_threshold,
+            policy=complexity_policy,
+        )
+    else:
+        raise RuntimeError(
+            "SWATPLUS_THRESHOLD_POLICY must be 'adaptive', 'fixed', or 'legacy' "
+            f"(got {threshold_policy!r})."
+        )
     ws = None
     validation = None
     selected_threshold = None
+    threshold_attempts = []
     for th in thresholds:
         ws_try = delineate(
             dem_path=dem_tif,
@@ -407,6 +470,7 @@ def main(
             workdir=outdir / "delin",
             stream_threshold_cells=th,
             expected_area_km2=EXPECTED_AREA_KM2 if EXPECTED_AREA_KM2 > 0 else None,
+            dem_conditioning=dem_conditioning,  # type: ignore[arg-type]
         )
         # Default 30 %: DEM-boundary truncation can legitimately leave 25-30 % of
         # a large basin outside the delineated watershed. Override via env var.
@@ -417,30 +481,61 @@ def main(
             area_tolerance_pct=_area_tol,
         )
         suspicious = _topology_suspicious(ws_try.stats)
+        complexity = assess_topology_complexity(ws_try.stats, complexity_policy)
+        threshold_attempts.append({
+            "threshold_cells": th,
+            "validation_passed": vr.passed,
+            "area_diff_pct": vr.area_diff_pct,
+            "iou_pct": vr.iou_pct,
+            "n_subbasins": complexity.n_subbasins,
+            "n_channels": complexity.n_channels,
+            "avg_subbasin_area_km2": complexity.avg_subbasin_area_km2,
+            "complexity_acceptable": complexity.acceptable,
+            "complexity_reasons": list(complexity.reasons),
+            "topology_suspicious": suspicious,
+        })
         ws = ws_try
         validation = vr
         selected_threshold = th
-        if vr.passed and not suspicious:
+        if vr.passed and not suspicious and complexity.acceptable:
             break
         log.warning(
-            "Delineation attempt rejected (threshold=%s): passed=%s, area_diff_pct=%s, iou_pct=%s, suspicious_topology=%s",
+            "Delineation attempt rejected (threshold=%s): passed=%s, area_diff_pct=%s, iou_pct=%s, suspicious_topology=%s, complexity=%s",
             th,
             vr.passed,
             vr.area_diff_pct,
             vr.iou_pct,
             suspicious,
+            ",".join(complexity.reasons) or "ok",
         )
 
     assert ws is not None
     assert validation is not None
-    if not validation.passed or _topology_suspicious(ws.stats):
+    final_complexity = assess_topology_complexity(ws.stats, complexity_policy)
+    if not validation.passed or _topology_suspicious(ws.stats) or not final_complexity.acceptable:
         raise RuntimeError(
             "Delineation failed realism gates (area/topology). "
             f"area_diff_pct={validation.area_diff_pct}, iou_pct={validation.iou_pct}, "
-            f"n_subbasins={ws.stats.get('n_subbasins')}, n_channels={ws.stats.get('n_channels')}."
+            f"n_subbasins={ws.stats.get('n_subbasins')}, n_channels={ws.stats.get('n_channels')}, "
+            f"complexity_reasons={list(final_complexity.reasons)}."
         )
     (outdir / "delin" / "validation_result.json").write_text(
         json.dumps(validation.to_dict(), indent=2),
+        encoding="utf-8",
+    )
+    (outdir / "delin" / "threshold_selection.json").write_text(
+        json.dumps({
+            "policy": {
+                "threshold_policy": threshold_policy,
+                "stream_threshold_area_pct": complexity_policy.stream_threshold_area_pct,
+                "max_acceptable_subbasins": complexity_policy.max_acceptable_subbasins,
+                "min_acceptable_avg_subbasin_area_km2": (
+                    complexity_policy.min_acceptable_avg_subbasin_area_km2
+                ),
+            },
+            "selected_threshold_cells": selected_threshold,
+            "attempts": threshold_attempts,
+        }, indent=2),
         encoding="utf-8",
     )
     _ok(
@@ -456,11 +551,14 @@ def main(
     subs = gpd.read_file(ws.subbasins_vector)
     boundary_geom = subs.to_crs("EPSG:4326").union_all()
     t0 = time.time()
-    fetch_mukey_raster(
+    _, n = _with_retries(
+        "fetch_mukey_raster",
+        fetch_mukey_raster,
         boundary=boundary_geom,
         boundary_crs="EPSG:4326",
         output_path=mukey_tif,
     )
+    retry_attempts["fetch_mukey_raster"] = n
     _ok(f"mukey.tif  ({mukey_tif.stat().st_size / 1e6:.1f} MB)",
         elapsed=time.time() - t0)
 
@@ -511,6 +609,7 @@ def main(
     soil_mode = "high_fidelity"
     pct_fallback_soils = 0.0
     soil_fallback_warn_threshold = float(os.environ.get("SWATPLUS_SOIL_FALLBACK_WARN_THRESHOLD", "0.25"))
+    allow_synthetic_soils = _truthy_env("SWATPLUS_ALLOW_SYNTHETIC_SOILS", default=False)
     try:
         external_soils_json = os.environ.get("SWATPLUS_EXTERNAL_SOILS_JSON")
         if external_soils_json:
@@ -519,9 +618,24 @@ def main(
                 mukeys,
             )
         else:
-            soil_res = fetch_soil_profiles_result(mukeys, config=SoilConfig(use_sda=True), settings=ref_settings)
+            soil_res, n = _with_retries(
+                "fetch_soil_profiles_result",
+                fetch_soil_profiles_result,
+                mukeys,
+                config=SoilConfig(use_sda=True),
+                settings=ref_settings,
+            )
+            retry_attempts["fetch_soil_profiles_result"] = n
             soil_profiles = soil_res.profiles
             soil_report = soil_res.soil_report
+        hydgrp_fixed = _normalize_soil_profiles_hydgrp(soil_profiles)
+        if hydgrp_fixed > 0:
+            log.warning(
+                "Normalized %d soil hydrologic group values to valid A/B/C/D codes before write_soils().",
+                hydgrp_fixed,
+            )
+            soil_report = dict(soil_report)
+            soil_report["hydgrp_normalized_count"] = hydgrp_fixed
         write_soils(soil_profiles, db_path)
         upsert_project_metadata(db_path, "soil_report", json.dumps(soil_report))
         from swatplus_builder.soil.plot import plot_depth_distribution
@@ -533,14 +647,19 @@ def main(
             soil_mode = "fallback"
         _ok(f"wrote {len(soil_profiles)} profiles", elapsed=time.time() - t0)
     except Exception as e:
-        log.warning("Soils failed (%s). Seeding minimal.", e)
+        if not allow_synthetic_soils:
+            raise RuntimeError(
+                "Soil acquisition failed and synthetic soil fallback is disabled for research runs. "
+                "Install soil extras (including fsspec/adlfs), provide SWATPLUS_EXTERNAL_SOILS_JSON, "
+                "or set SWATPLUS_ALLOW_SYNTHETIC_SOILS=1 for diagnostic-only runs."
+            ) from e
+        log.warning("Soils failed (%s). Seeding minimal because synthetic override is enabled.", e)
         seed_minimal_soils(db_path, {h.soil for h in tables.hrus})
         soil_mode = "synthetic"
         pct_fallback_soils = 1.0
         _ok("seed_minimal_soils (fallback)")
 
-    allow_synthetic_soils = _truthy_env("SWATPLUS_ALLOW_SYNTHETIC_SOILS", default=False)
-    max_soil_fallback_ratio = float(os.environ.get("SWATPLUS_MAX_SOIL_FALLBACK_RATIO", "0.10"))
+    max_soil_fallback_ratio = float(os.environ.get("SWATPLUS_MAX_SOIL_FALLBACK_RATIO", "0.00"))
     if (soil_mode == "synthetic" or pct_fallback_soils > max_soil_fallback_ratio) and not allow_synthetic_soils:
         raise RuntimeError(
             "Soil realism gate failed: "
@@ -758,7 +877,10 @@ def main(
 
     import json
     q_obs = fetch_usgs_daily_q(STATION_ID, sim_start, sim_end, outputs_dir / "obs_q.csv")
-    sim_path = wf.txtinout_dir / "channel_sd_day.txt"
+    # Prefer basin_sd_cha_day.txt for consistent, routing-amplification-free daily volumes
+    sim_path = wf.txtinout_dir / "basin_sd_cha_day.txt"
+    if not sim_path.exists():
+        sim_path = wf.txtinout_dir / "channel_sd_day.txt"
     if not sim_path.exists():
         sim_path = wf.txtinout_dir / "channel_day.txt"
     selection_eval = evaluate_run(
@@ -842,6 +964,7 @@ def main(
             f"delineation_validation: passed={validation.passed}, area_diff_pct={validation.area_diff_pct}, iou_pct={validation.iou_pct}"
         )
         notes.extend(validation.notes)
+    notes.append(f"dem_conditioning={dem_conditioning}")
     if pct_fallback_soils > soil_fallback_warn_threshold:
         msg = (
             f"Soil fallback ratio {pct_fallback_soils:.2%} exceeds threshold "
@@ -878,6 +1001,7 @@ def main(
             "n_weather_stations": int(len(weather_bundle.stations)),
             "n_subbasins_for_weather_context": int(len(tables.subbasins)),
         },
+        retry_attempts=retry_attempts,
         notes=notes,
     )
     write_metadata(outdir / "metadata.json", md)

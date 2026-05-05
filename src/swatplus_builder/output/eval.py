@@ -229,22 +229,25 @@ def _pick_best_flowing_gis_id(table, preferred_gis_id: int, txtinout_dir: Path) 
 
 
 def _normalize_discharge_units(sim: pd.Series, source_name: str) -> pd.Series:
-    """Convert known SWAT+ daily flow units to m3/s."""
+    """Convert known SWAT+ daily flow units to m³/s.
+
+    SWAT+ 2023.60.5.7 writes daily accumulated volume in every channel
+    output file regardless of what the header claims.  We divide the
+    daily volume by 86 400 seconds to obtain a mean daily rate in m³/s.
+
+    * channel_day.txt / basin_cha_day.txt: daily volume in ha-m
+      → multiply by 10 000 m²/ha and divide by 86 400.
+    * channel_sd_day.txt / basin_sd_cha_day.txt: daily volume in m³
+      → divide by 86 400.
+    """
     s = sim.astype(float)
     name = source_name.lower()
 
-    # Standard channel outputs are daily volume in ha-m.
     if name in {"channel_day.txt", "basin_cha_day.txt"}:
         return s * 10000.0 / _SECONDS_PER_DAY
+    if name in {"channel_sd_day.txt", "basin_sd_cha_day.txt"}:
+        return s / _SECONDS_PER_DAY
 
-    # Basin stream-discharge daily outputs in this workflow are daily volume.
-    # Guard with magnitude heuristic so we do not downscale already-rate files.
-    if name == "basin_sd_cha_day.txt":
-        if float(s.max()) > 500.0:
-            return s / _SECONDS_PER_DAY
-        return s
-
-    # channel_sd_day is expected to already be a rate in m3/s.
     return s
 
 def _read_sim_discharge(
@@ -259,8 +262,8 @@ def _read_sim_discharge(
     terminal_ids = _terminal_ids_from_chandeg_con(txtinout_dir)
     chandeg_path = txtinout_dir / "chandeg.con"
     for alt in (
-        "channel_sd_day.txt",
         "basin_sd_cha_day.txt",
+        "channel_sd_day.txt",
         "basin_cha_day.txt",
         "channel_day.txt",
     ):
