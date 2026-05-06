@@ -181,6 +181,53 @@ def _set_lte_hru_column(txtinout_dir: Path, column: str, value: float) -> int:
     return updated
 
 
+def _patch_lte_hru_channel_transfer_scale(
+    txtinout_dir: Path,
+    correction_factor: float = 0.01,
+) -> int:
+    """Patch hru-lte.con frac to cancel SWAT+ LTE engine ×100 transfer-scale bug.
+
+    Evidence: SWAT+ v2023.60.5.7 computes HRU-lte-to-channel inflow as
+    ``water_yield_mm * 1000 * area_ha`` instead of the correct
+    ``water_yield_mm * 10 * area_ha``, producing exactly 100× too much
+    volume per channel.  Setting the connection fraction to *correction_factor*
+    (default 0.01) cancels the engine bug::
+
+        engine_channel_inflow = (water_yield * buggy_100x) * frac
+                              = water_yield * 100 * 0.01
+                              = water_yield                 (correct)
+
+    Returns the number of rows modified.
+    """
+    p = txtinout_dir / "hru-lte.con"
+    if not p.exists():
+        return 0
+    lines = p.read_text(encoding="utf-8", errors="ignore").splitlines()
+    if len(lines) < 3:
+        return 0
+
+    header = lines[1].split()
+    if "frac" not in header:
+        return 0
+    frac_idx = header.index("frac")
+
+    out: list[str] = []
+    updated = 0
+    for i, ln in enumerate(lines):
+        if i < 2 or not ln.strip():
+            out.append(ln)
+            continue
+        parts = ln.split()
+        if len(parts) <= frac_idx:
+            out.append(ln)
+            continue
+        parts[frac_idx] = f"{correction_factor:.5f}"
+        updated += 1
+        out.append("  " + "       ".join(parts))
+    p.write_text("\n".join(out) + "\n", encoding="utf-8")
+    return updated
+
+
 def _load_external_soil_profiles(json_path: Path, mukeys: list[int]):
     """Load pre-acquired soil profiles and fill missing mukeys with defaults."""
     import json
@@ -723,6 +770,29 @@ def main(
             alpha_rows,
             lte_alpha_bf,
         )
+    # LTE HRU-to-channel transfer scale correction.
+    # Evidence: SWAT+ v2023.60.5.7 multiplies hru_lte water yield by 1000
+    # instead of 10 when computing channel inflow volume.  Setting
+    # hru-lte.con frac=0.01 cancels the engine bug and preserves correct
+    # water-balance routing.
+    lte_hru_chan_correction = float(
+        os.environ.get(
+            "SWATPLUS_LTE_HRU_CHANNEL_SCALE_CORRECTION",
+            "0.01",
+        )
+    )
+    lte_hru_rows_patched = 0
+    if lte_hru_chan_correction > 0.0:
+        lte_hru_rows_patched = _patch_lte_hru_channel_transfer_scale(
+            wf.txtinout_dir, correction_factor=lte_hru_chan_correction
+        )
+        if lte_hru_rows_patched > 0:
+            log.info(
+                "Applied LTE HRU→channel scale correction %s to %d rows in hru-lte.con",
+                lte_hru_chan_correction,
+                lte_hru_rows_patched,
+            )
+
     _ok(f"TxtInOut ready ({sum(1 for _ in wf.txtinout_dir.iterdir())} files)", elapsed=time.time() - t0)
 
     # 11/11 Engine Run
@@ -959,6 +1029,11 @@ def main(
         notes.append(
             f"lte_scon_scale_applied={float(lte_scon_scale):.3f} (rows={int(scon_rows)})"
         )
+    if lte_hru_rows_patched > 0 and lte_hru_chan_correction > 0.0:
+        notes.append(
+            f"lte_hru_channel_scale_correction_applied={lte_hru_chan_correction:.3f} "
+            f"(rows={lte_hru_rows_patched})"
+        )
     if validation is not None:
         notes.append(
             f"delineation_validation: passed={validation.passed}, area_diff_pct={validation.area_diff_pct}, iou_pct={validation.iou_pct}"
@@ -1002,6 +1077,15 @@ def main(
             "n_subbasins_for_weather_context": int(len(tables.subbasins)),
         },
         retry_attempts=retry_attempts,
+        lte_hru_channel_scale_correction=(
+            lte_hru_chan_correction if lte_hru_chan_correction > 0.0 else None
+        ),
+        lte_hru_channel_scale_correction_reason=(
+            "SWAT+ v2023.60.5.7 LTE hru_lte→channel transfer scale audit: "
+            "engine multiplies water_yield_mm * 1000 * area_ha (should be * 10); "
+            "applied hru-lte.con frac correction to cancel ×100 bug."
+            if lte_hru_chan_correction > 0.0 else None
+        ),
         notes=notes,
     )
     write_metadata(outdir / "metadata.json", md)

@@ -47,15 +47,20 @@ def build_figure_title(base_title: str, metrics: dict | None, metadata: dict | N
         metrics: Optional nse, kge.
         metadata: Optional dictionary with basin_name, usgs_id, time_range.
     """
-    parts = []
+    parts: list[str] = []
     
     # Metadata string
     if metadata:
-        meta_str = []
-        if metadata.get("basin_name"):
-            meta_str.append(metadata["basin_name"])
-        if metadata.get("usgs_id"):
-            meta_str.append(f"({metadata['usgs_id']})")
+        meta_str: list[str] = []
+        basin_name = str(metadata.get("basin_name", "")).strip()
+        usgs_id = str(metadata.get("usgs_id", "")).strip()
+        has_usgs_in_name = usgs_id and f"({usgs_id})" in basin_name
+        has_usgs_bare = usgs_id and usgs_id in basin_name
+        
+        if basin_name:
+            meta_str.append(basin_name)
+        if usgs_id and not (has_usgs_in_name or has_usgs_bare):
+            meta_str.append(f"({usgs_id})")
         if metadata.get("time_range"):
             meta_str.append(f"| {metadata['time_range']}")
         
