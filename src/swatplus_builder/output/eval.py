@@ -195,6 +195,40 @@ def _terminal_ids_from_chandeg_con(txtinout_dir: Path) -> set[int]:
     return terminal_ids
 
 
+def _unit_for_column(source, column: str) -> str | None:
+    """Read the documented unit for ``column`` from a SWAT+ output file header.
+
+    ``source`` can be a Path, a str, or an ``OutputTable`` with a ``.path``
+    attribute.  The unit row immediately follows the column-name header row in
+    well-formed SWAT+ output files (``*_day.txt``, ``*_yr.txt``, etc.).
+    Returns ``"m^3/s"`` or ``"m^3"`` when the header is legible; returns
+    ``None`` when the file is missing or the unit row cannot be parsed.
+    """
+    if source is None:
+        return None
+    if hasattr(source, "path"):
+        p = Path(source.path)
+    else:
+        p = Path(source)
+    if not p.is_file():
+        return None
+    try:
+        with p.open(encoding="utf-8", errors="replace") as fh:
+            fh.readline()  # title
+            header = fh.readline()
+            unit_line = fh.readline()
+    except OSError:
+        return None
+    header_cols = header.split()
+    unit_cols = unit_line.split()
+    if column not in header_cols:
+        return None
+    idx = header_cols.index(column)
+    if idx < len(unit_cols):
+        return unit_cols[idx].strip()
+    return None
+
+
 def _pick_best_flowing_gis_id(table, preferred_gis_id: int, txtinout_dir: Path) -> int | None:
     """Pick a flowing GIS ID when the configured outlet series is dry.
 
