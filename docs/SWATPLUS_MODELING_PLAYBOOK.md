@@ -1,6 +1,6 @@
 # SWAT+ Modeling Playbook (Evidence-Driven, Evolving)
 
-Last updated: 2026-04-27
+Last updated: 2026-05-06
 Scope: `swatplus-builder` alpha-stage pipeline behavior observed in project artifacts and tests.
 
 ## 1. Proven Working Patterns
@@ -35,6 +35,9 @@ Scope: `swatplus-builder` alpha-stage pipeline behavior observed in project arti
   Fix: geometry/runtime audit before enabling Muskingum path broadly.
 - `[validated]` pySWATPlus run reuse/stale outputs can mask calibration effects.  
   Fix: remove day/month/year output files before run and log output hashes/mtimes by evaluation.
+- `[validated]` SWAT+ v2023.60.5.7 LTE hru_lte→channel transfer scale defect produces exactly 100× too much channel inflow.  
+  Evidence: 01654000 (Accotink Creek) audit across 40 channels — channel_inflow_m3 / (water_yield_mm × 10 × area_ha) = 100.000 ± 0.00005. Engine uses ×1000 instead of ×10 for mm×ha→m³ conversion. After correction (frac=0.01 in hru-lte.con), mass closure = 1.0000, sim mean = 2.14 m³/s (was 213.95, obs 0.89). Auto-detection exists in `mass_trace.py`.  
+  Fix: `SWATPLUS_LTE_HRU_CHANNEL_SCALE_CORRECTION=0.01` (default). See ADR-044.
 
 ## 4. Decision Rules
 
