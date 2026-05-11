@@ -71,6 +71,13 @@ def _make_full_tio(tmp_path: Path) -> Path:
         "routing_unit      rout_unit.def     rout_unit.ele     rout_unit.rtu     null              \n"
     )
 
+    # aquifer.con (needed for D4 cha→sdc conversion)
+    (tio / "aquifer.con").write_text(
+        "aquifer.con: written by SWAT+ editor v3.2.2\n"
+        "      id  name                gis_id          area           lat           lon          elev       aqu               wst       cst      ovfl      rule   out_tot       obj_typ    obj_id       hyd_typ          frac  \n"
+        "       1  aqu01                    1     100.0      41.0     -77.0     200.0         1     s41085n77678w         0         0         0         1           cha         1           tot       1.00000  \n"
+    )
+
     return tio
 
 

@@ -1768,7 +1768,21 @@ Enforce comparability-gated advancement evidence (`comparable_only`) across read
   - Gates: ET/P implausible → fail, PBIAS > ±30% → exploratory, BFI outside [0.5,2.0] → exploratory
   - Constrained calibration (CN2=60, ET_CO=10, ALPHA_BF=0.26, SCON=1.1) passes all gates: status=pass, tier=diagnostic, PBIAS=-0.5%, BFI=1.34, ET/P=0.634
   - Module: src/swatplus_builder/evaluation/setup_verification.py
-- [2026-05-11] [Phase 3L.10.2] Converter defect fixes applied:
+- [2026-05-11] [Phase 3L.11] Full-mode multi-basin generalization:
+  - Verdict: converter generalizes — 2 of 3 basins produce non-zero channel flow
+  - 01491000 (Choptank): 33 channels, 4,188 non-zero days, max 13,470 m³/s ✅
+  - 01547700 (Loyalsock): 15 channels, 2,215 non-zero days, max 7,268 m³/s ✅
+  - 01654000 (Accotink): build failed at delineation gate (avg_subbasin_area_too_small) — not converter
+  - D1-D4 fixes verified cross-basin; converter is basin-independent
+  - Phase 3L.12 (parameter bridge) now unblocked; full-mode calibration ready
+  - 59/59 tests pass
+  - Verdict: **d3_localized_from_source** — chandeg.con at wrong connect block position (7 instead of 13)
+  - Source fetched: github.com/swat-model/swatplus — hyd_connect.f90, hyd_read_connect.f90, input_file_module.f90, hydrograph_module.f90
+  - Engine dispatch: sdc routing uses sp_ob1%chandeg offset (hyd_connect:275); reads from in_con%chandeg_con (position 13 of connect block)
+  - Current converter puts chandeg.con at position 7 (channel.con slot) → engine never initializes chandeg objects → SIGSEGV
+  - Object.cnt lcha=15 is correct; chandeg.con content is structurally correct
+  - Next: Phase 3L.10.4 — fix D3 (connect block position) in converter
+  - 59/59 tests pass
   - D1 fix: codes.bsn now sets swift_out=0, uhyd=0, soil_p=1, i_fpwet=0 (mirroring reference)
   - D2 fix: file.cio connect block removes outlet.con (conflicts with chandeg routing)
   - Both fixes verified correct on reference via substitution ladder re-run

@@ -51,6 +51,7 @@ def convert_topology(
     _convert_rout_unit_con(tio)
     _convert_channel_cha_to_lte(tio)
     _convert_hydrology_cha_to_lte(tio)
+    _convert_aquifer_con(tio)
     _convert_object_cnt(tio)
     _convert_file_cio(tio)
     _cleanup_channel_files(tio)
@@ -276,26 +277,39 @@ def _convert_object_cnt(tio: Path) -> None:
 def _convert_file_cio(tio: Path) -> None:
     """Update connect and channel lines for sdc/chandeg topology.
 
-    Replace channel.con with chandeg.con in the connect block. Remove outlet.con
-    from the connect block — outlet routing is handled by chandeg.con's terminal
-    entries (matching the working reference from editor v3.2.0).
+    Engine rev 60.5.7 reads channel connections from the connect block by
+    FIXED POSITION (not by filename):
+      Position 7  → in_con%chan_con (regular channels, must be null)
+      Position 13 → in_con%chandeg_con (swat-deg channels, from chandeg.con)
+
+    The reference (editor v3.2.0) has:
+      Position  7 = null
+      Position 13 = chandeg.con
+
+    Our editor v3.2.2 puts channel.con at position 7. We must move it to
+    position 13 and null position 7. Also remove outlet.con (position 12
+    in some editor versions) which blocks channel routing.
     """
     src = _require(tio, "file.cio")
     lines = src.read_text().split("\n")
 
     for i, ln in enumerate(lines):
         if ln.strip().startswith("connect"):
-            # Replace channel.con → chandeg.con
-            ln = ln.replace("channel.con       ", "null              ")
-            # Remove outlet.con (blocks channel routing with chandeg)
-            ln = ln.replace("outlet.con        ", "null              ")
-            # Remove residual double chandeg.con (can happen from replace cascade)
-            while "chandeg.con       chandeg.con" in ln:
-                ln = ln.replace("chandeg.con       chandeg.con", "chandeg.con")
-            # Ensure chandeg.con is present (add at end if not found)
-            if "chandeg.con" not in ln:
-                ln = ln.rstrip() + "               chandeg.con       "
-            lines[i] = ln
+            tokens = ln.strip().split()
+            # Ensure at least 14 tokens (connect + 13 file slots)
+            while len(tokens) < 14:
+                tokens.append("null")
+            # Position 7 (0-indexed after 'connect' keyword) → null (no regular channels)
+            tokens[7] = "null"
+            # Position 13 → chandeg.con (swat-deg channel connections)
+            tokens[13] = "chandeg.con"
+            # Replace outlet.con with null instead of removing (preserves position count)
+            tokens = ["null" if t == "outlet.con" else t for t in tokens]
+            # Remove any duplicate chandeg.con entries from earlier positions
+            for j in range(0, 13):
+                if j != 13 and tokens[j] == "chandeg.con":
+                    tokens[j] = "null"
+            lines[i] = " ".join(tokens)
 
         if ln.strip().startswith("channel"):
             lines[i] = (
@@ -305,6 +319,40 @@ def _convert_file_cio(tio: Path) -> None:
             )
 
     src.write_text("\n".join(lines))
+
+
+def _convert_aquifer_con(tio: Path) -> None:
+    """Replace cha→sdc in aquifer.con routing quads.
+
+    The engine's hyd_connect dispatches on obj_typ tokens across the
+    entire routing graph.  If rout_unit.con and chandeg.con use sdc
+    but aquifer.con still references cha objects, the engine segfaults
+    at hyd_connect.f90:377 when trying to resolve the mismatched object
+    type.
+
+    """
+    src = _require(tio, "aquifer.con")
+    lines = src.read_text().split("\n")
+    if len(lines) < 3:
+        return  # empty or minimal aquifer.con
+
+    new_lines = [lines[0], lines[1]]
+    for ln in lines[2:]:
+        if not ln.strip():
+            new_lines.append(ln)
+            continue
+        parts = ln.split()
+        if len(parts) >= 13:
+            out_tot = int(parts[12])
+            if out_tot > 0:
+                for i in range(13, len(parts)):
+                    if parts[i] == "cha":
+                        parts[i] = "sdc"
+            new_lines.append(" ".join(parts))
+        else:
+            new_lines.append(ln)
+
+    src.write_text("\n".join(new_lines))
 
 
 def _cleanup_channel_files(tio: Path) -> None:
