@@ -185,10 +185,19 @@ Tasks:
   - Phase 3L.7 hypothesis (engine version mismatch) SUPERSEDED
   - Fix direction confirmed: writer-side post-processing, not engine bundling
 
-- [2026-05-10] Phase 3L.9: Implement rout_unit→cha routing in builder post-processing (NEXT)
-  - Source: Phase 3L.8 — engine can route, builder output is incomplete
-  - Approach: Post-process editor-generated rout_unit files to add working cha routing
-  - Reference format provides template; need to map to cha (not sdc)
+- [2026-05-10] Phase 3L.9: Routing schema reverse-engineering — DONE
+  - Verdict: routing_schema_rule_identified
+  - Engine supports sdc+lcha+chandeg.con; cha routing silently ignored (rte_cha=0) or crashes (rte_cha=1)
+  - Editor v3.2.2 output (cha+channel.con) is valid but produces zero channel flow
+  - Fix must switch to sdc routing format
+  - Phase 3L.8's conclusion UPHELD: builder generation is the fix-path
+
+- [2026-05-10] Phase 3L.10: Implement sdc/chandeg routing in builder post-processing (NEXT)
+  - Source: Phase 3L.9 — schema rule identified
+  - Convert cha-based editor output to sdc+lcha+chandeg.con format
+  - Requires: rout_unit.con cha→sdc, channel.con→chandeg.con, channel.cha→channel-lte.cha, object.cnt cha→lcha
+  - Set rte_cha=1 in codes.bsn
+  - Acceptance: engine rc=0 + channel_day non-zero
   - Estimate: M
 
 - Phase 3L.8 removed from NEXT (completed). Phase 3L.9 added to NEXT.

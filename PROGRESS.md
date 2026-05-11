@@ -1768,7 +1768,15 @@ Enforce comparability-gated advancement evidence (`comparable_only`) across read
   - Gates: ET/P implausible → fail, PBIAS > ±30% → exploratory, BFI outside [0.5,2.0] → exploratory
   - Constrained calibration (CN2=60, ET_CO=10, ALPHA_BF=0.26, SCON=1.1) passes all gates: status=pass, tier=diagnostic, PBIAS=-0.5%, BFI=1.34, ET/P=0.634
   - Module: src/swatplus_builder/evaluation/setup_verification.py
-- [2026-05-10] [Phase 3L.8] Engine/editor compatibility definitive audit:
+- [2026-05-10] [Phase 3L.9] Full-mode routing schema reverse-engineered:
+  - Verdict: **routing_schema_rule_identified** — engine supports only sdc+lcha+chandeg.con for rout_unit→channel
+  - Mutation ladder: 8 experiments (M0–M5 + 3 infra tests), 3 crash sites identified (hyd_connect:377, time_control:267, command:271)
+  - Schema rule: rte_cha=1 routes through channels; rte_cha=0 silently ignores rout_unit→cha. rte_cha=1 crashes with cha; requires sdc+chandeg+lcha
+  - Engine source not available (QSWATPlus-3.2.2 is QGIS plugin, no Fortran)
+  - Editor v3.2.2 generates cha+channel.con (rte_cha=0); editor v3.2.0 generates sdc+chandeg.con (rte_cha=1)
+  - Fix path: upgrade to editor v3.2.0 output format (sdc/chandeg) or post-process editor output
+  - Deliverables: docs/FULL_MODE_ROUTING_SCHEMA_SPEC.md, schema_spec.json, engine_source_notes.md, mutation artifacts
+  - 66/66 tests pass
   - Verdict: **builder_full_routing_generation_incomplete** (engine CAN route, builder output incomplete)
   - Reference Tordera TxtInOut (editor v3.2.0, rev 61) runs on our engine (rev 60.5.7): rc=0, 32,213 non-zero channel flow
   - Our 01547700_full build on SAME engine: rc=0, 0 non-zero channel flow
