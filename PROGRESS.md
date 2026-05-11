@@ -1768,7 +1768,15 @@ Enforce comparability-gated advancement evidence (`comparable_only`) across read
   - Gates: ET/P implausible → fail, PBIAS > ±30% → exploratory, BFI outside [0.5,2.0] → exploratory
   - Constrained calibration (CN2=60, ET_CO=10, ALPHA_BF=0.26, SCON=1.1) passes all gates: status=pass, tier=diagnostic, PBIAS=-0.5%, BFI=1.34, ET/P=0.634
   - Module: src/swatplus_builder/evaluation/setup_verification.py
-- [2026-05-11] [Phase 3L.10.1] Converter defect localization:
+- [2026-05-11] [Phase 3L.10.2] Converter defect fixes applied:
+  - D1 fix: codes.bsn now sets swift_out=0, uhyd=0, soil_p=1, i_fpwet=0 (mirroring reference)
+  - D2 fix: file.cio connect block removes outlet.con (conflicts with chandeg routing)
+  - Both fixes verified correct on reference via substitution ladder re-run
+  - D1+D2 attribution: editor_default_v322 + converter_incomplete_cleanup
+  - Remaining blocker: 01547700_full still crashes at hyd_connect (chandeg topology can't be isolated)
+  - All routing files have structurally correct format, no cycles in routing graph
+  - Next: Phase 3L.10.2.1 — generate same-scale reference to isolate chandeg issue
+  - 59/59 tests pass
   - Verdict: **multi_file_defect_localized** — two confirmed defects in codes.bsn and file.cio
   - Method: reverse mutation ladder (substitute converter files into working reference)
   - D1: codes.bsn wrong flags (swift_out=1→0, uhyd=1→0, soil_p=0→1, i_fpwet=1→0)

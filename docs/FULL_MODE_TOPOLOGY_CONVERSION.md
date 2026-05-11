@@ -1,7 +1,38 @@
-# Full-Mode Topology Conversion — Phase 3L.10
+# Full-Mode Topology Conversion — Phase 3L.10.2
 
 **Date:** 2026-05-11
-**Latest status:** `cha_to_sdc_conversion_implemented_routing_blocked_by_engine`
+**Latest status:** `D1_fixed_D2_fixed_chandeg_blocked` — codes.bsn and file.cio fixes verified on reference; 01547700_full still crashes at hyd_connect
+
+## D1 Fix: codes.bsn routing flags
+
+**Attribution:** `editor_default_v322`. Editor v3.2.2 emits swift_out=1, uhyd=1, soil_p=0, i_fpwet=1 as full-mode defaults.
+
+**Fix:** Converter now overrides all four flags to reference values:
+- swift_out: 1 → 0
+- uhyd: 1 → 0  
+- soil_p: 0 → 1
+- i_fpwet: 1 → 0
+
+**Verification:** Substitution ladder S1 re-run with fixed codes.bsn — reference channel flow restored (32K non-zero).
+
+## D2 Fix: file.cio connect block
+
+**Attribution:** `converter_incomplete_cleanup`. Editor generates outlet.con and references it in file.cio. The reference has no outlet.con in its connect block.
+
+**Fix:** Converter removes `outlet.con` from the connect block. The outlet is handled by chandeg.con's terminal routing (matching the reference architecture).
+
+**Verification:** Substitution ladder S2 re-run with fixed file.cio — reference channel flow restored.
+
+## Remaining blocker: chandeg.con on 01547700_full
+
+Both D1 and D2 fixes are correct (verified on reference). Our 01547700_full build still crashes at hyd_connect.f90:377 even with:
+- Correct codes.bsn flags (verified)
+- Correct file.cio connect block (verified)
+- Reference-format chandeg.con with terminal outlet pattern
+- Verified routing graph (no cycles, all targets exist)
+- Proven channel-lte.cha and hyd-sed-lte.cha (S4/S5 pass on reference)
+
+The crash cannot be isolated via substitution because the basin topologies differ (177 vs 15 channels). The next step is generating a matching-scale reference (Phase 3L.10.2.1) or investigating the SWAT+ engine source for hyd_connect validation rules.
 
 ## Purpose
 

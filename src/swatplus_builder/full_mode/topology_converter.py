@@ -77,7 +77,12 @@ def _require(tio: Path, fname: str) -> Path:
 
 
 def _convert_codes_bsn(tio: Path) -> None:
-    """Set rte_cha=1 to enable channel routing."""
+    """Set routing flags for sdc/chandeg channel routing.
+
+    rte_cha=1 enables channel routing. The editor v3.2.2 defaults for
+    swift_out(=1), uhyd(=1), soil_p(=0), and i_fpwet(=1) block channel flow.
+    We override them to match the working reference (editor v3.2.0) values.
+    """
     path = _require(tio, "codes.bsn")
     lines = path.read_text().split("\n")
     if len(lines) < 3:
@@ -85,11 +90,21 @@ def _convert_codes_bsn(tio: Path) -> None:
 
     headers = lines[1].split()
     data = lines[2].split()
-    if "rte_cha" not in headers:
-        raise TopologyConversionError("rte_cha column not found in codes.bsn")
 
-    idx = headers.index("rte_cha")
-    data[idx] = "1"
+    required_overrides = {
+        "rte_cha": "1",
+        "swift_out": "0",
+        "uhyd": "0",
+        "soil_p": "1",
+        "i_fpwet": "0",
+    }
+
+    for flag, value in required_overrides.items():
+        if flag not in headers:
+            raise TopologyConversionError(f"{flag} column not found in codes.bsn")
+        idx = headers.index(flag)
+        data[idx] = value
+
     lines[2] = " ".join(data)
     path.write_text("\n".join(lines))
 
@@ -259,17 +274,28 @@ def _convert_object_cnt(tio: Path) -> None:
 
 
 def _convert_file_cio(tio: Path) -> None:
-    """Update connect and channel lines for sdc/chandeg topology."""
+    """Update connect and channel lines for sdc/chandeg topology.
+
+    Replace channel.con with chandeg.con in the connect block. Remove outlet.con
+    from the connect block — outlet routing is handled by chandeg.con's terminal
+    entries (matching the working reference from editor v3.2.0).
+    """
     src = _require(tio, "file.cio")
     lines = src.read_text().split("\n")
 
     for i, ln in enumerate(lines):
         if ln.strip().startswith("connect"):
-            # Ensure chandeg.con appears in connect block
-            if "chandeg.con" not in ln and "channel.con" in ln:
-                lines[i] = ln.replace("channel.con", "chandeg.con")
-            elif "chandeg.con" not in ln:
-                lines[i] = ln.rstrip() + "               chandeg.con       "
+            # Replace channel.con → chandeg.con
+            ln = ln.replace("channel.con       ", "null              ")
+            # Remove outlet.con (blocks channel routing with chandeg)
+            ln = ln.replace("outlet.con        ", "null              ")
+            # Remove residual double chandeg.con (can happen from replace cascade)
+            while "chandeg.con       chandeg.con" in ln:
+                ln = ln.replace("chandeg.con       chandeg.con", "chandeg.con")
+            # Ensure chandeg.con is present (add at end if not found)
+            if "chandeg.con" not in ln:
+                ln = ln.rstrip() + "               chandeg.con       "
+            lines[i] = ln
 
         if ln.strip().startswith("channel"):
             lines[i] = (

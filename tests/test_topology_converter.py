@@ -83,6 +83,30 @@ class TestTopologyConverter:
         d = lines[2].split()
         assert d[h.index("rte_cha")] == "1"
 
+    def test_codes_bsn_flags_d1_fix(self, tmp_path):
+        """D1: swift_out=0, uhyd=0, soil_p=1, i_fpwet=0 after conversion."""
+        tio = _make_full_tio(tmp_path)
+        convert_topology(tio, backup=False)
+        lines = (tio / "codes.bsn").read_text().split("\n")
+        h = lines[1].split()
+        d = lines[2].split()
+        assert d[h.index("swift_out")] == "0"
+        assert d[h.index("uhyd")] == "0"
+        assert d[h.index("soil_p")] == "1"
+        assert d[h.index("i_fpwet")] == "0"
+
+    def test_file_cio_no_outlet_con_d2_fix(self, tmp_path):
+        """D2: outlet.con removed from connect block."""
+        tio = _make_full_tio(tmp_path)
+        convert_topology(tio, backup=False)
+        cio = (tio / "file.cio").read_text()
+        connect_lines = [l for l in cio.split("\n") if "connect" in l[:10]]
+        assert connect_lines, "connect line not found"
+        assert "outlet.con" not in connect_lines[0], (
+            "outlet.con should not appear in connect block"
+        )
+        assert "chandeg.con" in connect_lines[0]
+
     def test_convert_rout_unit_con(self, tmp_path):
         tio = _make_full_tio(tmp_path)
         convert_topology(tio, backup=False)
