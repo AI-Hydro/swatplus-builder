@@ -1768,7 +1768,15 @@ Enforce comparability-gated advancement evidence (`comparable_only`) across read
   - Gates: ET/P implausible → fail, PBIAS > ±30% → exploratory, BFI outside [0.5,2.0] → exploratory
   - Constrained calibration (CN2=60, ET_CO=10, ALPHA_BF=0.26, SCON=1.1) passes all gates: status=pass, tier=diagnostic, PBIAS=-0.5%, BFI=1.34, ET/P=0.634
   - Module: src/swatplus_builder/evaluation/setup_verification.py
-- [2026-05-11] [Phase 3L.11] Full-mode multi-basin generalization:
+- [2026-05-11] [Phase 3L.12] Full-mode parameter bridge — all parameters ineffective:
+  - Verdict: **ineffective_full** — 6/6 parameters produce hash-identical channel output
+  - Parameter bridge implemented: CN2, RCHG_DP, ALPHA_BF, ESCO, EPCO, PET_CO writers
+  - Writers verified correct (file modification confirmed on disk)
+  - Engine sensitivity probes: LOW vs HIGH values produce identical hashes for all
+  - Root cause: full SWAT+ routing unit layer aggregates HRU output, masking parameter response
+  - Full-mode calibration needs routing-unit-level levers, not HRU-level
+  - Next: investigate routing-unit parameters or direct HRU→channel routing for calibration
+  - 13/13 converter tests pass; parameter bridge tests need adding
   - Verdict: converter generalizes — 2 of 3 basins produce non-zero channel flow
   - 01491000 (Choptank): 33 channels, 4,188 non-zero days, max 13,470 m³/s ✅
   - 01547700 (Loyalsock): 15 channels, 2,215 non-zero days, max 7,268 m³/s ✅
