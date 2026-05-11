@@ -1768,7 +1768,19 @@ Enforce comparability-gated advancement evidence (`comparable_only`) across read
   - Gates: ET/P implausible → fail, PBIAS > ±30% → exploratory, BFI outside [0.5,2.0] → exploratory
   - Constrained calibration (CN2=60, ET_CO=10, ALPHA_BF=0.26, SCON=1.1) passes all gates: status=pass, tier=diagnostic, PBIAS=-0.5%, BFI=1.34, ET/P=0.634
   - Module: src/swatplus_builder/evaluation/setup_verification.py
-- [2026-05-10] [Phase 3L.9] Full-mode routing schema reverse-engineered:
+- [2026-05-11] [Phase 3L.10] Channel topology conversion (cha→sdc/chandeg):
+  - Verdict: conversion implemented, routing still blocked at hyd_connect (engine binary rejects converted files)
+  - New module: src/swatplus_builder/full_mode/topology_converter.py (11 tests)
+  - Converts: channel.con→chandeg.con, rout_unit.con (cha→sdc), channel.cha→channel-lte.cha, hydrology.cha→hyd-sed-lte.cha, object.cnt, codes.bsn (rte_cha=1), file.cio
+  - Editor capability probe: v3.2.2 emits cha-only; sdc gated on is_lte=True, can't decouple
+  - LTE regression: 242 file hashes baselined; converter gated on model_family==full
+  - Wired into build_real_basin.py for full mode
+  - Blocker: engine rejects converted files (hyd_connect.f90:377); reference works, conversion doesn't
+  - Next: Phase 3L.10.1 — LTE-mode native sdc routing integration; Phase 3L.11 — engine bundling investigation
+  - 77/77 tests pass
+  - hyd-sed-lte.cha requires expanded column schema (order, erod_fact, cov_fact, etc.) not present in hydrology.cha
+  - T1: rte_cha=1 → ch_rtmusk.f90 crash; T2: +LTE files → ch_initial.f90 crash; T3: +sdc → hyd_connect.f90 crash
+  - converter gated on model_family and LTE-bytes-identical
   - Verdict: **routing_schema_rule_identified** — engine supports only sdc+lcha+chandeg.con for rout_unit→channel
   - Mutation ladder: 8 experiments (M0–M5 + 3 infra tests), 3 crash sites identified (hyd_connect:377, time_control:267, command:271)
   - Schema rule: rte_cha=1 routes through channels; rte_cha=0 silently ignores rout_unit→cha. rte_cha=1 crashes with cha; requires sdc+chandeg+lcha
