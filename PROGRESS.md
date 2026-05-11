@@ -1768,8 +1768,17 @@ Enforce comparability-gated advancement evidence (`comparable_only`) across read
   - Gates: ET/P implausible → fail, PBIAS > ±30% → exploratory, BFI outside [0.5,2.0] → exploratory
   - Constrained calibration (CN2=60, ET_CO=10, ALPHA_BF=0.26, SCON=1.1) passes all gates: status=pass, tier=diagnostic, PBIAS=-0.5%, BFI=1.34, ET/P=0.634
   - Module: src/swatplus_builder/evaluation/setup_verification.py
-- [2026-05-11] [Phase 3L.10] Channel topology conversion (cha→sdc/chandeg):
-  - Verdict: conversion implemented, routing still blocked at hyd_connect (engine binary rejects converted files)
+- [2026-05-11] [Phase 3L.10.1] Converter defect localization:
+  - Verdict: **multi_file_defect_localized** — two confirmed defects in codes.bsn and file.cio
+  - Method: reverse mutation ladder (substitute converter files into working reference)
+  - D1: codes.bsn wrong flags (swift_out=1→0, uhyd=1→0, soil_p=0→1, i_fpwet=1→0)
+  - D2: file.cio outlet.con in connect block blocks channel routing
+  - Both independently drop channel flow to zero; fixing either restores flow on reference
+  - Structural diffs: all file headers match reference, no format errors
+  - channel-lte.cha and hyd-sed-lte.cha verified compatible with reference
+  - chandeg.con can't be isolated (basin topology difference) — likely correct
+  - Next: Phase 3L.10.2 — apply D1+D2 fixes to converter
+  - 77/77 tests pass
   - New module: src/swatplus_builder/full_mode/topology_converter.py (11 tests)
   - Converts: channel.con→chandeg.con, rout_unit.con (cha→sdc), channel.cha→channel-lte.cha, hydrology.cha→hyd-sed-lte.cha, object.cnt, codes.bsn (rte_cha=1), file.cio
   - Editor capability probe: v3.2.2 emits cha-only; sdc gated on is_lte=True, can't decouple
