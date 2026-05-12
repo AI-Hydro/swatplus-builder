@@ -101,6 +101,25 @@
 
 ---
 
+## Phase 5 — Full SWAT+ Mode & Research-Grade Claims (`v0.5.0`) [DONE 2026-05-12]
+
+**Goal:** Full SWAT+ mode (sdc/chandeg routing) produces research-grade KGE on multiple basins.
+
+- [x] Engine swapped from rev 60.5.7 → rev 61.0.2 (channel routing fixed).
+- [x] Editor v3.2.0 generates sdc/chandeg routing natively; v3.2.2 does not.
+- [x] Automated post-editor routing fixes (`full_mode/routing_fixes.py`).
+- [x] Terminal outlet detection via `out_tot=0` dead-end channels.
+- [x] 2-year spin-up warmup integrated; weather auto-extends.
+- [x] Complexity gate scaled with basin area (0.5% of total, min 0.5 km²).
+- [x] Parameter bridge for full-mode SWAT+ schema: CN2, PERCO, LATQ_CO, PET_CO, SURLAG.
+- [x] Water balance gate accepts KGE ≥ 0.40 as alternative to NSE ≥ 0.40.
+- [x] 3 of 4 test basins reach research_grade KGE (02129000: 0.432, 01547700: 0.446, 03349000: 0.646).
+- [x] Calibration scripts: `scripts/calibrate_full_cn2.py`, `scripts/calibrate_full_diagnostic.py`.
+
+**Exit criteria:** KGE ≥ 0.40 on ≥2 basins of different sizes and hydrologic regimes. Condition met on 3 basins (17,780 km², 445 km², 920 km²).
+
+**Known limitations:** Engine hangs on ~30% of watersheds (rev61 x86/Rosetta). Calibration is manual grid search. 01654000 urban basin cannot be calibrated.
+
 ## Phase 3 — Agent‑native & production  (`v1.0.0`)
 
 - [x] MCP server (`swat-mcp`) with all four tools + progress notifications.

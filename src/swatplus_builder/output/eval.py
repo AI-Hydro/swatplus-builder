@@ -163,7 +163,8 @@ def _extract_flo_out_rows(table, outlet_gis_id: int) -> pd.DataFrame:
 def _terminal_ids_from_chandeg_con(txtinout_dir: Path) -> set[int]:
     """Best-effort parse of terminal channel IDs from ``chandeg.con``.
 
-    Returns IDs where ``obj_typ == out``. If unavailable/unparseable, returns empty set.
+    Returns IDs where ``obj_typ == out`` OR where ``out_tot == 0``
+    (dead-end channel is the implicit terminal in editor v3.2.0).
     """
     p = txtinout_dir / "chandeg.con"
     if not p.exists():
@@ -182,14 +183,22 @@ def _terminal_ids_from_chandeg_con(txtinout_dir: Path) -> set[int]:
             # Fallback for legacy fixed-width chandeg.con layout.
             if len(parts) >= 14 and parts[0].isdigit() and parts[13] == "out":
                 terminal_ids.add(int(parts[0]))
+            elif len(parts) >= 14 and parts[0].isdigit() and parts[12] == "0":
+                # out_tot=0 means this channel has no downstream routing
+                terminal_ids.add(int(parts[2]))  # gis_id at col 2
             continue
         try:
+            # Check out_tot=0 FIRST — terminal channels may lack obj_typ/obj_id columns
+            if "out_tot" in col_idx:
+                out_tot_val = int(parts[col_idx["out_tot"]])
+                if out_tot_val == 0:
+                    gis_id = int(parts[col_idx["gis_id"]])
+                    terminal_ids.add(gis_id)
+                    continue
             obj_typ = parts[col_idx["obj_typ"]]
-            if obj_typ != "out":
-                continue
-            # Use GIS IDs to match *_day.txt output tables.
-            gis_id = int(parts[col_idx["gis_id"]])
-            terminal_ids.add(gis_id)
+            if obj_typ == "out":
+                gis_id = int(parts[col_idx["gis_id"]])
+                terminal_ids.add(gis_id)
         except (IndexError, KeyError, ValueError):
             continue
     return terminal_ids
@@ -206,6 +215,19 @@ def _unit_for_column(source, column: str) -> str | None:
     """
     if source is None:
         return None
+    if hasattr(source, "columns") and hasattr(source, "units"):
+        try:
+            cols = list(source.columns)
+            units = list(source.units)
+        except Exception:
+            cols = []
+            units = []
+        if column in cols:
+            idx = cols.index(column)
+            if idx < len(units):
+                unit = str(units[idx]).strip()
+                if unit:
+                    return unit
     if hasattr(source, "path"):
         p = Path(source.path)
     else:
@@ -262,25 +284,37 @@ def _pick_best_flowing_gis_id(table, preferred_gis_id: int, txtinout_dir: Path) 
     return None
 
 
+def _pick_best_flowing_gis_id_unrestricted(table) -> int | None:
+    """Pick the GIS ID with the highest absolute flow, ignoring terminal topology."""
+    sums_by_gid: dict[int, float] = {}
+    for row in table.rows:
+        try:
+            gid = int(row.get("gis_id", -1))
+            flo = float(row.get("flo_out", 0.0))
+        except (TypeError, ValueError):
+            continue
+        sums_by_gid[gid] = sums_by_gid.get(gid, 0.0) + abs(flo)
+    if not sums_by_gid:
+        return None
+    best_gid, best_sum = max(sums_by_gid.items(), key=lambda kv: kv[1])
+    return best_gid if best_sum > 0 else None
+
+
 def _normalize_discharge_units(sim: pd.Series, source_name: str) -> pd.Series:
     """Convert known SWAT+ daily flow units to m³/s.
 
-    SWAT+ 2023.60.5.7 writes daily accumulated volume in every channel
-    output file regardless of what the header claims.  We divide the
-    daily volume by 86 400 seconds to obtain a mean daily rate in m³/s.
-
-    * channel_day.txt / basin_cha_day.txt: daily volume in ha-m
-      → multiply by 10 000 m²/ha and divide by 86 400.
-    * channel_sd_day.txt / basin_sd_cha_day.txt: daily volume in m³
-      → divide by 86 400.
+    SWAT+ 2023.60.5.7 ``channel_sd_day.txt`` and ``channel_sdmorph_day.txt``
+    are documented as m³/s (rate). ``channel_day.txt`` and
+    ``basin_cha_day.txt`` are daily volume in ha-m.
     """
     s = sim.astype(float)
     name = source_name.lower()
 
     if name in {"channel_day.txt", "basin_cha_day.txt"}:
         return s * 10000.0 / _SECONDS_PER_DAY
-    if name in {"channel_sd_day.txt", "basin_sd_cha_day.txt"}:
-        return s / _SECONDS_PER_DAY
+    if name in {"channel_sd_day.txt", "basin_sd_cha_day.txt", "channel_sdmorph_day.txt"}:
+        # Already in m³/s — no conversion needed.
+        return s
 
     return s
 
@@ -334,6 +368,55 @@ def _read_sim_discharge(
         df["sim"] = _normalize_discharge_units(df["sim"], cand.name)
         # Prefer first candidate with non-zero signal.
         if float(df["sim"].abs().sum()) > 0.0:
+            # If the requested outlet is not a terminal, and we're in auto
+            # mode, the user likely doesn't know the correct outlet yet.
+            # Prefer the terminal with the largest flow instead of silently
+            # accepting a non-terminal upstream channel.
+            requested_is_terminal = (
+                terminal_ids and int(outlet_gis_id) in terminal_ids
+            )
+            if allow_dry_autodetect and not requested_is_terminal and terminal_ids:
+                best_gid = _pick_best_flowing_gis_id(table, outlet_gis_id, txtinout_dir)
+                if best_gid is not None:
+                    alt = _extract_flo_out_rows(table, best_gid)
+                    if not alt.empty:
+                        alt["sim"] = _normalize_discharge_units(alt["sim"], cand.name)
+                        if float(alt["sim"].abs().sum()) > 0.0:
+                            log.warning(
+                                "Requested outlet GIS %s is non-terminal (%s); "
+                                "auto-upgrading to terminal GIS %s.",
+                                outlet_gis_id,
+                                "has flow" if float(df["sim"].abs().sum()) > 0 else "dry",
+                                best_gid,
+                            )
+                            diagnostics["selected_outlet_gis_id"] = int(best_gid)
+                            diagnostics["outlet_autodetected"] = True
+                            diagnostics["outlet_selection_reason"] = "requested_outlet_non_terminal_single_terminal"
+                            diagnostics["sim_source_file"] = cand.name
+                            diagnostics["sim_source_sha256"] = _sha256_file(cand)
+
+                            # Check if the terminal is truly isolated (zero flow)
+                            # vs just low during spin-up. Only upgrade when
+                            # the terminal has absolutely zero cumulative flow.
+                            term_sum = float(alt["sim"].abs().sum())
+                            if term_sum < 1e-10:
+                                max_gid = _pick_best_flowing_gis_id_unrestricted(table)
+                                if max_gid is not None and int(max_gid) != int(best_gid):
+                                    max_alt = _extract_flo_out_rows(table, max_gid)
+                                    if not max_alt.empty:
+                                        max_alt["sim"] = _normalize_discharge_units(max_alt["sim"], cand.name)
+                                        max_sum = float(max_alt["sim"].abs().sum())
+                                        if max_sum > 0:
+                                            log.warning(
+                                                "Terminal outlet GIS %s has zero flow; "
+                                                "using highest-flow channel GIS %s.",
+                                                best_gid, max_gid,
+                                            )
+                                            diagnostics["selected_outlet_gis_id"] = int(max_gid)
+                                            diagnostics["outlet_selection_reason"] = "isolated_terminal_upgrade"
+                                            return max_alt, diagnostics
+
+                            return alt, diagnostics
             diagnostics["sim_source_file"] = cand.name
             diagnostics["sim_source_sha256"] = _sha256_file(cand)
             return df, diagnostics

@@ -485,6 +485,7 @@ def main(
     *,
     sim_start: str = SIM_START,
     sim_end: str = SIM_END,
+    warmup_years: int = 0,
 ):
     import json
 
@@ -586,7 +587,7 @@ def main(
         stream_threshold_area_pct=float(os.environ.get("SWATPLUS_STREAM_THRESHOLD_AREA_PCT", "2.0")),
         max_acceptable_subbasins=int(os.environ.get("SWATPLUS_MAX_SUBBASINS", "500")),
         min_acceptable_avg_subbasin_area_km2=float(
-            os.environ.get("SWATPLUS_MIN_AVG_SUBBASIN_AREA_KM2", "5.0")
+            os.environ.get("SWATPLUS_MIN_AVG_SUBBASIN_AREA_KM2", "1.0")
         ),
     )
     threshold_policy = os.environ.get("SWATPLUS_THRESHOLD_POLICY", "adaptive").strip().lower()
@@ -1004,10 +1005,16 @@ def main(
     if len(subs_for_weather) > max_weather_stations:
         step = max(1, len(subs_for_weather) // max_weather_stations)
         subs_for_weather = subs_for_weather[::step][:max_weather_stations]
+    from datetime import datetime as _dt, timedelta
+    eval_start_dt = _dt.strptime(sim_start, "%Y-%m-%d")
+    weather_start = (_dt(eval_start_dt.year - warmup_years, eval_start_dt.month, eval_start_dt.day)
+                     if warmup_years > 0 else eval_start_dt)
+    weather_start_str = weather_start.strftime("%Y-%m-%d")
+
     stations = [(float(s.lat), float(s.lon), float(s.elev)) for s in subs_for_weather]
     weather_bundle = fetch_gridmet(
         stations,
-        start=sim_start,
+        start=weather_start_str,
         end=sim_end,
         settings=ref_settings
     )
@@ -1037,6 +1044,8 @@ def main(
     import_weather_observed(db_path, txtinout_dir, timeout=300.0)
     wf = write_files(db_path, timeout=300.0)
 
+    lte_hru_chan_correction = 0.0
+    lte_hru_rows_patched = 0
     if is_lte:
         lte_scon_scale = float(os.environ.get("SWATPLUS_LTE_SCON_SCALE", "0.60"))
         scon_rows = _scale_lte_soil_scon(wf.txtinout_dir, lte_scon_scale)
@@ -1083,6 +1092,16 @@ def main(
         apply_full_routing_fixes(wf.txtinout_dir)
         log.info("Applied full-mode routing fixes")
 
+        # Warmup: prepend spin-up years before the evaluation period
+        if warmup_years > 0:
+            from swatplus_builder.full_mode.warmup import reset_and_apply_warmup as _reset_and_apply_warmup
+            _reset_and_apply_warmup(
+                wf.txtinout_dir,
+                warmup_years=warmup_years,
+                evaluation_start_year=eval_start_dt.year,
+            )
+            log.info("Applied %d-year spin-up warmup (stale-safe reset)", warmup_years)
+
     _ok(f"TxtInOut ready ({sum(1 for _ in wf.txtinout_dir.iterdir())} files)", elapsed=time.time() - t0)
 
     # 11/11 Engine Run
@@ -1098,15 +1117,28 @@ def main(
         start_jday, start_year = d_start.timetuple().tm_yday, d_start.year
         end_jday,   end_year   = d_end.timetuple().tm_yday,   d_end.year
 
+        # Read actual yrc_start from time.sim (may differ from sim_start due to warmup)
+        time_sim = wf.txtinout_dir / "time.sim"
+        if time_sim.is_file():
+            ts_lines = [l for l in time_sim.read_text(encoding="utf-8", errors="replace").splitlines() if l.strip()]
+            if len(ts_lines) >= 3:
+                ts_parts = ts_lines[2].split()
+                ts_hdr = ts_lines[1].split()
+                if "yrc_start" in ts_hdr:
+                    warmup_start_year = int(ts_parts[ts_hdr.index("yrc_start")])
+                    if warmup_start_year < start_year:
+                        start_year = warmup_start_year
+
         prt = wf.txtinout_dir / "print.prt"
         if prt.is_file():
             lines = prt.read_text(encoding="utf-8", errors="replace").splitlines()
             out: list[str] = []
             for i, line in enumerate(lines):
                 if i == 2:
-                    # Rewrite control row with correct nyskip=0 and dates
+                    # Rewrite control row; preserve warmup nyskip if set
+                    nskip = warmup_years
                     line = (
-                        f"{'0':<12}{start_jday:<11}{start_year:<11}"
+                        f"{nskip:<12}{start_jday:<11}{start_year:<11}"
                         f"{end_jday:<11}{end_year:<11}{'1':<10}"
                     )
                 elif line.strip().startswith("channel ") or line.strip().startswith("channel_sd"):
@@ -1414,13 +1446,19 @@ if __name__ == "__main__":
     p.add_argument("--end", default=SIM_END, help="Simulation end date (YYYY-MM-DD).")
     p.add_argument("--model-family", default="lte", choices=["lte", "full"],
                    help="Model family: lte (default) or full.")
+    p.add_argument("--warmup-years", type=int, default=0,
+                   help="Spin-up years to prepend before evaluation (default 2 for full mode).")
     args = p.parse_args()
+    warmup_years = args.warmup_years
+    if warmup_years == 0 and args.model_family == "full":
+        warmup_years = 2  # default for full mode
     try:
         main(
             args.outdir.resolve(),
             run_engine=args.run,
             sim_start=args.start,
             sim_end=args.end,
+            warmup_years=warmup_years,
         )
     except Exception as e:
         log.exception("Pipeline failed: %s", e)

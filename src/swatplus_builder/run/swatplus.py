@@ -401,6 +401,165 @@ def run_solver_subprocess(
     return proc.returncode, stdout_tail, stderr_tail
 
 
+def clean_and_run_solver(
+    txtinout: Path | str,
+    *,
+    exe: Path | None = None,
+    threads: int = 1,
+    timeout_s: float = 3600.0,
+    retry_attempts: int = 0,
+    retry_backoff_s: float = 1.0,
+) -> tuple[int, str, str]:
+    """Delete stale outputs, run the engine, and verify fresh output.
+
+    Guards:
+    1. Deletes ``simulation.out``, ``channel_sd_day.txt``, and other daily
+       output files that could mask a silent engine crash.
+    2. Runs the solver via ``run_solver_subprocess``.
+    3. Verifies ``simulation.out`` was regenerated and contains
+       "Execution successfully completed".
+    4. If return code is non-zero, raises ``SwatBuilderExternalError``.
+
+    Returns:
+        (returncode, stdout_tail, stderr_tail)
+    """
+    txt = Path(txtinout).expanduser().resolve()
+
+    # Resolve binary: explicit exe param > env var > package default
+    if exe is not None:
+        exe_path = Path(exe).expanduser().resolve()
+        if not exe_path.is_file():
+            raise SwatBuilderExternalError(
+                f"SWAT+ binary not found at specified path: {exe_path}",
+                binary=str(exe_path),
+            )
+    else:
+        try:
+            exe_path = locate_binary()
+        except Exception:
+            raise SwatBuilderExternalError(
+                "SWAT+ engine not found. Set SWATPLUS_EXE or pass exe=<path>.",
+                txtinout_dir=str(txt),
+            )
+
+    # 1. Delete stale outputs
+    _stale_patterns = [
+        "simulation.out",
+        "channel_sd_day.txt",
+        "channel_day.txt",
+        "basin_sd_cha_day.txt",
+        "basin_cha_day.txt",
+        "basin_wb_yr.txt",
+        "hydout_yr.txt",
+        "hydout_aa.txt",
+    ]
+    last_error: SwatBuilderExternalError | None = None
+    total_attempts = max(0, int(retry_attempts)) + 1
+    for attempt in range(1, total_attempts + 1):
+        for pattern in _stale_patterns:
+            stale = txt / pattern
+            if stale.exists():
+                stale.unlink()
+
+        try:
+            # 2. Run solver
+            rc, stdout_tail, stderr_tail = run_solver_subprocess(
+                txtinout=txt,
+                exe=exe_path,
+                threads=threads,
+                timeout_s=timeout_s,
+            )
+        except SwatBuilderExternalError as exc:
+            last_error = SwatBuilderExternalError(
+                str(exc),
+                **{
+                    **getattr(exc, "context", {}),
+                    "failure_class": "engine_timeout_or_launch_failure",
+                    "attempt": attempt,
+                    "attempts_total": total_attempts,
+                },
+            )
+            if attempt < total_attempts:
+                time.sleep(max(0.0, float(retry_backoff_s)))
+                continue
+            raise last_error
+
+        # 3. Fail loudly on non-zero exit
+        if rc != 0:
+            last_error = SwatBuilderExternalError(
+                f"SWAT+ engine exited with code {rc}",
+                binary=str(exe_path),
+                txtinout_dir=str(txt),
+                returncode=rc,
+                stderr_tail=stderr_tail,
+                failure_class="engine_nonzero_exit",
+                attempt=attempt,
+                attempts_total=total_attempts,
+            )
+            if attempt < total_attempts:
+                time.sleep(max(0.0, float(retry_backoff_s)))
+                continue
+            raise last_error
+
+        # 4. Verify simulation.out was regenerated
+        sim_out = txt / "simulation.out"
+        if not sim_out.exists():
+            last_error = SwatBuilderExternalError(
+                "SWAT+ engine did not produce simulation.out — engine may not have run",
+                binary=str(exe_path),
+                txtinout_dir=str(txt),
+                failure_class="missing_simulation_out",
+                attempt=attempt,
+                attempts_total=total_attempts,
+            )
+            if attempt < total_attempts:
+                time.sleep(max(0.0, float(retry_backoff_s)))
+                continue
+            raise last_error
+        content = sim_out.read_text(encoding="utf-8", errors="ignore")
+        if "Execution successfully completed" not in content:
+            last_error = SwatBuilderExternalError(
+                "SWAT+ engine ran but simulation.out does not indicate successful completion",
+                binary=str(exe_path),
+                txtinout_dir=str(txt),
+                sim_out_tail=content[-500:],
+                failure_class="simulation_out_incomplete",
+                attempt=attempt,
+                attempts_total=total_attempts,
+            )
+            if attempt < total_attempts:
+                time.sleep(max(0.0, float(retry_backoff_s)))
+                continue
+            raise last_error
+
+        # 5. Verify channel_sd_day.txt was regenerated
+        sd = txt / "channel_sd_day.txt"
+        if not sd.exists():
+            last_error = SwatBuilderExternalError(
+                "SWAT+ engine did not produce channel_sd_day.txt",
+                binary=str(exe_path),
+                txtinout_dir=str(txt),
+                failure_class="missing_expected_output_file",
+                attempt=attempt,
+                attempts_total=total_attempts,
+            )
+            if attempt < total_attempts:
+                time.sleep(max(0.0, float(retry_backoff_s)))
+                continue
+            raise last_error
+
+        return rc, stdout_tail, stderr_tail
+
+    if last_error is not None:
+        raise last_error
+    raise SwatBuilderExternalError(
+        "SWAT+ execution failed without a classified error",
+        binary=str(exe_path),
+        txtinout_dir=str(txt),
+        failure_class="unclassified_engine_failure",
+    )
+
+
 def _check_size_guardrails(
     txtinout: Path,
     *,

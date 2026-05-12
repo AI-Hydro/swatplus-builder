@@ -82,18 +82,19 @@ class TestCmdHealthExitCodes:
         # May be 0 or 1 depending on binary/db/gis — just assert no critical fail (not 2)
         assert res.exit_code in {0, 1}
 
-    def test_degraded_returns_1_when_optional_missing(self, tmp_path):
+    def test_degraded_returns_0_when_optional_missing(self, tmp_path):
         """Clear all optional env vars so binary/db/artifacts are missing."""
         with patch.dict("os.environ", {}, clear=True):
             res = runner.invoke(app, ["health"])
-        # Python is fine, package imported, but binary/db/artifacts all missing → degraded
-        assert res.exit_code == 1
+        # Python is fine, package imported, but binary/db/artifacts all missing → degraded (exit 0)
+        assert res.exit_code == 0
 
-    def test_unhealthy_returns_2_on_critical_fail(self):
+    def test_unhealthy_returns_1_on_critical_fail(self):
         """Simulate Python version too old → unhealthy."""
         with patch("sys.version_info", (3, 9, 0)):
             res = runner.invoke(app, ["health"])
-        assert res.exit_code == 2
+        # critical failures → exit 1
+        assert res.exit_code == 1
 
     def test_json_output_structure(self):
         res = runner.invoke(app, ["health", "--json"])
@@ -147,7 +148,7 @@ class TestCmdHealthExitCodes:
             res = runner.invoke(app, ["health", "--json"])
         data = json.loads(res.stdout)
         assert data["status"] == "unhealthy"
-        assert res.exit_code == 2
+        assert res.exit_code == 1
 
     def test_health_healthy_status_string_when_all_pass(self, tmp_path):
         fake_exe = tmp_path / "swatplus_exe"

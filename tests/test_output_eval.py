@@ -28,15 +28,15 @@ def test_evaluate_run_falls_back_when_channel_day_is_zero(tmp_path):
         """,
     )
 
-    # Fallback candidate: basin-level daily routed discharge volume.
+    # Fallback candidate: basin-level daily routed discharge rate.
     _write(
         txt / "basin_sd_cha_day.txt",
         """\
         basin_sd_cha_day
         jday mon day yr unit gis_id name flo_out
-        n/a n/a n/a n/a n/a n/a n/a m3
-        1 1 1 2015 1 1 bsn 8640
-        2 1 2 2015 1 1 bsn 17280
+        n/a n/a n/a n/a n/a n/a n/a m3/s
+        1 1 1 2015 1 1 bsn 0.1
+        2 1 2 2015 1 1 bsn 0.2
         """,
     )
 
@@ -48,8 +48,6 @@ def test_evaluate_run_falls_back_when_channel_day_is_zero(tmp_path):
 
     df, metrics = evaluate_run(txt / "channel_day.txt", obs, outlet_gis_id=1)
 
-    # basin_sd_cha_day fallback values are interpreted as daily volume and
-    # converted to m3/s.
     assert len(df) == 2
     assert df["sim"].iloc[0] == pytest.approx(0.1)
     assert df["sim"].iloc[1] == pytest.approx(0.2)
@@ -189,7 +187,7 @@ def test_evaluate_run_prefers_terminal_when_requested_outlet_is_non_terminal(tmp
     assert diag["requested_outlet_is_terminal"] is False
     assert diag["selected_outlet_gis_id"] == 7
     assert diag["outlet_autodetected"] is True
-    assert diag["outlet_selection_reason"] == "requested_outlet_non_terminal_best_nse"
+    assert diag["outlet_selection_reason"] == "requested_outlet_non_terminal_single_terminal"
 
 
 def test_evaluate_run_keeps_requested_non_terminal_when_fit_is_better(tmp_path):
@@ -234,13 +232,15 @@ def test_evaluate_run_keeps_requested_non_terminal_when_fit_is_better(tmp_path):
         return_diagnostics=True,
     )
 
+    # Auto policy must upgrade non-terminal outlets to real terminal
+    # even when the non-terminal happens to fit observations better.
     assert len(df) == 2
-    assert df["sim"].iloc[0] == pytest.approx(1.0)
-    assert df["sim"].iloc[1] == pytest.approx(2.0)
+    assert df["sim"].iloc[0] == pytest.approx(0.1)
+    assert df["sim"].iloc[1] == pytest.approx(0.1)
     assert diag["requested_outlet_is_terminal"] is False
-    assert diag["selected_outlet_gis_id"] == 1
-    assert diag["outlet_autodetected"] is False
-    assert diag["outlet_selection_reason"] == "requested_outlet_non_terminal"
+    assert diag["selected_outlet_gis_id"] == 7
+    assert diag["outlet_autodetected"] is True
+    assert diag["outlet_selection_reason"] == "requested_outlet_non_terminal_single_terminal"
 
 
 def test_terminal_parser_uses_gis_id_not_internal_id(tmp_path):

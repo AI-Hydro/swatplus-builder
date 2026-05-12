@@ -114,6 +114,9 @@ def apply_parameters_to_lte_txtinout(txtinout_dir: Path | str, params: dict[str,
     - `CN2` -> `hru-lte.hru` column `cn2` (all rows)
     - `ALPHA_BF` -> `hru-lte.hru` column `alpha_bf` (all rows)
     - `SURLAG` -> `parameters.bsn` column `surq_lag`
+    - `SOIL_SCON_SCALE` -> `soils_lte.sol` column `scon` multiplier
+    - `ET_CO` -> `hru-lte.hru` column `et_co` (all rows)
+    - `RCHG_DP` -> `hru-lte.hru` column `rchg_dp` (all rows)
     """
     txt = Path(txtinout_dir).expanduser().resolve()
     if "CN2" in params:
@@ -130,6 +133,16 @@ def apply_parameters_to_lte_txtinout(txtinout_dir: Path | str, params: dict[str,
     if "SURLAG" in params:
         _set_parameters_bsn_value(
             txt / "parameters.bsn", "surq_lag", float(params["SURLAG"]), parameter_name="SURLAG"
+        )
+    if "SOIL_SCON_SCALE" in params:
+        _scale_lte_soil_scon(txt, float(params["SOIL_SCON_SCALE"]))
+    if "ET_CO" in params:
+        _set_tabular_column_all_rows(
+            txt / "hru-lte.hru", "et_co", float(params["ET_CO"]), parameter_name="ET_CO"
+        )
+    if "RCHG_DP" in params:
+        _set_tabular_column_all_rows(
+            txt / "hru-lte.hru", "rchg_dp", float(params["RCHG_DP"]), parameter_name="RCHG_DP"
         )
 
 
@@ -183,6 +196,36 @@ def _set_parameters_bsn_value(path: Path, column: str, value: float, *, paramete
     vals[idx] = f"{value:.5f}"
     lines[2] = "  " + "       ".join(vals)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _scale_lte_soil_scon(txtinout_dir: Path, scale: float) -> int:
+    """Scale LTE soil saturated-conductivity values in ``soils_lte.sol``."""
+    p = Path(txtinout_dir) / "soils_lte.sol"
+    if not p.exists() or abs(scale - 1.0) < 1e-9:
+        return 0
+    lines = p.read_text(encoding="utf-8", errors="ignore").splitlines()
+    if len(lines) < 3:
+        return 0
+    header = lines[1].split()
+    if "scon" not in header:
+        return 0
+    idx = header.index("scon")
+    out: list[str] = []
+    updated = 0
+    for i, ln in enumerate(lines):
+        if i < 2 or not ln.strip():
+            out.append(ln)
+            continue
+        parts = ln.split()
+        if len(parts) <= idx:
+            out.append(ln)
+            continue
+        scon = float(parts[idx])
+        parts[idx] = f"{max(0.05, min(250.0, scon * scale)):.5f}"
+        updated += 1
+        out.append("  " + "       ".join(parts))
+    p.write_text("\n".join(out) + "\n", encoding="utf-8")
+    return updated
 
 
 def params_hash(params: dict[str, float]) -> str:

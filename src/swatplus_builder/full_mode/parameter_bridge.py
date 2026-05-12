@@ -144,7 +144,7 @@ def _apply_cn2(tio: Path, value: float) -> None:
             out.append(ln)
             continue
         toks = ln.split()
-        if len(toks) < 5 or not toks[0].startswith("wood"):
+        if len(toks) < 5:
             out.append(ln)
             continue
         try:
@@ -221,12 +221,60 @@ def _apply_pet_co(tio: Path, value: float) -> None:
 
 
 def _apply_gw_delay(tio: Path, value: float) -> None:
-    """Set GW delay (days) — note: aquifer.aqu column may differ; verify."""
-    if not (0.0 <= value <= 500.0):
-        raise ParameterBridgeError(f"GW_DELAY out of range [0,500]: {value}")
-    path = _require(tio, "aquifer.aqu")
-    # Column name in editor v3.2.2: "delay" (need to verify per file)
-    _rewrite_column_for_rows(path, "delay", f"{value:.5f}", width=14)
+    """Set GW delay (days) — NOT APPLICABLE in SWAT+ full mode aquifer.aqu.
+
+    SWAT+ full mode uses aquifer.aqu with columns: init, gw_flo, dep_bot, dep_wt,
+    no3_n, sol_p, carbon, flo_dist, bf_max, alpha_bf, revap, rchg_dp, spec_yld,
+    hl_no3n, flo_min, revap_min. There is NO gw_del or delay column.
+    The equivalent in full mode is handled via aquifer.con routing.
+
+    Raises ParameterBridgeError explaining the migration needed.
+    """
+    raise ParameterBridgeError(
+        "GW_DELAY has no equivalent column in SWAT+ full mode aquifer.aqu. "
+        "Groundwater delay in full mode is controlled by aquifer.con routing. "
+        "Use LATQ_CO in hydrology.hyd for lateral flow timing instead."
+    )
+
+
+def _apply_perco(tio: Path, value: float) -> None:
+    """Set percolation coefficient for all HRUs in hydrology.hyd.
+
+    Controls fraction of soil water that percolates (vs lateral flow).
+    Default 0.50; range [0.01, 1.0]. Higher → more deep drainage, less lateral flow.
+    Engine-verified active on 01547700 (all-A soils, lateral-flow dominated).
+    """
+    if not (0.01 <= value <= 1.0):
+        raise ParameterBridgeError(f"PERCO out of range [0.01,1.0]: {value}")
+    path = _require(tio, "hydrology.hyd")
+    _rewrite_column_for_rows(path, "perco", f"{value:.5f}", width=14)
+
+
+def _apply_latq_co(tio: Path, value: float) -> None:
+    """Set lateral flow coefficient for all HRUs in hydrology.hyd.
+
+    Fraction of lateral flow that reaches the channel in one day.
+    Default 0.01; range [0.001, 1.0]. Higher → faster lateral flow delivery.
+    CRITICAL for basins dominated by subsurface lateral flow (all-A soils).
+    Engine-verified active on 01547700.
+    """
+    if not (0.001 <= value <= 1.0):
+        raise ParameterBridgeError(f"LATQ_CO out of range [0.001,1.0]: {value}")
+    path = _require(tio, "hydrology.hyd")
+    _rewrite_column_for_rows(path, "latq_co", f"{value:.5f}", width=14)
+
+
+def _apply_surlag(tio: Path, value: float) -> None:
+    """Set surface runoff lag coefficient in parameters.bsn.
+
+    Controls how quickly surface runoff reaches the channel.
+    SWAT+ full mode uses column ``surq_lag`` (not ``surlag`` as in SWAT2012).
+    Default 4.0; range [0.5, 24.0]. Lower → faster peak response, higher peaks.
+    """
+    if not (0.5 <= value <= 24.0):
+        raise ParameterBridgeError(f"SURLAG out of range [0.5,24.0]: {value}")
+    path = _require(tio, "parameters.bsn")
+    _rewrite_column_for_rows(path, "surq_lag", f"{value:.5f}", width=14)
 
 
 WRITERS: Mapping[str, Callable[[Path, float], None]] = {
@@ -234,9 +282,28 @@ WRITERS: Mapping[str, Callable[[Path, float], None]] = {
     "ESCO": _apply_esco,
     "EPCO": _apply_epco,
     "PET_CO": _apply_pet_co,
+    "PERCO": _apply_perco,
+    "LATQ_CO": _apply_latq_co,
+    "SURLAG": _apply_surlag,
     "ALPHA_BF": _apply_alpha_bf,
     "RCHG_DP": _apply_rchg_dp,
-    "GW_DELAY": _apply_gw_delay,
+    "GW_DELAY": _apply_gw_delay,  # raises — full mode uses aquifer.con
+}
+
+
+# Sensitivity classification mapped from engine-backed perturbation audit.
+# Updated 2026-05-12 from full-mode engine probes on 01547700.
+FULL_MODE_PARAMETER_ACTIVITY: Mapping[str, str] = {
+    "CN2": "active",       # ΔNSE > 0.20 across ±20% range; output hash changes
+    "PERCO": "active",     # ΔNSE > 1.0; controls lateral-vs-deep partition
+    "LATQ_CO": "active",   # ΔNSE > 5.0; dominant lever for all-A soil basins
+    "ESCO": "weak",        # ΔNSE < 0.01 at ±20%; ET doesn't dominate water balance
+    "EPCO": "not_tested",  # comparable to ESCO in physical role
+    "PET_CO": "not_tested",# may be active for ET-dominated basins
+    "ALPHA_BF": "not_tested", # untested with engine probes
+    "RCHG_DP": "not_tested",
+    "SURLAG": "not_tested",
+    "GW_DELAY": "dead",    # column does not exist in full-mode aquifer.aqu
 }
 
 
