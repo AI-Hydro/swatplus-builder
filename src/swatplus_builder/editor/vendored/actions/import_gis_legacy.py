@@ -1,4 +1,3 @@
-from __future__ import annotations
 from helpers.executable_api import ExecutableApi, Unbuffered
 from database import lib as db_lib
 from database.project import base as project_base, gis, routing_unit, channel, connect, aquifer, hydrology, hru, \
@@ -772,11 +771,6 @@ class GisImport(ExecutableApi):
 				if lon is None: lon = 0
 
 				# Channel tables
-				# LTE channel routing in SWAT+ Rev60/61 can collapse to zero outflow
-				# when conceptual channel length is above ~0.001 km for this GIS topology.
-				# Keep a tiny positive floor and cap the effective LTE length.
-				raw_len_km = (row.len2 / 1000) if row.len2 is not None and (row.len2 / 1000) > 0 else 0.0005
-				lte_len_km = min(raw_len_km, 0.001)
 				hyd_cha = {
 					'id': i,
 					'name': 'hyd%s' % cha_name,
@@ -784,7 +778,7 @@ class GisImport(ExecutableApi):
 					'wd': row.wid2,
 					'dp': row.dep2,
 					'slp': row.slo2 / 100,
-					'len': lte_len_km,
+					'len': row.len2 / 1000,
 					'mann': 0.05,
 					'k': 1,
 					'erod_fact': 0.01,
@@ -1764,40 +1758,6 @@ class GisImport(ExecutableApi):
 
 	def insert_connections_lte(self):
 		cha_con_outs = self.get_connections([RouteCat.CH], 'chandeg_con', self.gis_to_cha_ids, True)
-		# Preserve CH->OUTLET terminal links in LTE mode.
-		existing_orders = {}
-		for co in cha_con_outs:
-			src = co.get('chandeg_con')
-			if src is None:
-				continue
-			existing_orders[src] = max(existing_orders.get(src, 0), int(co.get('order', 0)))
-
-		for row in gis.Gis_routing.select(gis.Gis_routing.sourceid, gis.Gis_routing.sinkid, gis.Gis_routing.hyd_typ, gis.Gis_routing.percent).where(
-			(gis.Gis_routing.sourcecat == RouteCat.CH) &
-			(gis.Gis_routing.sinkcat == RouteCat.OUTLET) &
-			(gis.Gis_routing.percent > 0)
-		).order_by(gis.Gis_routing.sourceid):
-			src_id = self.gis_to_cha_ids.get(row.sourceid)
-			out_id = self.gis_to_out_ids.get(row.sinkid)
-			if src_id is None or out_id is None:
-				continue
-			already_linked = False
-			for co in cha_con_outs:
-				if co.get('chandeg_con') == src_id and co.get('obj_typ') == 'out' and co.get('obj_id') == out_id:
-					already_linked = True
-					break
-			if already_linked:
-				continue
-			next_order = existing_orders.get(src_id, 0) + 1
-			existing_orders[src_id] = next_order
-			cha_con_outs.append({
-				'chandeg_con': src_id,
-				'order': next_order,
-				'obj_typ': 'out',
-				'obj_id': out_id,
-				'hyd_typ': row.hyd_typ,
-				'frac': row.percent / 100
-			})
 		db_lib.bulk_insert(self.project_db, connect.Chandeg_con_out, cha_con_outs)
 
 		hru_con_outs = self.get_connections([RouteCat.HRU], 'hru_lte_con', self.gis_to_hru_ids, True, override_frac=True)
@@ -1807,10 +1767,7 @@ class GisImport(ExecutableApi):
 		con_outs = []
 		used = dict()
 		for row in gis.Gis_routing.select(gis.Gis_routing.sourceid, gis.Gis_routing.sourcecat, gis.Gis_routing.sinkid, gis.Gis_routing.sinkcat, gis.Gis_routing.percent).where((gis.Gis_routing.sourcecat << sourcecats) & (gis.Gis_routing.percent > 0)).order_by(gis.Gis_routing.sourceid):
-			# Keep legacy behavior for most source categories, but allow channel
-			# terminal links to watershed outlet (sinkcat='X'). Dropping CH->OUTLET
-			# creates dead-end channel networks in LTE mode.
-			if row.sinkcat != RouteCat.OUTLET or row.sourcecat == RouteCat.CH:
+			if row.sinkcat != RouteCat.OUTLET:
 				id = id_list[row.sourceid]
 				if id in used:
 					used[id] += 1
@@ -1954,17 +1911,6 @@ class GisImport(ExecutableApi):
 				'order': order,
 				'obj_typ': 'sdc' if is_lte or is_lte_cha_type else 'cha',
 				'obj_id': self.gis_to_cha_ids[sinkid],
-				'hyd_typ': 'tot',
-				'frac': percent / 100 if not override_frac else 1
-			}
-			return [con_out]
-
-		if sinkcat == RouteCat.OUTLET:
-			con_out = {
-				attach_key: attach_id,
-				'order': order,
-				'obj_typ': 'out',
-				'obj_id': self.gis_to_out_ids[sinkid],
 				'hyd_typ': 'tot',
 				'frac': percent / 100 if not override_frac else 1
 			}

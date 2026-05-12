@@ -1,4 +1,3 @@
-from __future__ import annotations
 #!/usr/bin/env python
 #
 # Hi There!

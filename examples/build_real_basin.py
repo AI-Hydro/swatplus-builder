@@ -1074,11 +1074,14 @@ def main(
                 )
 
     if not is_lte:
-        # Full SWAT+ mode: convert cha/channel.con topology to sdc/chandeg.con
-        # so engine rev 60.5.7 can route water from routing units to channels.
-        from swatplus_builder.full_mode.topology_converter import convert_topology
-        convert_topology(wf.txtinout_dir, backup=True)
-        log.info("Applied full-mode topology conversion (cha→sdc/chandeg)")
+        # Full SWAT+ mode: apply post-editor routing fixes for engine rev 60.5.7.
+        # Editor v3.2.0 generates sdc/chandeg routing natively but needs:
+        # - codes.bsn: rte_cha=1 + companion flags
+        # - rout_unit.def: 2-element (source+sink) per routing unit
+        # - rout_unit.con: sur+lat hyd type entries
+        from swatplus_builder.full_mode.routing_fixes import apply_full_routing_fixes
+        apply_full_routing_fixes(wf.txtinout_dir)
+        log.info("Applied full-mode routing fixes")
 
     _ok(f"TxtInOut ready ({sum(1 for _ in wf.txtinout_dir.iterdir())} files)", elapsed=time.time() - t0)
 
