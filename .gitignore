@@ -12,6 +12,11 @@ venv/
 env/
 .python-version
 .ipynb_checkpoints/
+.claude/
+demo_runs/
+docs/
+
+
 
 # Editors / OS
 .vscode/
@@ -62,6 +67,7 @@ simulation.out
 area_calc.out
 files_out.out
 erosion.txt
+docs/
 
 # Local working docs (authoritative docs live elsewhere)
 docs/DECISIONS.md
@@ -103,3 +109,19 @@ src/swatplus_builder/editor/vendored/database/output/
 
 # Local test artifacts
 tests/_artifacts/
+
+# Build artifacts and test data
+multibasin_test/
+demo_runs/
+docs/
+Research_article/
+SWATplus_original_docs/
+.codebuddy/
+.claude/
+**/__pycache__/
+
+# SWAT+ temp files
+codes.bsn
+.commandcode/
+
+tests/_artifacts/**/*.csv
