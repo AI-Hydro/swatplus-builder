@@ -124,4 +124,14 @@ SWATplus_original_docs/
 codes.bsn
 .commandcode/
 
-tests/_artifacts/**/*.csv
+tests/_artifacts/
+
+
+
+
+# Build/test artifact directories
+basins/
+examples/build_real_basin.py
+examples/real_basin_marsh_creek.py
+PROGRESS.md
+PLAYBOOK.md
