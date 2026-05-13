@@ -62,11 +62,12 @@ simulation.out
 area_calc.out
 files_out.out
 erosion.txt
-
+demo_runs/
 # Local working docs (authoritative docs live elsewhere)
 docs/DECISIONS.md
 docs/PROGRESS.md
 docs/TROUBLESHOOTING_AND_WORKFLOW.md
+.claude/
 
 # Local-only notes (never commit)
 local-docs/
