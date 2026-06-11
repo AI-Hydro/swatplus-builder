@@ -1,5 +1,10 @@
 # swatplus-builder
 
+[![PyPI](https://img.shields.io/pypi/v/swatplus-builder)](https://pypi.org/project/swatplus-builder/)
+[![Python](https://img.shields.io/pypi/pyversions/swatplus-builder)](https://pypi.org/project/swatplus-builder/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Docs](https://img.shields.io/badge/docs-ai--hydro.github.io-blue)](https://ai-hydro.github.io/swatplus-builder/)
+
 > **Calibrated SWAT+ models from a single gauge ID — with evidence you can audit.**
 
 `swatplus-builder` builds and calibrates SWAT+ hydrologic models in Python,
