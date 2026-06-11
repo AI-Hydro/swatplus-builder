@@ -7,6 +7,7 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any
 
+from ..params.governance import FULL_MODE_PARAMETER_GOVERNANCE
 from ..params.registry import get_parameter
 
 
@@ -81,8 +82,28 @@ def screen_from_parameter_list(parameters: list[str], basin_id: str | None = Non
     rows: list[ParameterScreen] = []
     for p in parameters:
         get_parameter(p)
-        rows.append(ParameterScreen(parameter=p, activity_class="not_tested", evidence={}))
-    return SensitivityScreenResult(basin_id=basin_id, parameters=rows, warnings=["No sensitivity JSON provided — all parameters marked not_tested"])
+        governed = FULL_MODE_PARAMETER_GOVERNANCE.get(p)
+        if governed is None:
+            rows.append(ParameterScreen(parameter=p, activity_class="not_tested", evidence={}))
+            continue
+        rows.append(
+            ParameterScreen(
+                parameter=p,
+                activity_class=governed.activity_class,
+                evidence={
+                    "target_file": governed.target_file,
+                    "target_column": governed.target_column,
+                    "evidence_source": governed.evidence_source,
+                    "model_family": governed.model_family,
+                    "claim_tier_allowance": governed.claim_tier_allowance,
+                },
+            )
+        )
+    return SensitivityScreenResult(
+        basin_id=basin_id,
+        parameters=rows,
+        warnings=["No basin-specific sensitivity JSON provided — full-mode governance defaults applied"],
+    )
 
 
 def write_screen_artifacts(screen: SensitivityScreenResult, out_dir: Path) -> tuple[Path, Path]:

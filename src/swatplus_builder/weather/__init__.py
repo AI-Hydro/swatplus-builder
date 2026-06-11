@@ -11,13 +11,16 @@ Public API:
 * :class:`WeatherWriteResult` — enumerates every file written.
 """
 
+from .daymet import DAYMET_VARIABLE_MAP, fetch_daymet
 from .gridmet import GRIDMET_VARIABLE_MAP, fetch_gridmet
 from .synthetic import synthesize, synthesize_station
 from .writer import WeatherWriteResult, station_name, write_observed
 
 __all__ = [
+    "DAYMET_VARIABLE_MAP",
     "GRIDMET_VARIABLE_MAP",
     "WeatherWriteResult",
+    "fetch_daymet",
     "fetch_gridmet",
     "station_name",
     "synthesize",

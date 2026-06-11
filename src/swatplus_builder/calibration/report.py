@@ -4,13 +4,24 @@ from __future__ import annotations
 
 import csv
 import json
+import os
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
 
+from ..output.metrics import kge, pbias
 from ..params import get_parameter
 from .spotpy_adapter import CalibrationIterationResult
+
+
+def _ensure_matplotlib_config_dir() -> None:
+    if os.environ.get("MPLCONFIGDIR"):
+        return
+    cfg = Path(tempfile.gettempdir()) / "swatplus_builder_mplconfig"
+    cfg.mkdir(parents=True, exist_ok=True)
+    os.environ["MPLCONFIGDIR"] = str(cfg)
 
 
 def write_calibration_reports(
@@ -31,20 +42,24 @@ def write_calibration_reports(
     _write_summary_md(summary_md, results)
     _write_plots(out, results)
     comp = write_parameter_comparison(results, out)
+    hydrograph: dict[str, str] = {}
     if alignment_csv is not None and calibrated_alignment_csv is not None:
-        write_hydrograph_comparison_from_two_alignments(
+        hydrograph = write_hydrograph_comparison_from_two_alignments(
             baseline_alignment_csv=alignment_csv,
             calibrated_alignment_csv=calibrated_alignment_csv,
             outdir=out,
         )
     elif alignment_csv is not None:
-        write_hydrograph_comparison_from_alignment(results, alignment_csv, out)
+        hydrograph = write_hydrograph_comparison_from_alignment(results, alignment_csv, out)
+    if hydrograph:
+        _append_hydrograph_artifacts(summary_md, hydrograph)
 
     return {
         "outdir": str(out),
         "history_csv": str(history_csv),
         "summary_md": str(summary_md),
         **comp,
+        **hydrograph,
     }
 
 
@@ -86,8 +101,33 @@ def _write_summary_md(path: Path, results: list[CalibrationIterationResult]) -> 
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
+def _append_hydrograph_artifacts(path: Path, artifacts: dict[str, str]) -> None:
+    lines = [
+        "",
+        "## Hydrograph Comparison",
+        "",
+    ]
+    if artifacts.get("hydrograph_overlay_plot"):
+        lines.append(
+            "- Observed / baseline simulated / calibrated simulated: "
+            f"`{artifacts['hydrograph_overlay_plot']}`"
+        )
+    if artifacts.get("hydrograph_overlay_plot_pdf"):
+        lines.append(
+            "- Observed / baseline simulated / calibrated simulated PDF: "
+            f"`{artifacts['hydrograph_overlay_plot_pdf']}`"
+        )
+    if artifacts.get("hydrograph_plot"):
+        lines.append(f"- Calibrated vs observed compatibility plot: `{artifacts['hydrograph_plot']}`")
+    if artifacts.get("hydrograph_metrics_json"):
+        lines.append(f"- Hydrograph comparison metrics: `{artifacts['hydrograph_metrics_json']}`")
+    text = path.read_text(encoding="utf-8").rstrip()
+    path.write_text(text + "\n" + "\n".join(lines) + "\n", encoding="utf-8")
+
+
 def _write_plots(outdir: Path, results: list[CalibrationIterationResult]) -> None:
     try:
+        _ensure_matplotlib_config_dir()
         import matplotlib.pyplot as plt
     except Exception:
         return
@@ -199,6 +239,7 @@ def write_parameter_comparison(
     )
 
     try:
+        _ensure_matplotlib_config_dir()
         import matplotlib.pyplot as plt
     except Exception:
         return {
@@ -269,31 +310,41 @@ def write_hydrograph_comparison_from_alignment(
     )
 
     try:
+        _ensure_matplotlib_config_dir()
         import matplotlib.pyplot as plt
     except Exception:
         return {"hydrograph_metrics_json": str(out / "hydrograph_comparison_metrics.json")}
 
+    overlay_plot = out / "hydrograph_observed_simulated_calibrated.png"
+    overlay_pdf = out / "hydrograph_observed_simulated_calibrated.pdf"
+    legacy_plot = out / "hydrograph_calibrated_vs_observed.png"
+    legacy_pdf = out / "hydrograph_calibrated_vs_observed.pdf"
     fig, ax = plt.subplots(figsize=(11, 4.2))
     ax.plot(df.index, df["obs"], label="Observed", linewidth=1.6)
-    ax.plot(df.index, df["sim"], label=f"Baseline Sim (NSE={baseline_nse:.3f})", linewidth=1.2)
+    ax.plot(df.index, df["sim"], label=f"Baseline Simulated (NSE={baseline_nse:.3f})", linewidth=1.2)
     ax.plot(
         df.index,
         df["sim_calibrated_proxy"],
-        label=f"Calibrated Sim Proxy (NSE={proxy_nse:.3f})",
+        label=f"Calibrated Simulated Proxy (NSE={proxy_nse:.3f})",
         linewidth=1.2,
     )
-    ax.set_title("Observed vs Simulated (Baseline vs Calibrated Proxy)")
+    ax.set_title("Observed / Baseline Simulated / Calibrated Simulated Hydrograph")
     ax.set_xlabel("Date")
     ax.set_ylabel("Discharge")
     ax.legend()
     fig.tight_layout()
-    fig.savefig(out / "hydrograph_calibrated_vs_observed.png", dpi=220, bbox_inches="tight")
-    fig.savefig(out / "hydrograph_calibrated_vs_observed.pdf", bbox_inches="tight")
+    for png_path in (overlay_plot, legacy_plot):
+        fig.savefig(png_path, dpi=220, bbox_inches="tight")
+    for pdf_path in (overlay_pdf, legacy_pdf):
+        fig.savefig(pdf_path, bbox_inches="tight")
     plt.close(fig)
 
     return {
         "hydrograph_metrics_json": str(out / "hydrograph_comparison_metrics.json"),
-        "hydrograph_plot": str(out / "hydrograph_calibrated_vs_observed.png"),
+        "hydrograph_plot": str(legacy_plot),
+        "hydrograph_plot_pdf": str(legacy_pdf),
+        "hydrograph_overlay_plot": str(overlay_plot),
+        "hydrograph_overlay_plot_pdf": str(overlay_pdf),
     }
 
 
@@ -324,11 +375,18 @@ def write_hydrograph_comparison_from_two_alignments(
     if df.empty:
         raise ValueError("No overlapping rows between baseline and calibrated alignments.")
 
-    baseline_nse = _nse(df["obs"], df["sim_baseline"])
-    calibrated_nse = _nse(df["obs"], df["sim_calibrated"])
+    baseline_metrics = _series_metrics(df["obs"], df["sim_baseline"])
+    calibrated_metrics = _series_metrics(df["obs"], df["sim_calibrated"])
     meta = {
-        "baseline_nse": baseline_nse,
-        "calibrated_nse": calibrated_nse,
+        "baseline_nse": baseline_metrics["nse"],
+        "baseline_kge": baseline_metrics["kge"],
+        "baseline_pbias": baseline_metrics["pbias"],
+        "calibrated_nse": calibrated_metrics["nse"],
+        "calibrated_kge": calibrated_metrics["kge"],
+        "calibrated_pbias": calibrated_metrics["pbias"],
+        "delta_nse": calibrated_metrics["nse"] - baseline_metrics["nse"],
+        "delta_kge": calibrated_metrics["kge"] - baseline_metrics["kge"],
+        "delta_pbias": calibrated_metrics["pbias"] - baseline_metrics["pbias"],
         "mode": "real_engine",
     }
     (out / "hydrograph_comparison_metrics.json").write_text(
@@ -336,31 +394,46 @@ def write_hydrograph_comparison_from_two_alignments(
     )
 
     try:
+        _ensure_matplotlib_config_dir()
         import matplotlib.pyplot as plt
     except Exception:
         return {"hydrograph_metrics_json": str(out / "hydrograph_comparison_metrics.json")}
 
+    overlay_plot = out / "hydrograph_observed_simulated_calibrated.png"
+    overlay_pdf = out / "hydrograph_observed_simulated_calibrated.pdf"
+    legacy_plot = out / "hydrograph_calibrated_vs_observed.png"
+    legacy_pdf = out / "hydrograph_calibrated_vs_observed.pdf"
     fig, ax = plt.subplots(figsize=(11, 4.2))
     ax.plot(df.index, df["obs"], label="Observed", linewidth=1.6)
-    ax.plot(df.index, df["sim_baseline"], label=f"Baseline Sim (NSE={baseline_nse:.3f})", linewidth=1.2)
+    ax.plot(
+        df.index,
+        df["sim_baseline"],
+        label=f"Baseline Simulated (NSE={baseline_metrics['nse']:.3f})",
+        linewidth=1.2,
+    )
     ax.plot(
         df.index,
         df["sim_calibrated"],
-        label=f"Calibrated Sim REAL (NSE={calibrated_nse:.3f})",
+        label=f"Calibrated Simulated (NSE={calibrated_metrics['nse']:.3f})",
         linewidth=1.2,
     )
-    ax.set_title("Observed vs Simulated (Baseline vs Real Calibrated Rerun)")
+    ax.set_title("Observed / Baseline Simulated / Calibrated Simulated Hydrograph")
     ax.set_xlabel("Date")
     ax.set_ylabel("Discharge")
     ax.legend()
     fig.tight_layout()
-    fig.savefig(out / "hydrograph_calibrated_vs_observed.png", dpi=220, bbox_inches="tight")
-    fig.savefig(out / "hydrograph_calibrated_vs_observed.pdf", bbox_inches="tight")
+    for png_path in (overlay_plot, legacy_plot):
+        fig.savefig(png_path, dpi=220, bbox_inches="tight")
+    for pdf_path in (overlay_pdf, legacy_pdf):
+        fig.savefig(pdf_path, bbox_inches="tight")
     plt.close(fig)
 
     return {
         "hydrograph_metrics_json": str(out / "hydrograph_comparison_metrics.json"),
-        "hydrograph_plot": str(out / "hydrograph_calibrated_vs_observed.png"),
+        "hydrograph_plot": str(legacy_plot),
+        "hydrograph_plot_pdf": str(legacy_pdf),
+        "hydrograph_overlay_plot": str(overlay_plot),
+        "hydrograph_overlay_plot_pdf": str(overlay_pdf),
     }
 
 
@@ -382,6 +455,16 @@ def _nse(obs: pd.Series, sim: pd.Series) -> float:
         return float("nan")
     num = float(((obs - sim) ** 2).sum())
     return 1.0 - (num / den)
+
+
+def _series_metrics(obs: pd.Series, sim: pd.Series) -> dict[str, float]:
+    obs_vals = [float(v) for v in obs]
+    sim_vals = [float(v) for v in sim]
+    return {
+        "nse": _nse(obs, sim),
+        "kge": float(kge(obs_vals, sim_vals)),
+        "pbias": float(pbias(obs_vals, sim_vals)),
+    }
 
 
 def _blend_weight(baseline_nse: float, target_nse: float) -> float:

@@ -15,22 +15,35 @@ SDA_MIN_DEPTH_MM = 500.0
 MAX_PROFILE_DEPTH_MM = 2500.0
 
 def normalize_profile(profile: SoilProfile, max_depth_mm: float = MAX_PROFILE_DEPTH_MM) -> SoilProfile:
-    """Enforce sanity bounds on any profile before delivering to SWAT+."""
+    """Enforce sanity bounds on any profile before delivering to SWAT+.
+
+    SSURGO/gNATSGO and the aggregate fallback can contain zero-thickness
+    horizons or duplicate bottom depths, especially shallow profiles with
+    bedrock at the first aggregate break. Those rows carry no additional
+    SWAT+ layer volume, so drop them upstream while keeping the writer's
+    strict monotonicity gate intact.
+    """
     normalized_layers = []
-    
+    last_dp = 0.0
     layer_num = 1
     for layer in sorted(profile.layers, key=lambda lyr: lyr.dp):
         new_layer = layer.model_copy(deep=True) if hasattr(layer, 'model_copy') else copy.deepcopy(layer)
-        new_layer.layer_num = layer_num
-        
+
         if new_layer.dp > max_depth_mm:
             new_layer.dp = max_depth_mm
-            normalized_layers.append(new_layer)
+            if new_layer.dp > last_dp:
+                new_layer.layer_num = layer_num
+                normalized_layers.append(new_layer)
             break
-        
+
+        if new_layer.dp <= last_dp:
+            continue
+
+        new_layer.layer_num = layer_num
         normalized_layers.append(new_layer)
+        last_dp = new_layer.dp
         layer_num += 1
-        
+
     prof_copy = profile.model_copy(deep=True) if hasattr(profile, 'model_copy') else copy.deepcopy(profile)
     if normalized_layers:
         prof_copy.layers = normalized_layers
@@ -87,6 +100,7 @@ def fetch_soil_profiles_result(
     for mk in mukey_list:
         sda_p = sda_profiles.get(mk)
         if sda_p:
+            sda_p = normalize_profile(sda_p)
             # Validate SDA
             layers_count = len(sda_p.layers)
             max_depth = max(lyr.dp for lyr in sda_p.layers)

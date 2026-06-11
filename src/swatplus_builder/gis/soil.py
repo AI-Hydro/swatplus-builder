@@ -52,12 +52,16 @@ override via ``nodata_sentinels``.
 from __future__ import annotations
 
 import logging
+import time
+from contextlib import ExitStack
 from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
 import rasterio
+import rasterio.features
+import rasterio.merge
 import rasterio.mask
 import rasterio.warp
 from shapely.geometry import mapping
@@ -89,6 +93,12 @@ for testing against a local mirror."""
 
 DEFAULT_RASTERS_COLLECTION: str = "gnatsgo-rasters"
 """Planetary Computer collection id for gNATSGO raster assets."""
+
+_PC_STAC_QUERY_ATTEMPTS = 3
+_PC_STAC_RETRY_SLEEP_SECONDS = 2.0
+_PC_STAC_MAX_ITEMS = 100
+_PC_STAC_PAGE_LIMIT = 100
+_PC_STAC_TIMEOUT_SECONDS = 60
 
 # Default nodata sentinels for gNATSGO mukey rasters. ``0`` is
 # "no map unit"; the int32 MAX is rioxarray's post-read nodata after
@@ -237,8 +247,8 @@ def fetch_mukey_raster(
         The gNATSGO raster collection is tiled at the state level.
         For a single-state watershed we often get one item; for
         multi-state or edge-of-tile watersheds we may get several.
-        We try each candidate item until one overlaps and clips
-        successfully. Mosaic support is a follow-up.
+        All overlapping mukey assets are merged before clipping so
+        edge-of-state watersheds do not collapse to one partial tile.
     """
     _ = settings  # reserved for future cache/timeout knobs
     try:
@@ -259,19 +269,13 @@ def fetch_mukey_raster(
     # rather than the full polygon — faster and no geometry surprises.
     bbox_wgs84 = _boundary_bbox_wgs84(boundary, boundary_crs)
 
-    try:
-        catalog = pystac_client.Client.open(
-            stac_url, modifier=planetary_computer.sign_inplace
-        )
-        search = catalog.search(collections=[collection], bbox=bbox_wgs84)
-        items = list(search.items())
-    except Exception as exc:
-        raise SwatBuilderExternalError(
-            f"Planetary Computer STAC query failed: {exc}",
-            stac_url=stac_url,
-            collection=collection,
-            bbox=list(bbox_wgs84),
-        ) from exc
+    items = _query_pc_stac_items(
+        pystac_client=pystac_client,
+        planetary_computer=planetary_computer,
+        stac_url=stac_url,
+        collection=collection,
+        bbox_wgs84=bbox_wgs84,
+    )
 
     if not items:
         raise SwatBuilderExternalError(
@@ -280,62 +284,154 @@ def fetch_mukey_raster(
             collection=collection,
         )
 
+    items_with_mukey = [item for item in items if "mukey" in item.assets]
+    if not items_with_mukey:
+        raise SwatBuilderPipelineError(
+            "Planetary Computer gNATSGO raster item(s) are missing the "
+            "expected 'mukey' asset.",
+            collection=collection,
+            bbox=list(bbox_wgs84),
+            item_ids=[str(getattr(item, "id", "")) for item in items],
+        )
+
     last_error: Exception | None = None
-    for item in items:
-        if "mukey" not in item.assets:
-            continue
-        href = item.assets["mukey"].href  # signed via modifier above
-        try:
-            # Open the remote COG, reproject the boundary into its CRS, clip,
-            # and write. rasterio handles /vsicurl transparently.
-            with rasterio.open(href) as src:
+    with ExitStack() as stack:
+        sources: list[rasterio.io.DatasetReader] = []
+        item_ids: list[str] = []
+        geom = None
+        profile = None
+        nodata = None
+        dtype = None
+        for item in items_with_mukey:
+            href = item.assets["mukey"].href  # signed via modifier above
+            try:
+                src = stack.enter_context(rasterio.open(href))
+            except rasterio.errors.RasterioIOError as exc:
+                raise SwatBuilderExternalError(
+                    f"reading mukey raster failed: {exc}",
+                    href=href,
+                    output_path=str(out),
+                ) from exc
+
+            if geom is None:
                 geom = _reproject_geom_to_raster(
                     boundary, src_crs=boundary_crs, dst_crs=src.crs
                 )
-                clipped, transform = rasterio.mask.mask(
-                    src,
-                    [mapping(geom)],
-                    crop=True,
-                    filled=True,
-                    indexes=1,
-                    nodata=src.nodata if src.nodata is not None else 0,
-                )
                 profile = src.profile.copy()
-                profile.update(
-                    height=clipped.shape[0],
-                    width=clipped.shape[1],
-                    transform=transform,
-                    count=1,
-                    compress="deflate",
+                nodata = src.nodata if src.nodata is not None else 0
+                dtype = src.dtypes[0]
+            elif src.crs != profile.get("crs"):
+                raise SwatBuilderPipelineError(
+                    "gNATSGO raster items use mixed CRS values; cannot safely mosaic.",
+                    collection=collection,
+                    bbox=list(bbox_wgs84),
+                    item_ids=[str(getattr(i, "id", "")) for i in items_with_mukey],
                 )
-                with rasterio.open(out, "w", **profile) as dst:
-                    dst.write(clipped, 1)
-            log.info("wrote mukey raster: %s (item=%s)", out, item.id)
-            return out
-        except ValueError as exc:
-            # Common edge case: STAC returns a nearby tile that does not
-            # actually overlap after reprojection/mask. Try next item.
-            if "do not overlap raster" in str(exc).lower():
-                last_error = exc
+
+            if not _bounds_intersect(tuple(src.bounds), tuple(geom.bounds)):
+                last_error = ValueError(f"item {item.id} does not overlap boundary bounds")
                 continue
-            raise
-        except rasterio.errors.WindowError as exc:
-            last_error = exc
-            continue
-        except rasterio.errors.RasterioIOError as exc:
+            sources.append(src)
+            item_ids.append(str(getattr(item, "id", "")))
+
+        if not sources or geom is None or profile is None:
             raise SwatBuilderExternalError(
-                f"reading/writing mukey raster failed: {exc}",
-                href=href,
-                output_path=str(out),
+                "No returned gNATSGO raster item overlaps boundary after clipping.",
+                collection=collection,
+                bbox=list(bbox_wgs84),
+                n_items=len(items),
+                last_error=str(last_error) if last_error is not None else None,
+            )
+
+        try:
+            merged, transform = rasterio.merge.merge(
+                sources,
+                bounds=tuple(geom.bounds),
+                nodata=nodata,
+                indexes=1,
+            )
+        except (ValueError, rasterio.errors.WindowError) as exc:
+            raise SwatBuilderExternalError(
+                "No returned gNATSGO raster item overlaps boundary after clipping.",
+                collection=collection,
+                bbox=list(bbox_wgs84),
+                n_items=len(items),
+                last_error=str(exc),
             ) from exc
 
+        arr = merged[0]
+        geom_mask = rasterio.features.geometry_mask(
+            [mapping(geom)],
+            out_shape=arr.shape,
+            transform=transform,
+            invert=True,
+        )
+        arr = np.where(geom_mask, arr, nodata).astype(dtype or arr.dtype)
+        profile.update(
+            height=arr.shape[0],
+            width=arr.shape[1],
+            transform=transform,
+            count=1,
+            compress="deflate",
+            nodata=nodata,
+            dtype=str(arr.dtype),
+        )
+        with rasterio.open(out, "w", **profile) as dst:
+            dst.write(arr, 1)
+        log.info("wrote mukey raster: %s (items=%s)", out, ",".join(item_ids))
+        return out
+
+def _bounds_intersect(
+    a: tuple[float, float, float, float],
+    b: tuple[float, float, float, float],
+) -> bool:
+    left_a, bottom_a, right_a, top_a = a
+    left_b, bottom_b, right_b, top_b = b
+    return not (
+        right_a <= left_b
+        or right_b <= left_a
+        or top_a <= bottom_b
+        or top_b <= bottom_a
+    )
+
+
+def _query_pc_stac_items(
+    *,
+    pystac_client,
+    planetary_computer,
+    stac_url: str,
+    collection: str,
+    bbox_wgs84: tuple[float, float, float, float],
+):
+    last_exc: Exception | None = None
+    for attempt in range(1, _PC_STAC_QUERY_ATTEMPTS + 1):
+        try:
+            catalog = pystac_client.Client.open(
+                stac_url,
+                modifier=planetary_computer.sign_inplace,
+                timeout=_PC_STAC_TIMEOUT_SECONDS,
+            )
+            search = catalog.search(
+                collections=[collection],
+                bbox=bbox_wgs84,
+                max_items=_PC_STAC_MAX_ITEMS,
+                limit=_PC_STAC_PAGE_LIMIT,
+            )
+            return list(search.items())
+        except Exception as exc:
+            last_exc = exc
+            if attempt < _PC_STAC_QUERY_ATTEMPTS:
+                time.sleep(_PC_STAC_RETRY_SLEEP_SECONDS)
+
+    assert last_exc is not None
     raise SwatBuilderExternalError(
-        "No returned gNATSGO raster item overlaps boundary after clipping.",
+        f"Planetary Computer STAC query failed after "
+        f"{_PC_STAC_QUERY_ATTEMPTS} attempts: {last_exc}",
+        stac_url=stac_url,
         collection=collection,
         bbox=list(bbox_wgs84),
-        n_items=len(items),
-        last_error=str(last_error) if last_error is not None else None,
-    )
+        attempts=_PC_STAC_QUERY_ATTEMPTS,
+    ) from last_exc
 
 
 # ---------------------------------------------------------------------------

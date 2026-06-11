@@ -211,8 +211,118 @@ class TestDominantMode:
         assert result.catalog_path.is_file()
 
         # 2 subbasins → 2 LSUs → 2 HRUs in dominant mode.
+        assert result.stats["n_subbasins"] == 2.0
         assert result.stats["n_lsus"] == 2.0
         assert result.stats["n_hrus"] == 2.0
+        assert result.stats["hru_coverage_ratio"] == pytest.approx(1.0)
+        assert result.stats["overlay_missing_hru_subbasin_count"] == 0.0
+
+    def test_constant_soil_mukey_recovery(self, mini_watershed):
+        from swatplus_builder.gis.hru import create_hrus, load_lsus_hrus
+
+        result = create_hrus(
+            mini_watershed["watershed"],
+            mini_watershed["landuse_raster"],
+            None,
+            constant_soil_mukey=900000001,
+        )
+        _, hrus = load_lsus_hrus(result)
+        catalog = json.loads(result.catalog_path.read_text(encoding="utf-8"))
+
+        assert result.stats["n_hrus"] == 2.0
+        assert {h.soil for h in hrus} == {"gnatsgo_900000001"}
+        assert catalog["stats"]["soil_source_mode"] == "constant"
+        assert catalog["stats"]["constant_soil_mukey"] == 900000001
+
+    def test_all_touched_fallback_recovers_thin_lsu(self, tmp_path):
+        from swatplus_builder.gis.hru import create_hrus, load_lsus_hrus
+        from swatplus_builder.types import WatershedResult
+
+        workdir = tmp_path / "thin"
+        (workdir / "rasters").mkdir(parents=True)
+        (workdir / "shapes").mkdir()
+
+        dem = np.arange(16, dtype="float32").reshape(4, 4)
+        dem_path = _write_raster(workdir / "rasters" / "dem.tif", dem, nodata=-9999.0, dtype="float32")
+        lu_path = _write_raster(
+            workdir / "rasters" / "landuse.tif",
+            np.full((4, 4), 10, dtype="int32"),
+            nodata=0,
+            dtype="int32",
+        )
+        soil_path = _write_raster(
+            workdir / "rasters" / "soil.tif",
+            np.full((4, 4), 12345, dtype="int32"),
+            nodata=0,
+            dtype="int32",
+        )
+
+        # A thin polygon touches the first column but contains no pixel centers
+        # when rasterized with the default center-pixel rule.
+        thin = box(ORIGIN[0], ORIGIN[1] - 4 * PIXEL, ORIGIN[0] + 0.1 * PIXEL, ORIGIN[1])
+        subs_path = workdir / "shapes" / "subbasins.gpkg"
+        gpd.GeoDataFrame({"sub_id": [1]}, geometry=[thin], crs=_CRS_UTM).to_file(subs_path, driver="GPKG")
+        channels_path = workdir / "shapes" / "channels.gpkg"
+        gpd.GeoDataFrame(
+            {
+                "sub_id": [1],
+                "link_id": [101],
+                "length_m": [120.0],
+                "slope_m_m": [0.01],
+                "width_m": [2.5],
+                "depth_m": [0.3],
+            },
+            geometry=[LineString([(ORIGIN[0], ORIGIN[1]), (ORIGIN[0], ORIGIN[1] - 4 * PIXEL)])],
+            crs=_CRS_UTM,
+        ).to_file(channels_path, driver="GPKG")
+        placeholder = workdir / "rasters" / "_.tif"
+        placeholder.write_bytes(b"")
+        watershed = WatershedResult(
+            workdir=workdir,
+            crs=_CRS_UTM,
+            dem_conditioned=dem_path,
+            flow_dir=placeholder,
+            flow_acc=placeholder,
+            streams_raster=placeholder,
+            subbasins_vector=subs_path,
+            channels_vector=channels_path,
+            outlets_vector=placeholder,
+            routing_graph=placeholder,
+            stats={},
+        )
+
+        result = create_hrus(watershed, lu_path, soil_path)
+        _, hrus = load_lsus_hrus(result)
+        catalog = json.loads(result.catalog_path.read_text(encoding="utf-8"))
+
+        assert len(hrus) == 1
+        assert catalog["stats"]["overlay_all_touched_fallback_subbasins"] == [1]
+        assert catalog["stats"]["overlay_missing_hru_subbasins"] == []
+
+    def test_partial_soil_coverage_reports_missing_subbasins(self, mini_watershed):
+        from swatplus_builder.gis.hru import create_hrus
+
+        soil = np.full(mini_watershed["shape"], 12345, dtype="int32")
+        soil[:, 4:] = 2_147_483_647
+        partial_soil = _write_raster(
+            Path(mini_watershed["soil_raster"]).with_name("soil_partial.tif"),
+            soil,
+            nodata=2_147_483_647,
+            dtype="int32",
+        )
+
+        result = create_hrus(
+            mini_watershed["watershed"],
+            mini_watershed["landuse_raster"],
+            partial_soil,
+        )
+        catalog = json.loads(result.catalog_path.read_text(encoding="utf-8"))
+
+        assert result.stats["n_subbasins"] == 2.0
+        assert result.stats["n_hrus"] == 1.0
+        assert result.stats["hru_coverage_ratio"] == pytest.approx(0.5)
+        assert result.stats["overlay_missing_hru_subbasin_count"] == 1.0
+        assert catalog["stats"]["overlay_missing_hru_subbasins"] == [2]
 
     def test_rows_are_pydantic_valid_and_ids_unique(self, mini_watershed):
         from swatplus_builder.gis.hru import create_hrus, load_lsus_hrus

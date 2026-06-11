@@ -237,20 +237,48 @@ class _FakeClient:
         self._items = items
 
     @classmethod
-    def open(cls, url, modifier=None):
+    def open(cls, url, modifier=None, **kwargs):
         cls._last_url = url
+        cls._last_open_kwargs = kwargs
         return cls._singleton
 
-    def search(self, collections=None, bbox=None):
+    def search(self, collections=None, bbox=None, **kwargs):
         type(self)._last_collections = collections
         type(self)._last_bbox = bbox
+        type(self)._last_search_kwargs = kwargs
         return _FakeSearch(self._items)
+
+
+class _FlakyClient(_FakeClient):
+    _failures_remaining = 0
+    _search_calls = 0
+
+    def search(self, collections=None, bbox=None, **kwargs):
+        type(self)._search_calls += 1
+        if type(self)._failures_remaining > 0:
+            type(self)._failures_remaining -= 1
+            raise TimeoutError("The request exceeded the maximum allowed time")
+        return super().search(collections=collections, bbox=bbox, **kwargs)
 
 
 def _install_fake_pc(monkeypatch, items: list[_FakeItem]) -> None:
     pystac_mod = types.ModuleType("pystac_client")
     _FakeClient._singleton = _FakeClient(items)
     pystac_mod.Client = _FakeClient  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "pystac_client", pystac_mod)
+
+    pc_mod = types.ModuleType("planetary_computer")
+    pc_mod.sign_inplace = lambda x: x  # type: ignore[attr-defined]
+    pc_mod.sign = lambda x: x  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "planetary_computer", pc_mod)
+
+
+def _install_flaky_pc(monkeypatch, items: list[_FakeItem], *, failures: int) -> None:
+    pystac_mod = types.ModuleType("pystac_client")
+    _FlakyClient._singleton = _FlakyClient(items)
+    _FlakyClient._failures_remaining = failures
+    _FlakyClient._search_calls = 0
+    pystac_mod.Client = _FlakyClient  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "pystac_client", pystac_mod)
 
     pc_mod = types.ModuleType("planetary_computer")
@@ -294,6 +322,8 @@ class TestFetchMukeyRaster:
         assert extract_unique_mukeys(result) == {100}
         # Sanity: we asked PC for bbox-in-WGS84 (collection too).
         assert _FakeClient._last_collections == ["gnatsgo-rasters"]
+        assert _FakeClient._last_open_kwargs["timeout"] == 60
+        assert _FakeClient._last_search_kwargs == {"max_items": 100, "limit": 100}
         bbox = _FakeClient._last_bbox
         assert bbox is not None and len(bbox) == 4
         # Bbox is tiny and near (-84, 40.6) for EPSG:32617 coords given.
@@ -312,6 +342,50 @@ class TestFetchMukeyRaster:
                 boundary_crs=_CRS_UTM,
             )
         assert "no 'gnatsgo-rasters'" in str(ei.value) or "no" in str(ei.value).lower()
+
+    def test_transient_stac_query_failure_is_retried(
+        self, tmp_path, monkeypatch, mukey_raster
+    ):
+        from swatplus_builder.gis.soil import extract_unique_mukeys, fetch_mukey_raster
+
+        items = [
+            _FakeItem(
+                "gnatsgo_state_X",
+                {"mukey": _FakeAsset(str(mukey_raster))},
+            )
+        ]
+        _install_flaky_pc(monkeypatch, items, failures=1)
+        monkeypatch.setattr("swatplus_builder.gis.soil.time.sleep", lambda _s: None)
+
+        boundary = box(500_000, 4_499_940, 500_060, 4_500_000)
+        out = tmp_path / "out" / "mukey_after_retry.tif"
+
+        result = fetch_mukey_raster(
+            boundary,
+            output_path=out,
+            boundary_crs=_CRS_UTM,
+        )
+
+        assert result == out.resolve()
+        assert extract_unique_mukeys(result) == {100}
+        assert _FlakyClient._search_calls == 2
+
+    def test_stac_query_failure_reports_attempt_count(self, tmp_path, monkeypatch):
+        from swatplus_builder.errors import SwatBuilderExternalError
+        from swatplus_builder.gis.soil import fetch_mukey_raster
+
+        _install_flaky_pc(monkeypatch, [], failures=3)
+        monkeypatch.setattr("swatplus_builder.gis.soil.time.sleep", lambda _s: None)
+
+        with pytest.raises(SwatBuilderExternalError, match="failed after 3 attempts") as excinfo:
+            fetch_mukey_raster(
+                box(500_000, 4_499_940, 500_060, 4_500_000),
+                output_path=tmp_path / "x.tif",
+                boundary_crs=_CRS_UTM,
+            )
+
+        assert excinfo.value.context.get("attempts") == 3
+        assert _FlakyClient._search_calls == 3
 
     def test_missing_mukey_asset_raises_pipeline(
         self, tmp_path, monkeypatch
@@ -383,6 +457,35 @@ class TestFetchMukeyRaster:
         result = fetch_mukey_raster(boundary, output_path=out, boundary_crs=_CRS_UTM)
         assert result == out.resolve()
         assert extract_unique_mukeys(result) == {100}
+
+    def test_mosaics_multiple_overlapping_items(
+        self, tmp_path, monkeypatch
+    ):
+        """Watersheds spanning state/tile edges need every intersecting asset."""
+        from swatplus_builder.gis.soil import extract_unique_mukeys, fetch_mukey_raster
+
+        left = _write_mukey_raster(
+            tmp_path / "left.tif",
+            np.full((4, 2), 111, dtype=np.int32),
+            origin_xy=(500_000.0, 4_500_000.0),
+        )
+        right = _write_mukey_raster(
+            tmp_path / "right.tif",
+            np.full((4, 2), 222, dtype=np.int32),
+            origin_xy=(500_060.0, 4_500_000.0),
+        )
+        items = [
+            _FakeItem("left_state", {"mukey": _FakeAsset(str(left))}),
+            _FakeItem("right_state", {"mukey": _FakeAsset(str(right))}),
+        ]
+        _install_fake_pc(monkeypatch, items)
+
+        boundary = box(500_000, 4_499_880, 500_120, 4_500_000)
+        out = tmp_path / "out" / "mukey_mosaic.tif"
+        result = fetch_mukey_raster(boundary, output_path=out, boundary_crs=_CRS_UTM)
+
+        assert result == out.resolve()
+        assert extract_unique_mukeys(result) == {111, 222}
 
 
 # ---------------------------------------------------------------------------

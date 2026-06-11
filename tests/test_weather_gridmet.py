@@ -366,17 +366,79 @@ class TestHappyPath:
 
 
 class TestExternalErrors:
+    def test_fetch_forwards_gridmet_reliability_options(
+        self, monkeypatch, tmp_path
+    ):
+        from swatplus_builder.weather import fetch_gridmet
+
+        captured = {}
+
+        class _OptionAwareClient:
+            def get_bycoords(self, **kwargs):
+                captured.update(kwargs)
+                return _mk_df(
+                    coords=kwargs["coords"],
+                    dates=kwargs["dates"],
+                    variables=kwargs["variables"],
+                )
+
+        _install_fake_pygridmet(monkeypatch, _OptionAwareClient())
+
+        fetch_gridmet(
+            stations=[(41.1, -77.5, 300.0)],
+            start="2015-01-01",
+            end="2015-01-05",
+            variables=["pcp"],
+            cache_dir=tmp_path,
+        )
+
+        assert captured["conn_timeout"] >= 1000
+        assert captured["validate_filesize"] is False
+
+    def test_transient_pygridmet_exception_is_retried(
+        self, monkeypatch, tmp_path
+    ):
+        from swatplus_builder.weather import fetch_gridmet
+
+        attempts = {"n": 0}
+
+        def flaky(**k):
+            attempts["n"] += 1
+            if attempts["n"] == 1:
+                raise TimeoutError("Timeout on reading data from socket")
+            return _mk_df(coords=k["coords"], dates=k["dates"], variables=k["variables"])
+
+        fake = _FakeClient(lambda **k: None)
+        fake.get_bycoords = flaky  # type: ignore[assignment]
+        _install_fake_pygridmet(monkeypatch, fake)
+        monkeypatch.setattr("swatplus_builder.weather.gridmet.time.sleep", lambda _s: None)
+
+        bundle = fetch_gridmet(
+            stations=[(41.1, -77.5, 300.0)],
+            start="2015-01-01",
+            end="2015-01-05",
+            variables=["pcp"],
+            cache_dir=tmp_path,
+        )
+
+        assert attempts["n"] == 2
+        assert bundle.stations[0].pcp == [1.5] * 5
+
     def test_pygridmet_exception_translates_to_external_error(
         self, monkeypatch, tmp_path
     ):
         from swatplus_builder.weather import fetch_gridmet
 
+        attempts = {"n": 0}
+
         def boom(**_kwargs):
+            attempts["n"] += 1
             raise ConnectionError("THREDDS 503 Service Unavailable")
 
         fake = _FakeClient(lambda **k: None)
         fake.get_bycoords = boom  # type: ignore[assignment]
         _install_fake_pygridmet(monkeypatch, fake)
+        monkeypatch.setattr("swatplus_builder.weather.gridmet.time.sleep", lambda _s: None)
 
         with pytest.raises(SwatBuilderExternalError, match="THREDDS 503") as excinfo:
             fetch_gridmet(
@@ -386,6 +448,8 @@ class TestExternalErrors:
                 cache_dir=tmp_path,
             )
         assert excinfo.value.context.get("station") == "s41100n77500w"
+        assert excinfo.value.context.get("attempts") == 3
+        assert attempts["n"] == 3
 
     def test_row_count_mismatch_triggers_pipeline_error(
         self, monkeypatch, tmp_path
@@ -407,6 +471,114 @@ class TestExternalErrors:
         with pytest.raises(
             SwatBuilderPipelineError, match=r"returned 3 rows .* expected 5"
         ):
+            fetch_gridmet(
+                stations=[(41.1, -77.5, 300.0)],
+                start="2015-01-01",
+                end="2015-01-05",
+                variables=["pcp"],
+                cache_dir=tmp_path,
+            )
+
+    def test_single_missing_boundary_day_is_repaired(self, monkeypatch, tmp_path):
+        from swatplus_builder.weather import fetch_gridmet
+
+        def missing_start(**k):
+            dates = k["dates"]
+            idx = pd.date_range(dates[0], dates[1], freq="D")[1:]
+            return pd.DataFrame(
+                {"pr (mm)": [2.0] * len(idx)}, index=idx
+            )
+
+        fake = _FakeClient(lambda **k: None)
+        fake.get_bycoords = missing_start  # type: ignore[assignment]
+        _install_fake_pygridmet(monkeypatch, fake)
+
+        bundle = fetch_gridmet(
+            stations=[(41.1, -77.5, 300.0)],
+            start="2015-01-01",
+            end="2015-01-05",
+            variables=["pcp"],
+            cache_dir=tmp_path,
+        )
+
+        assert bundle.n_days == 5
+        assert bundle.stations[0].pcp == [2.0] * 5
+
+    def test_single_missing_internal_day_is_repaired(self, monkeypatch, tmp_path):
+        from swatplus_builder.weather import fetch_gridmet
+
+        def missing_internal(**k):
+            idx = pd.DatetimeIndex(
+                [
+                    "2015-01-01",
+                    "2015-01-02",
+                    "2015-01-04",
+                    "2015-01-05",
+                ]
+            )
+            return pd.DataFrame(
+                {"pr (mm)": [1.0, 2.0, 4.0, 5.0]}, index=idx
+            )
+
+        fake = _FakeClient(lambda **k: None)
+        fake.get_bycoords = missing_internal  # type: ignore[assignment]
+        _install_fake_pygridmet(monkeypatch, fake)
+
+        bundle = fetch_gridmet(
+            stations=[(41.1, -77.5, 300.0)],
+            start="2015-01-01",
+            end="2015-01-05",
+            variables=["pcp"],
+            cache_dir=tmp_path,
+        )
+
+        assert bundle.n_days == 5
+        assert bundle.stations[0].pcp == [1.0, 2.0, 3.0, 4.0, 5.0]
+
+    def test_multiple_isolated_missing_days_are_repaired(self, monkeypatch, tmp_path):
+        from swatplus_builder.weather import fetch_gridmet
+
+        def missing_isolated(**k):
+            idx = pd.DatetimeIndex(
+                [
+                    "2015-01-01",
+                    "2015-01-02",
+                    "2015-01-04",
+                    "2015-01-05",
+                    "2015-01-07",
+                ]
+            )
+            return pd.DataFrame(
+                {"pr (mm)": [1.0, 2.0, 4.0, 5.0, 7.0]}, index=idx
+            )
+
+        fake = _FakeClient(lambda **k: None)
+        fake.get_bycoords = missing_isolated  # type: ignore[assignment]
+        _install_fake_pygridmet(monkeypatch, fake)
+
+        bundle = fetch_gridmet(
+            stations=[(41.1, -77.5, 300.0)],
+            start="2015-01-01",
+            end="2015-01-07",
+            variables=["pcp"],
+            cache_dir=tmp_path,
+        )
+
+        assert bundle.n_days == 7
+        assert bundle.stations[0].pcp == [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]
+
+    def test_consecutive_missing_days_still_raise(self, monkeypatch, tmp_path):
+        from swatplus_builder.weather import fetch_gridmet
+
+        def missing_consecutive(**k):
+            idx = pd.DatetimeIndex(["2015-01-01", "2015-01-04", "2015-01-05"])
+            return pd.DataFrame({"pr (mm)": [1.0, 4.0, 5.0]}, index=idx)
+
+        fake = _FakeClient(lambda **k: None)
+        fake.get_bycoords = missing_consecutive  # type: ignore[assignment]
+        _install_fake_pygridmet(monkeypatch, fake)
+
+        with pytest.raises(SwatBuilderPipelineError, match=r"returned 3 rows .* expected 5"):
             fetch_gridmet(
                 stations=[(41.1, -77.5, 300.0)],
                 start="2015-01-01",

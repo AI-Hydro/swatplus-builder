@@ -28,6 +28,8 @@ from typing import Sequence
 __all__ = [
     "nse",
     "kge",
+    "kge_components",
+    "pbias",
     "baseflow_index",
     "flow_duration_curve_quantiles",
 ]
@@ -99,6 +101,58 @@ def kge(obs: Sequence[float], sim: Sequence[float]) -> float:
         return float("nan")
 
     return 1.0 - math.sqrt((r - 1) ** 2 + (alpha - 1) ** 2 + (beta - 1) ** 2)
+
+
+def kge_components(obs: Sequence[float], sim: Sequence[float]) -> dict[str, float]:
+    """Return KGE and its correlation, variability, and bias components."""
+    obs, sim = list(obs), list(sim)
+    _check_lengths(obs, sim, "kge_components")
+
+    obs_mean = _mean(obs)
+    sim_mean = _mean(sim)
+    obs_std = _std(obs, obs_mean)
+    sim_std = _std(sim, sim_mean)
+
+    if obs_std == 0.0 or sim_std == 0.0 or obs_mean == 0.0:
+        nan = float("nan")
+        return {
+            "method": "kge_2009_components",
+            "kge": nan,
+            "r": nan,
+            "alpha": nan,
+            "beta": nan,
+            "correlation_deficit": nan,
+            "variability_deficit": nan,
+            "bias_deficit": nan,
+        }
+
+    r = _pearson_r(obs, sim, obs_mean, sim_mean, obs_std, sim_std)
+    alpha = sim_std / obs_std
+    beta = sim_mean / obs_mean
+    kge_value = 1.0 - math.sqrt((r - 1) ** 2 + (alpha - 1) ** 2 + (beta - 1) ** 2)
+    return {
+        "method": "kge_2009_components",
+        "kge": float(kge_value),
+        "r": float(r),
+        "alpha": float(alpha),
+        "beta": float(beta),
+        "correlation_deficit": float(abs(r - 1.0)),
+        "variability_deficit": float(abs(alpha - 1.0)),
+        "bias_deficit": float(abs(beta - 1.0)),
+    }
+
+
+def pbias(obs: Sequence[float], sim: Sequence[float]) -> float:
+    """Percent bias of simulated flow relative to observed flow.
+
+    Positive values indicate simulated volume is higher than observed volume.
+    """
+    obs, sim = list(obs), list(sim)
+    _check_lengths(obs, sim, "pbias")
+    obs_sum = sum(obs)
+    if obs_sum == 0.0:
+        return float("nan")
+    return 100.0 * (sum(sim) - obs_sum) / obs_sum
 
 
 def baseflow_index(daily_q: Sequence[float], alpha: float = 0.925) -> float:

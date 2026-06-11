@@ -10,10 +10,17 @@ The 03339000 contrast-basin failure that motivated this gate had:
 
 from __future__ import annotations
 
+import threading
+import time
+
 import pytest
 
 from swatplus_builder.errors import SwatBuilderPipelineError
-from swatplus_builder.gis.delineation import check_topology_realism
+from swatplus_builder.gis.delineation import (
+    _check_wbt_output,
+    _prune_topology_to_valid_channels,
+    check_topology_realism,
+)
 
 
 def _stats(
@@ -64,6 +71,56 @@ class TestValidTopology:
             max_channels_per_subbasin=200,
             max_terminals=10,
         )
+
+    def test_routing_graph_prunes_channels_without_surviving_subbasins(self):
+        import geopandas as gpd
+        import networkx as nx
+        from shapely.geometry import LineString, Polygon
+
+        graph = nx.DiGraph()
+        graph.add_nodes_from([1, 2, 3])
+        graph.add_edge(1, 2)
+        channels = gpd.GeoDataFrame(
+            {
+                "link_id": [1, 2, 3],
+                "sub_id": [1, 2, float("nan")],
+            },
+            geometry=[
+                LineString([(0, 0), (1, 0)]),
+                LineString([(1, 0), (2, 0)]),
+                LineString([(10, 0), (11, 0)]),
+            ],
+            crs="EPSG:5070",
+        )
+        subbasins = gpd.GeoDataFrame(
+            {"sub_id": [1, 2]},
+            geometry=[
+                Polygon([(0, -1), (1, -1), (1, 1), (0, 1)]),
+                Polygon([(1, -1), (2, -1), (2, 1), (1, 1)]),
+            ],
+            crs="EPSG:5070",
+        )
+
+        pruned = _prune_topology_to_valid_channels(graph, channels, subbasins)
+
+        assert sorted(pruned.nodes) == [1, 2]
+        assert sorted(n for n in pruned.nodes if pruned.out_degree(n) == 0) == [2]
+
+    def test_whitebox_output_check_waits_for_delayed_file_visibility(self, tmp_path):
+        delayed = tmp_path / "dem_conditioned.tif"
+
+        def create_later() -> None:
+            time.sleep(0.2)
+            delayed.write_bytes(b"raster")
+
+        thread = threading.Thread(target=create_later)
+        thread.start()
+        try:
+            _check_wbt_output(0, "BreachDepressionsLeastCost", delayed)
+        finally:
+            thread.join(timeout=2)
+
+        assert delayed.exists()
 
 
 # ---------------------------------------------------------------------------

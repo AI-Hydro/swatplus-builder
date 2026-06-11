@@ -28,6 +28,8 @@ class RunMetadata(BaseModel):
     chandeg_con_sha256: str | None = Field(default=None)
     routing_mode: str | None = Field(default=None)
     soil_mode: str | None = Field(default=None)
+    soil_provenance_mode: str | None = Field(default=None)
+    boundary_provenance: dict[str, Any] | None = Field(default=None)
     pct_fallback_soils: float | None = Field(default=None, ge=0.0, le=1.0)
     engine_version: str | None = Field(default=None)
     builder_git_sha: str | None = Field(default=None)

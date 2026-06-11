@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Dict, Any, Literal
 
 from swatplus_builder.output.reader import read_output_file
-from swatplus_builder.output.metrics import nse, kge, baseflow_index
+from swatplus_builder.output.metrics import nse, kge, pbias, baseflow_index
 
 log = logging.getLogger(__name__)
 _SECONDS_PER_DAY = 86400.0
@@ -18,7 +18,7 @@ def evaluate_run(
     obs_series: pd.Series, 
     outlet_gis_id: int = 1,
     out_alignment_csv: Path | str | None = None,
-    outlet_policy: Literal["auto", "strict", "best_terminal_nse"] = "auto",
+    outlet_policy: Literal["auto", "strict", "best_terminal_nse", "all_terminal_sum"] = "auto",
     return_diagnostics: bool = False,
 ) -> tuple[pd.DataFrame, Dict[str, float]] | tuple[pd.DataFrame, Dict[str, float], Dict[str, Any]]:
     """Align daily simulated discharge with observed discharge and compute metrics.
@@ -32,6 +32,10 @@ def evaluate_run(
             - ``"auto"``: allow dry-outlet fallback and non-terminal best-NSE upgrade.
             - ``"strict"``: never switch outlets; score requested/pinned outlet only.
             - ``"best_terminal_nse"``: always choose best terminal outlet by NSE when available.
+            - ``"all_terminal_sum"``: explicitly score a virtual outlet made
+              by summing every non-empty terminal outlet. This is provenance-
+              sensitive and should only be used by callers that record the
+              virtual outlet authority.
         return_diagnostics: If True, include outlet/source diagnostics in return tuple.
         
     Returns:
@@ -44,16 +48,20 @@ def evaluate_run(
     if not sim_channel_path.exists():
         raise FileNotFoundError(f"Missing simulation output file: {sim_channel_path}")
 
-    if outlet_policy not in {"auto", "strict", "best_terminal_nse"}:
+    if outlet_policy not in {"auto", "strict", "best_terminal_nse", "all_terminal_sum"}:
         raise ValueError(
-            "outlet_policy must be one of: 'auto', 'strict', 'best_terminal_nse'."
+            "outlet_policy must be one of: 'auto', 'strict', 'best_terminal_nse', "
+            "'all_terminal_sum'."
         )
 
-    sim_df, diagnostics = _read_sim_discharge(
-        sim_channel_path,
-        outlet_gis_id,
-        allow_dry_autodetect=(outlet_policy == "auto"),
-    )
+    if outlet_policy == "all_terminal_sum":
+        sim_df, diagnostics = _read_all_terminal_sum_discharge(sim_channel_path, outlet_gis_id)
+    else:
+        sim_df, diagnostics = _read_sim_discharge(
+            sim_channel_path,
+            outlet_gis_id,
+            allow_dry_autodetect=(outlet_policy == "auto"),
+        )
     diagnostics["outlet_policy"] = outlet_policy
     if sim_df.empty:
         raise ValueError(
@@ -65,7 +73,11 @@ def evaluate_run(
     # Intersection of dates via unified aligner
     from swatplus_builder.output.plots.utils import align_timeseries
 
-    if diagnostics.get("requested_outlet_is_terminal") is False and not diagnostics.get("outlet_autodetected", False):
+    if (
+        outlet_policy != "all_terminal_sum"
+        and diagnostics.get("requested_outlet_is_terminal") is False
+        and not diagnostics.get("outlet_autodetected", False)
+    ):
         # Non-terminal requested outlets are common in generated projects.
         # Before scoring, try terminal outlets and switch only if fit improves.
         source_name = diagnostics.get("sim_source_file")
@@ -125,10 +137,22 @@ def evaluate_run(
     try:
         metrics["nse"] = nse(obs_list, sim_list)
         metrics["kge"] = kge(obs_list, sim_list)
+        metrics["pbias"] = pbias(obs_list, sim_list)
         metrics["bfi_obs"] = baseflow_index(obs_list)
         metrics["bfi_sim"] = baseflow_index(sim_list)
     except Exception as e:
         log.warning("Metric computation failed: %s", e)
+
+    if return_diagnostics:
+        source_name = diagnostics.get("sim_source_file")
+        source_path = sim_channel_path.parent / str(source_name) if isinstance(source_name, str) else sim_channel_path
+        diagnostics.update(
+            _terminal_scope_metric_diagnostics(
+                source_path,
+                obs_series,
+                selected_outlet_gis_id=int(diagnostics.get("selected_outlet_gis_id", outlet_gis_id)),
+            )
+        )
 
     if out_alignment_csv:
         out_path = Path(out_alignment_csv)
@@ -138,6 +162,88 @@ def evaluate_run(
     if return_diagnostics:
         return df, metrics, diagnostics
     return df, metrics
+
+
+def _terminal_scope_metric_diagnostics(
+    sim_source_path: Path,
+    obs_series: pd.Series,
+    *,
+    selected_outlet_gis_id: int,
+) -> dict[str, Any]:
+    """Diagnostic-only selected-vs-all terminal metrics for multi-terminal runs."""
+
+    txtinout_dir = sim_source_path.parent
+    terminal_ids = sorted(int(gid) for gid in _terminal_ids_from_chandeg_con(txtinout_dir))
+    if len(terminal_ids) < 2 or not sim_source_path.exists():
+        return {}
+    try:
+        table = read_output_file(sim_source_path)
+    except Exception as exc:
+        return {
+            "terminal_scope_metrics_available": False,
+            "terminal_scope_metric_reason": f"sim_source_unreadable: {exc}",
+        }
+
+    def _series_for(gid: int) -> pd.Series:
+        df = _extract_flo_out_rows(table, gid)
+        if df.empty:
+            return pd.Series(dtype=float)
+        return _normalize_discharge_units(df["sim"], sim_source_path.name)
+
+    selected_series = _series_for(int(selected_outlet_gis_id))
+    terminal_series = [
+        series.rename(str(gid))
+        for gid in terminal_ids
+        if not (series := _series_for(gid)).empty and float(series.abs().sum()) > 0.0
+    ]
+    if not terminal_series:
+        return {
+            "terminal_scope_metrics_available": False,
+            "terminal_scope_metric_reason": "terminal_series_empty",
+            "terminal_scope_metric_terminal_ids": terminal_ids,
+        }
+    all_terminal = pd.concat(terminal_series, axis=1).sum(axis=1)
+    selected_summary = _metric_summary(obs_series, selected_series)
+    all_summary = _metric_summary(obs_series, all_terminal)
+    selected_sum = float(selected_series.sum()) if not selected_series.empty else 0.0
+    all_sum = float(all_terminal.sum()) if not all_terminal.empty else 0.0
+    selected_fraction = selected_sum / all_sum if all_sum else None
+    all_pbias = all_summary.get("pbias")
+    return {
+        "terminal_scope_metrics_available": bool(selected_summary.get("available") and all_summary.get("available")),
+        "terminal_scope_metric_claim_impact": "diagnostic_only_not_final_claim_evidence",
+        "terminal_scope_metric_source_file": sim_source_path.name,
+        "terminal_scope_metric_terminal_ids": terminal_ids,
+        "selected_terminal_fraction_of_all_terminal_flow": selected_fraction,
+        "selected_terminal_nse": selected_summary.get("nse"),
+        "selected_terminal_kge": selected_summary.get("kge"),
+        "selected_terminal_pbias": selected_summary.get("pbias"),
+        "all_terminal_nse": all_summary.get("nse"),
+        "all_terminal_kge": all_summary.get("kge"),
+        "all_terminal_pbias": all_summary.get("pbias"),
+        "all_terminal_volume_gate_passes_diagnostic": (
+            abs(float(all_pbias)) <= 30.0 if isinstance(all_pbias, (int, float)) else None
+        ),
+    }
+
+
+def _metric_summary(obs_series: pd.Series, sim_series: pd.Series) -> dict[str, Any]:
+    from swatplus_builder.output.plots.utils import align_timeseries
+
+    if sim_series.empty:
+        return {"available": False}
+    aligned = align_timeseries(obs_series, sim_series)
+    if aligned.empty:
+        return {"available": False}
+    obs = aligned["obs"].tolist()
+    sim = aligned["sim"].tolist()
+    summary: dict[str, Any] = {"available": True}
+    for name, fn in (("nse", nse), ("kge", kge), ("pbias", pbias)):
+        try:
+            summary[name] = float(fn(obs, sim))
+        except Exception:
+            summary[name] = float("nan")
+    return summary
 
 
 def _extract_flo_out_rows(table, outlet_gis_id: int) -> pd.DataFrame:
@@ -202,6 +308,76 @@ def _terminal_ids_from_chandeg_con(txtinout_dir: Path) -> set[int]:
         except (IndexError, KeyError, ValueError):
             continue
     return terminal_ids
+
+
+def _candidate_sim_paths(sim_channel_path: Path) -> list[Path]:
+    candidates = [sim_channel_path]
+    txtinout_dir = sim_channel_path.parent
+    for alt in (
+        "basin_sd_cha_day.txt",
+        "channel_sd_day.txt",
+        "basin_cha_day.txt",
+        "channel_day.txt",
+    ):
+        p = txtinout_dir / alt
+        if p not in candidates and p.exists():
+            candidates.append(p)
+    return candidates
+
+
+def _read_all_terminal_sum_discharge(
+    sim_channel_path: Path,
+    outlet_gis_id: int,
+) -> tuple[pd.DataFrame, Dict[str, Any]]:
+    """Read a virtual all-terminal outlet formed by summing terminal flows."""
+    txtinout_dir = sim_channel_path.parent
+    terminal_ids = sorted(int(gid) for gid in _terminal_ids_from_chandeg_con(txtinout_dir))
+    chandeg_path = txtinout_dir / "chandeg.con"
+    diagnostics: Dict[str, Any] = {
+        "requested_outlet_gis_id": int(outlet_gis_id),
+        "selected_outlet_gis_id": int(outlet_gis_id),
+        "selected_outlet_gis_ids": terminal_ids,
+        "outlet_scope": "virtual_all_terminal",
+        "outlet_autodetected": False,
+        "outlet_selection_reason": "explicit_virtual_all_terminal_sum",
+        "requested_outlet_is_terminal": int(outlet_gis_id) in set(terminal_ids),
+        "sim_source_file": None,
+        "terminal_outlet_ids": terminal_ids,
+        "terminal_outlet_count": int(len(terminal_ids)),
+        "chandeg_con_sha256": _sha256_file(chandeg_path),
+        "chandeg_con_path": str(chandeg_path),
+        "sim_source_sha256": None,
+        "available_sim_sources": [p.name for p in _candidate_sim_paths(sim_channel_path) if p.exists()],
+        "virtual_outlet_evaluation": True,
+        "virtual_outlet_claim_authority": False,
+    }
+    if not terminal_ids:
+        diagnostics["terminal_scope_metric_reason"] = "terminal_inventory_empty"
+        return pd.DataFrame(columns=["sim"]), diagnostics
+
+    last_df = pd.DataFrame(columns=["sim"])
+    for cand in _candidate_sim_paths(sim_channel_path):
+        if not cand.exists():
+            continue
+        table = read_output_file(cand)
+        terminal_series: list[pd.Series] = []
+        for gid in terminal_ids:
+            terminal_df = _extract_flo_out_rows(table, gid)
+            if not terminal_df.empty:
+                terminal_series.append(terminal_df["sim"].rename(str(gid)))
+        if not terminal_series:
+            continue
+        normalized = [
+            _normalize_discharge_units(series.astype(float), cand.name)
+            for series in terminal_series
+        ]
+        all_terminal = pd.concat(normalized, axis=1).sum(axis=1).to_frame("sim")
+        last_df = all_terminal
+        if float(all_terminal["sim"].abs().sum()) > 0.0:
+            diagnostics["sim_source_file"] = cand.name
+            diagnostics["sim_source_sha256"] = _sha256_file(cand)
+            return all_terminal, diagnostics
+    return last_df, diagnostics
 
 
 def _unit_for_column(source, column: str) -> str | None:
@@ -300,6 +476,14 @@ def _pick_best_flowing_gis_id_unrestricted(table) -> int | None:
     return best_gid if best_sum > 0 else None
 
 
+def _non_terminal_upgrade_reason(terminal_ids: set[int]) -> str:
+    if len(terminal_ids) == 1:
+        return "requested_outlet_non_terminal_single_terminal"
+    if len(terminal_ids) > 1:
+        return "requested_outlet_non_terminal_largest_terminal_flow"
+    return "requested_outlet_non_terminal"
+
+
 def _normalize_discharge_units(sim: pd.Series, source_name: str) -> pd.Series:
     """Convert known SWAT+ daily flow units to m³/s.
 
@@ -325,19 +509,10 @@ def _read_sim_discharge(
     allow_dry_autodetect: bool,
 ) -> tuple[pd.DataFrame, Dict[str, Any]]:
     """Read daily outlet discharge, with optional dry-outlet fallback."""
-    candidates = [sim_channel_path]
     txtinout_dir = sim_channel_path.parent
+    candidates = _candidate_sim_paths(sim_channel_path)
     terminal_ids = _terminal_ids_from_chandeg_con(txtinout_dir)
     chandeg_path = txtinout_dir / "chandeg.con"
-    for alt in (
-        "basin_sd_cha_day.txt",
-        "channel_sd_day.txt",
-        "basin_cha_day.txt",
-        "channel_day.txt",
-    ):
-        p = txtinout_dir / alt
-        if p not in candidates and p.exists():
-            candidates.append(p)
 
     last_df = pd.DataFrame(columns=["sim"])
     diagnostics: Dict[str, Any] = {
@@ -391,7 +566,7 @@ def _read_sim_discharge(
                             )
                             diagnostics["selected_outlet_gis_id"] = int(best_gid)
                             diagnostics["outlet_autodetected"] = True
-                            diagnostics["outlet_selection_reason"] = "requested_outlet_non_terminal_single_terminal"
+                            diagnostics["outlet_selection_reason"] = _non_terminal_upgrade_reason(terminal_ids)
                             diagnostics["sim_source_file"] = cand.name
                             diagnostics["sim_source_sha256"] = _sha256_file(cand)
 

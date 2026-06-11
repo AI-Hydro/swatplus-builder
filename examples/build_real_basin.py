@@ -91,6 +91,46 @@ def _truthy_env(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def _sample_evenly(items: list, max_count: int) -> list:
+    if max_count <= 0 or len(items) <= max_count:
+        return list(items)
+    if max_count == 1:
+        return [items[len(items) // 2]]
+    last = len(items) - 1
+    indexes = sorted({round(i * last / (max_count - 1)) for i in range(max_count)})
+    return [items[i] for i in indexes]
+
+
+def _hru_coverage(hru, ws_stats: dict) -> tuple[int, int, float]:
+    n_sub = int(hru.stats.get("n_subbasins", ws_stats.get("n_subbasins", 0)) or 0)
+    n_hru = int(hru.stats.get("n_hrus", 0) or 0)
+    ratio = (n_hru / max(n_sub, 1)) if n_sub > 0 else 0.0
+    return n_sub, n_hru, ratio
+
+
+def _dominant_valid_mukey_from_raster(path: Path | None) -> int | None:
+    if path is None or not path.exists() or path.stat().st_size <= 0:
+        return None
+    import numpy as np
+    import rasterio
+
+    with rasterio.open(path) as src:
+        arr = src.read(1, masked=True)
+        nodata = src.nodata
+    data = np.asarray(arr.filled(0)).ravel()
+    valid = np.isfinite(data)
+    valid &= data > 0
+    valid &= data != 2_147_483_647
+    if nodata is not None:
+        valid &= data != nodata
+    if not bool(valid.any()):
+        return None
+    values, counts = np.unique(data[valid].astype("int64"), return_counts=True)
+    if values.size == 0:
+        return None
+    return int(values[int(np.argmax(counts))])
+
+
 def _topology_suspicious(ws_stats: dict) -> bool:
     n_sub = int(ws_stats.get("n_subbasins", 0) or 0)
     n_cha = int(ws_stats.get("n_channels", 0) or 0)
@@ -417,10 +457,111 @@ def fetch_dem(basin, out_tif: Path, resolution_m: int = 30):
     import py3dep
 
     geom = basin.geometry.iloc[0]
-    dem = py3dep.get_dem(geom, resolution=resolution_m, crs="EPSG:4326")
     out_tif.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        dem = py3dep.get_dem(geom, resolution=resolution_m, crs="EPSG:4326")
+    except Exception as exc:
+        cached = _find_cached_dem(out_tif)
+        if cached is None:
+            raise
+        shutil.copy2(cached, out_tif)
+        sidecar = out_tif.with_suffix(".source.json")
+        sidecar.write_text(
+            json.dumps(
+                {
+                    "source": "local_authoritative_3dep_cache",
+                    "cached_dem": str(cached),
+                    "resolution_m": resolution_m,
+                    "reason": f"py3dep_3dep_fetch_failed: {exc}",
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        log.warning(
+            "3DEP DEM fetch failed for %s; reused local authoritative DEM cache %s",
+            STATION_ID,
+            cached,
+        )
+        return out_tif
     dem.rio.to_raster(out_tif, tiled=True, compress="DEFLATE")
+    out_tif.with_suffix(".source.json").write_text(
+        json.dumps(
+            {
+                "source": "usgs_3dep_py3dep",
+                "resolution_m": resolution_m,
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     return out_tif
+
+
+def _find_cached_dem(out_tif: Path) -> Path | None:
+    run_root = out_tif.parent.parent
+    search_root = run_root.parent
+    if not search_root.exists():
+        return None
+    candidates = sorted(search_root.glob(f"*{STATION_ID}*/raw/dem.tif"))
+    for candidate in candidates:
+        if candidate.resolve() == out_tif.resolve():
+            continue
+        if candidate.is_file() and candidate.stat().st_size > 0:
+            return candidate
+    return None
+
+
+def _ensure_datasets_db_with_local_cache(settings, outdir: Path) -> Path:
+    from swatplus_builder.errors import SwatBuilderExternalError
+    from swatplus_builder.ref.bootstrap import ensure_datasets_db
+
+    try:
+        return ensure_datasets_db(settings=settings)
+    except SwatBuilderExternalError as exc:
+        cached = _find_cached_datasets_db(outdir)
+        if cached is None:
+            raise
+        ref_dir = Path(settings.reference_db_dir).expanduser().resolve()
+        ref_dir.mkdir(parents=True, exist_ok=True)
+        target = ref_dir / cached.name
+        shutil.copy2(cached, target)
+        current = ref_dir / "swatplus_datasets.sqlite"
+        shutil.copy2(cached, current)
+        sidecar = ref_dir / "swatplus_datasets.source.json"
+        sidecar.write_text(
+            json.dumps(
+                {
+                    "source": "local_authoritative_swatplus_datasets_cache",
+                    "cached_db": str(cached),
+                    "reason": f"datasets_db_fetch_failed: {exc}",
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        log.warning(
+            "Datasets DB fetch failed for %s; reused local SWAT+ datasets cache %s",
+            STATION_ID,
+            cached,
+        )
+        return current
+
+
+def _find_cached_datasets_db(outdir: Path) -> Path | None:
+    search_root = outdir.parent
+    if not search_root.exists():
+        return None
+    candidates = sorted(search_root.glob("*/reference_dbs/swatplus_datasets-*.sqlite"))
+    for candidate in candidates:
+        if outdir in candidate.parents:
+            continue
+        if candidate.is_file() and candidate.stat().st_size > 0:
+            return candidate
+    return None
 
 
 def fetch_nlcd(basin, out_tif: Path, year: int = 2021):
@@ -470,13 +611,110 @@ def _try_soilgrids_fallback(
         lon, lat = -86.0, 40.0
 
     for mukey in mukeys:
-        profile = fetch_soilgrids_profile(lon, lat, mukey=mukey)
+        try:
+            profile = fetch_soilgrids_profile(lon, lat, mukey=mukey)
+        except Exception as exc:
+            log.warning("SoilGrids fallback failed for mukey=%s: %s", mukey, exc)
+            profile = None
         if profile is not None:
             profiles.append(profile)
         else:
             failed += 1
 
     return profiles, failed
+
+
+def _replace_default_profiles_with_soilgrids(
+    soil_profiles: list,
+    outdir: Path,
+    boundary_provenance: dict,
+) -> tuple[list, int, int]:
+    """Replace synthetic-default profiles with explicit SoilGrids fallback.
+
+    SDA can partially succeed: most mukeys receive real horizon profiles, while
+    a few fall back to generated defaults. Treat those missing profiles as a
+    separate degraded fallback opportunity instead of leaving synthetic defaults
+    embedded in an otherwise successful soil acquisition.
+    """
+    default_profiles = [
+        profile
+        for profile in soil_profiles
+        if str(getattr(profile, "source", "")) == "synthetic_default"
+    ]
+    if not default_profiles:
+        return soil_profiles, 0, 0
+
+    missing_mukeys: list[int] = []
+    for profile in default_profiles:
+        name = str(getattr(profile, "name", ""))
+        try:
+            missing_mukeys.append(int(name.removeprefix("gnatsgo_")))
+        except ValueError:
+            continue
+
+    if not missing_mukeys:
+        return soil_profiles, 0, len(default_profiles)
+
+    replacements, failed = _try_soilgrids_fallback(missing_mukeys, outdir, boundary_provenance)
+    replacement_by_name = {str(profile.name): profile for profile in replacements}
+    updated = [
+        replacement_by_name.get(str(getattr(profile, "name", "")), profile)
+        for profile in soil_profiles
+    ]
+    return updated, len(replacement_by_name), failed
+
+
+def _write_soil_acquisition_report(outdir: Path, report: dict) -> Path:
+    path = outdir / "reports" / "soil_acquisition_report.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def _soil_source_priority_manifest() -> list[dict[str, object]]:
+    return [
+        {
+            "tier": 1,
+            "source": "gNATSGO_raster_plus_SDA_horizons",
+            "authority": "USDA_NRCS_high_fidelity",
+            "research_grade_eligible": True,
+            "reason": "Preserves spatial map-unit heterogeneity and uses USDA horizon data.",
+        },
+        {
+            "tier": 2,
+            "source": "SDA_spatial_representative_mukey",
+            "authority": "USDA_NRCS_degraded_representative",
+            "research_grade_eligible": False,
+            "reason": "Uses real USDA mukey/horizon data but collapses spatial heterogeneity to one representative soil.",
+        },
+        {
+            "tier": 3,
+            "source": "SoilGrids_v2_coarse",
+            "authority": "ISRIC_global_coarse_fallback",
+            "research_grade_eligible": False,
+            "reason": "Uses global 250 m predicted properties and is lower authority than USDA NRCS soil survey data.",
+        },
+        {
+            "tier": 4,
+            "source": "synthetic_minimal_soils",
+            "authority": "diagnostic_only",
+            "research_grade_eligible": False,
+            "reason": "Allows engine diagnostics only and cannot support soil-fidelity claims.",
+        },
+    ]
+
+
+def _attach_soil_source_priority(report: dict) -> dict:
+    out = dict(report)
+    out.setdefault("source_priority", _soil_source_priority_manifest())
+    return out
+
+
+def _write_soil_report(outdir: Path, report: dict) -> Path:
+    path = outdir / "reports" / "soil_report.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(_attach_soil_source_priority(report), indent=2) + "\n", encoding="utf-8")
+    return path
 
 
 def main(
@@ -506,6 +744,7 @@ def main(
     from swatplus_builder.gis.validate import validate_watershed
     from swatplus_builder.ref.bootstrap import ensure_datasets_db
     from swatplus_builder.soil.writer import write_soils
+    from swatplus_builder.weather.daymet import fetch_daymet
     from swatplus_builder.weather.gridmet import fetch_gridmet
     from swatplus_builder.weather.writer import write_observed
     from swatplus_builder.calibration.nwis import fetch_usgs_daily_q
@@ -734,14 +973,31 @@ def main(
     subs = gpd.read_file(ws.subbasins_vector)
     boundary_geom = _geometry_union(subs.to_crs("EPSG:4326"))
     t0 = time.time()
-    _, n = _with_retries(
-        "fetch_mukey_raster",
-        fetch_mukey_raster,
-        boundary=boundary_geom,
-        boundary_crs="EPSG:4326",
-        output_path=mukey_tif,
-    )
-    retry_attempts["fetch_mukey_raster"] = n
+    hru_soil_raster: Path | None = mukey_tif
+    soil_overlay_source = "gnatsgo_raster"
+    soil_provenance_mode = "gnatsgo_raster"
+    gnatsgo_fetch_error: str | None = None
+    try:
+        _, n = _with_retries(
+            "fetch_mukey_raster",
+            fetch_mukey_raster,
+            boundary=boundary_geom,
+            boundary_crs="EPSG:4326",
+            output_path=mukey_tif,
+        )
+        retry_attempts["fetch_mukey_raster"] = n
+    except Exception as exc:
+        gnatsgo_fetch_error = str(exc)
+        retry_attempts["fetch_mukey_raster"] = int(os.environ.get("SWATPLUS_FETCH_MAX_ATTEMPTS", "4"))
+        hru_soil_raster = None
+        soil_overlay_source = "gnatsgo_raster_unavailable"
+        soil_provenance_mode = "gnatsgo_raster_unavailable"
+        log.warning(
+            "gNATSGO mukey raster unavailable for %s after retries: %s. "
+            "Trying USDA SDA spatial mukey fallback with degraded soil-overlay provenance.",
+            STATION_ID,
+            exc,
+        )
     mukey_file_mb = mukey_tif.stat().st_size / 1e6 if mukey_tif.exists() else 0.0
 
     # Normalize soil raster CRS to match DEM. Planetary Computer delivers
@@ -749,7 +1005,7 @@ def main(
     # the same CONUS Albers projection, but the mismatched CRS labels cause
     # rasterio's alignment step to lose >97% of soil pixels. Copy the file
     # with the correct CRS label.
-    if mukey_tif.exists():
+    if gnatsgo_fetch_error is None and mukey_tif.exists():
         try:
             import rasterio as _rio
             with _rio.open(mukey_tif) as _src:
@@ -769,24 +1025,53 @@ def main(
     mukey_values = extract_unique_mukeys(hru_soil_raster) if hru_soil_raster is not None and hru_soil_raster.exists() and hru_soil_raster.stat().st_size > 0 else set()
     constant_soil_mukey: int | None = None
     sda_spatial_mukeys: list[int] = []
+    sda_spatial_strategy = "not_needed_gnatsgo_raster_has_mukeys"
+    sda_spatial_error: str | None = None
     if not mukey_values:
-        sda_spatial_mukeys, n = _with_retries(
-            "fetch_sda_mukeys_for_geometry",
-            fetch_sda_mukeys_for_geometry,
-            boundary_geom,
-            cache_dir=outdir / "cache",
-        )
-        retry_attempts["fetch_sda_mukeys_for_geometry"] = n
-        soil_overlay_source = (
-            "sda_spatial_representative_after_empty_gnatsgo"
-            if sda_spatial_mukeys
-            else "constant_placeholder_after_empty_gnatsgo"
-        )
-        soil_provenance_mode = (
-            "sda_representative"
-            if sda_spatial_mukeys
-            else "diagnostic_placeholder"
-        )
+        max_sda_area_km2 = float(os.environ.get("SWATPLUS_SDA_SPATIAL_MAX_AREA_KM2", "1000.0"))
+        sda_timeout_s = float(os.environ.get("SWATPLUS_SDA_SPATIAL_TIMEOUT_S", "20.0"))
+        if actual_area_km2 > max_sda_area_km2:
+            retry_attempts["fetch_sda_mukeys_for_geometry"] = 0
+            sda_spatial_strategy = "skipped_large_aoi"
+            sda_spatial_error = (
+                f"AOI area {actual_area_km2:.1f} km2 exceeds "
+                f"SWATPLUS_SDA_SPATIAL_MAX_AREA_KM2={max_sda_area_km2:.1f}; "
+                "large-polygon SDA intersections are provider-timeout prone."
+            )
+            log.warning(
+                "Skipping SDA spatial mukey fallback for %s: %s",
+                STATION_ID,
+                sda_spatial_error,
+            )
+        else:
+            retry_attempts["fetch_sda_mukeys_for_geometry"] = 1
+            sda_spatial_strategy = "single_bounded_query"
+            try:
+                sda_spatial_mukeys = fetch_sda_mukeys_for_geometry(
+                    boundary_geom,
+                    cache_dir=outdir / "cache",
+                    timeout_s=sda_timeout_s,
+                )
+            except Exception as exc:
+                sda_spatial_error = str(exc)
+                log.warning(
+                    "SDA spatial mukey fallback failed for %s after one bounded query: %s",
+                    STATION_ID,
+                    exc,
+                )
+        if gnatsgo_fetch_error is not None:
+            soil_overlay_source = (
+                "sda_spatial_representative_after_gnatsgo_unavailable"
+                if sda_spatial_mukeys
+                else "constant_placeholder_after_gnatsgo_unavailable"
+            )
+        else:
+            soil_overlay_source = (
+                "sda_spatial_representative_after_empty_gnatsgo"
+                if sda_spatial_mukeys
+                else "constant_placeholder_after_empty_gnatsgo"
+            )
+        soil_provenance_mode = "sda_representative" if sda_spatial_mukeys else "diagnostic_placeholder"
         hru_soil_raster = None
         constant_soil_mukey = (
             int(sda_spatial_mukeys[0])
@@ -794,12 +1079,13 @@ def main(
             else int(os.environ.get("SWATPLUS_SDA_PLACEHOLDER_MUKEY", "900000001"))
         )
         log.warning(
-            "gNATSGO mukey raster is empty for %s. Continuing HRU overlay with explicit "
+            "gNATSGO mukey raster is unavailable or empty for %s. Continuing HRU overlay with explicit "
             "constant representative mukey=%s so the run can produce diagnostic artifacts. "
-            "SDA spatial mukeys found=%d. This preserves a real SDA soil profile when available, "
+            "SDA spatial strategy=%s; mukeys found=%d. This preserves a real SDA soil profile when available, "
             "but it does not preserve spatial soil heterogeneity.",
             STATION_ID,
             constant_soil_mukey,
+            sda_spatial_strategy,
             len(sda_spatial_mukeys),
         )
     _ok(
@@ -816,10 +1102,11 @@ def main(
         soil_raster=hru_soil_raster,
         constant_soil_mukey=constant_soil_mukey,
     )
-    n_sub = int(hru.stats.get("n_subbasins", ws.stats.get("n_subbasins", 0)))
-    n_hru = int(hru.stats["n_hrus"])
+    n_sub, n_hru, hru_coverage_ratio = _hru_coverage(hru, ws.stats)
     min_hru_coverage_ratio = float(os.environ.get("SWATPLUS_MIN_HRU_COVERAGE_RATIO", "0.90"))
-    hru_coverage_ratio = (n_hru / max(n_sub, 1)) if n_sub > 0 else 0.0
+    max_overlay_repair_gap_fraction = float(
+        os.environ.get("SWATPLUS_OVERLAY_REPAIR_MAX_GAP_FRACTION", "0.15")
+    )
     overlay_repair_report = None
     if hru_coverage_ratio < min_hru_coverage_ratio:
         overlay_repair_report = repair_overlay_inputs(
@@ -827,6 +1114,7 @@ def main(
             nlcd_tif,
             hru_soil_raster,
             outdir / "reports" / "overlay_repair",
+            max_gap_fraction=max_overlay_repair_gap_fraction,
         )
         if overlay_repair_report.repaired:
             log.warning(
@@ -845,9 +1133,44 @@ def main(
                 soil_raster=repaired_soil,
                 constant_soil_mukey=constant_soil_mukey,
             )
-            n_sub = int(hru.stats.get("n_subbasins", ws.stats.get("n_subbasins", 0)))
-            n_hru = int(hru.stats["n_hrus"])
-            hru_coverage_ratio = (n_hru / max(n_sub, 1)) if n_sub > 0 else 0.0
+            n_sub, n_hru, hru_coverage_ratio = _hru_coverage(hru, ws.stats)
+        if hru_coverage_ratio < min_hru_coverage_ratio and hru_soil_raster is not None:
+            representative_mukey = (
+                _dominant_valid_mukey_from_raster(hru_soil_raster)
+                or (int(sorted(mukey_values)[0]) if mukey_values else None)
+                or (int(sda_spatial_mukeys[0]) if sda_spatial_mukeys else None)
+                or int(os.environ.get("SWATPLUS_SDA_PLACEHOLDER_MUKEY", "900000001"))
+            )
+            previous_soil_overlay_source = soil_overlay_source
+            soil_overlay_source = (
+                "constant_representative_after_partial_gnatsgo_gap"
+                if mukey_values
+                else "constant_placeholder_after_partial_gnatsgo_gap"
+            )
+            soil_provenance_mode = "diagnostic_partial_gnatsgo_constant"
+            constant_soil_mukey = int(representative_mukey)
+            hru_soil_raster = None
+            log.warning(
+                "HRU coverage stayed below %.2f%% after bounded overlay repair "
+                "(coverage=%.2f%%, n_hrus=%d, n_subbasins=%d). Rebuilding HRUs for "
+                "%s with constant representative mukey=%s from partial soil source %s. "
+                "This is diagnostic-only and does not preserve spatial soil heterogeneity.",
+                min_hru_coverage_ratio * 100.0,
+                hru_coverage_ratio * 100.0,
+                n_hru,
+                n_sub,
+                STATION_ID,
+                constant_soil_mukey,
+                previous_soil_overlay_source,
+            )
+            hru = create_hrus(
+                watershed=ws,
+                landuse_raster=nlcd_tif,
+                soil_raster=None,
+                constant_soil_mukey=constant_soil_mukey,
+                workdir_subdir="hrus_constant_soil_representative",
+            )
+            n_sub, n_hru, hru_coverage_ratio = _hru_coverage(hru, ws.stats)
         if hru_coverage_ratio < min_hru_coverage_ratio:
             repair_reason = (
                 f"; overlay_repair_reason={overlay_repair_report.reason}"
@@ -870,7 +1193,7 @@ def main(
     # Keep native subbasin coordinates/elevations for spatially realistic forcing.
     from swatplus_builder.config import Settings
     ref_settings = Settings(reference_db_dir=outdir / "reference_dbs")
-    datasets_db = ensure_datasets_db(settings=ref_settings)
+    datasets_db = _ensure_datasets_db_with_local_cache(ref_settings, outdir)
     
     project_dir = outdir / "project"
     project_dir.mkdir(exist_ok=True)
@@ -886,7 +1209,6 @@ def main(
     from swatplus_builder.soil.builder import fetch_soil_profiles_result
     from swatplus_builder.soil.models import SoilConfig
     soil_mode = "high_fidelity"
-    soil_provenance_mode = "gnatsgo_raster"
     pct_fallback_soils = 0.0
     soil_fallback_warn_threshold = float(os.environ.get("SWATPLUS_SOIL_FALLBACK_WARN_THRESHOLD", "0.25"))
     allow_synthetic_soils = _truthy_env("SWATPLUS_ALLOW_SYNTHETIC_SOILS", default=False)
@@ -910,6 +1232,13 @@ def main(
             soil_profiles = soil_res.profiles
             soil_report = soil_res.soil_report
         soil_acquired = True
+        soil_profiles, soilgrids_partial_replacements, soilgrids_partial_failed = (
+            _replace_default_profiles_with_soilgrids(
+                list(soil_profiles),
+                outdir,
+                boundary_provenance,
+            )
+        )
         hydgrp_fixed = _normalize_soil_profiles_hydgrp(soil_profiles)
         if hydgrp_fixed > 0:
             log.warning(
@@ -923,26 +1252,68 @@ def main(
         soil_report["gnatsgo_mukey_file_mb"] = mukey_file_mb
         soil_report["gnatsgo_unique_mukeys"] = len(mukey_values)
         soil_report["sda_spatial_mukeys_found"] = len(sda_spatial_mukeys)
+        soil_report["sda_spatial_strategy"] = sda_spatial_strategy
+        if sda_spatial_error is not None:
+            soil_report["sda_spatial_error"] = sda_spatial_error
+        if gnatsgo_fetch_error is not None:
+            soil_report["gnatsgo_fetch_error"] = gnatsgo_fetch_error
         if overlay_repair_report is not None:
             soil_report["hru_overlay_repair"] = overlay_repair_report.model_dump()
+        if soilgrids_partial_replacements > 0 or soilgrids_partial_failed > 0:
+            soil_report["soilgrids_partial_replacements"] = soilgrids_partial_replacements
+            soil_report["soilgrids_partial_failed"] = soilgrids_partial_failed
+            soil_report["soilgrids_live_enabled"] = (
+                os.environ.get("SWATPLUS_ENABLE_SOILGRIDS_LIVE") == "1"
+            )
+            if soilgrids_partial_replacements > 0:
+                soil_provenance_mode = "partial_soilgrids_coarse"
+                soil_report["authority_note"] = (
+                    "SDA returned real horizons for some mukeys but not all. "
+                    "Missing synthetic-default profiles were replaced with "
+                    "SoilGrids v2.0 coarse profiles where available. This is "
+                    "degraded provenance and cannot support research-grade "
+                    "soil claims."
+                )
         if constant_soil_mukey is not None:
+            soil_mode = "fallback"
+            pct_fallback_soils = 1.0
             soil_report["constant_soil_mukey"] = constant_soil_mukey
             soil_report["soil_provenance_mode"] = soil_provenance_mode
-            soil_report["authority_note"] = (
-                "gNATSGO raster was empty; HRU overlay used one constant representative mukey. "
-                "SDA horizons may be real for that mukey, but spatial soil heterogeneity is degraded."
-            )
-        soil_report["soil_mode"] = soil_mode
-        soil_report["soil_overlay_source"] = soil_overlay_source
+            if soil_provenance_mode == "diagnostic_partial_gnatsgo_constant":
+                soil_report["authority_note"] = (
+                    "gNATSGO raster had partial watershed coverage that left too many subbasins without "
+                    "valid soil overlay pixels; HRU overlay used one dominant valid representative mukey. "
+                    "SDA horizons may be real for that mukey, but spatial soil heterogeneity is degraded "
+                    "and research-grade claims remain blocked by the soil realism gate."
+                )
+            else:
+                soil_report["authority_note"] = (
+                    "gNATSGO raster was unavailable or empty; HRU overlay used one constant representative mukey. "
+                    "SDA horizons may be real for that mukey, but spatial soil heterogeneity is degraded."
+                )
         write_soils(soil_profiles, db_path)
-        upsert_project_metadata(db_path, "soil_report", json.dumps(soil_report))
         from swatplus_builder.soil.plot import plot_depth_distribution
         plot_depth_distribution(soil_profiles, out_path=outdir / "plots" / "soil_depth_preview.png")
         requested = max(int(soil_report.get("requested_mukeys", 0)), 1)
         default_fallback = int(soil_report.get("aggregated", {}).get("default_fallback", 0))
-        pct_fallback_soils = min(max(default_fallback / requested, 0.0), 1.0)
+        degraded_soilgrids = int(soil_report.get("soilgrids_partial_replacements", 0))
+        unresolved_fallback = max(default_fallback - degraded_soilgrids, 0)
+        if degraded_soilgrids > 0:
+            aggregated = soil_report.get("aggregated")
+            if isinstance(aggregated, dict):
+                aggregated["default_fallback"] = unresolved_fallback
+                aggregated["soilgrids_v2_coarse"] = degraded_soilgrids
+        pct_fallback_soils = min(max((unresolved_fallback + degraded_soilgrids) / requested, 0.0), 1.0)
+        if constant_soil_mukey is not None:
+            pct_fallback_soils = 1.0
         if pct_fallback_soils > 0.0:
             soil_mode = "fallback"
+        soil_report["soil_mode"] = soil_mode
+        soil_report["soil_provenance_mode"] = soil_provenance_mode
+        soil_report["soil_overlay_source"] = soil_overlay_source
+        soil_report["pct_fallback_soils"] = pct_fallback_soils
+        upsert_project_metadata(db_path, "soil_report", json.dumps(soil_report))
+        _write_soil_report(outdir, soil_report)
         _ok(f"wrote {len(soil_profiles)} profiles", elapsed=time.time() - t0)
     except Exception as e:
         # Tier 2: SoilGrids coarse fallback for regions where SDA has no profiles.
@@ -958,7 +1329,7 @@ def main(
             soil_profiles = soilgrids_profiles
             soil_mode = "fallback"
             soil_provenance_mode = "soilgrids_coarse"
-            pct_fallback_soils = soilgrids_failed / max(len(mukeys), 1)
+            pct_fallback_soils = 1.0
             soil_report = {
                 "soil_mode": soil_mode,
                 "soil_provenance_mode": soil_provenance_mode,
@@ -968,16 +1339,54 @@ def main(
                 "requested_mukeys": len(mukeys),
                 "soilgrids_resolved": len(soilgrids_profiles),
                 "soilgrids_failed": soilgrids_failed,
-                "sda_error": str(e)[:200],
-            }
+                "soilgrids_coarse_profile_fraction": len(soilgrids_profiles) / max(len(mukeys), 1),
+                "fallback_reason": "soilgrids_coarse_profiles_are_degraded_provenance",
+                    "sda_error": str(e)[:200],
+                    "sda_spatial_strategy": sda_spatial_strategy,
+                    "sda_spatial_error": sda_spatial_error,
+                }
+            _write_soil_acquisition_report(outdir, soil_report)
+            _write_soil_report(outdir, soil_report)
             soil_acquired = True
             write_soils(soil_profiles, db_path)
             upsert_project_metadata(db_path, "soil_report", json.dumps(soil_report))
             _ok(f"wrote {len(soil_profiles)} profiles (SoilGrids fallback)", elapsed=time.time() - t0)
         elif not allow_synthetic_soils:
+            _write_soil_acquisition_report(
+                outdir,
+                _attach_soil_source_priority({
+                    "soil_mode": "failed",
+                    "soil_provenance_mode": "none",
+                    "requested_mukeys": len(mukeys),
+                    "soil_overlay_source": soil_overlay_source,
+                    "hru_soil_overlay_source": soil_overlay_source,
+                    "sda_error": str(e)[:500],
+                    "sda_spatial_strategy": sda_spatial_strategy,
+                    "sda_spatial_error": sda_spatial_error,
+                    "soilgrids_attempted": True,
+                    "soilgrids_live_enabled": os.environ.get("SWATPLUS_ENABLE_SOILGRIDS_LIVE") == "1",
+                    "soilgrids_resolved": 0,
+                    "soilgrids_failed": soilgrids_failed,
+                    "synthetic_soils_allowed": False,
+                    "fallback_chain": [
+                        "external_soils_json",
+                        "usda_sda_horizon_profiles",
+                        "bounded_sda_spatial_mukey_query",
+                        "soilgrids_v2_coarse_optional",
+                        "synthetic_diagnostic_only",
+                    ],
+                    "recommended_next_action": (
+                        "Provide SWATPLUS_EXTERNAL_SOILS_JSON with authoritative profiles, "
+                        "install soil extras and retry SDA, or set SWATPLUS_ENABLE_SOILGRIDS_LIVE=1 "
+                        "for degraded diagnostic SoilGrids fallback. Synthetic soils require "
+                        "SWATPLUS_ALLOW_SYNTHETIC_SOILS=1 and cannot support research-grade claims."
+                    ),
+                }),
+            )
             raise RuntimeError(
                 "Soil acquisition failed and synthetic soil fallback is disabled for research runs. "
                 "Install soil extras (including fsspec/adlfs), provide SWATPLUS_EXTERNAL_SOILS_JSON, "
+                "set SWATPLUS_ENABLE_SOILGRIDS_LIVE=1 for degraded diagnostic SoilGrids fallback, "
                 "or set SWATPLUS_ALLOW_SYNTHETIC_SOILS=1 for diagnostic-only runs."
             ) from e
         else:
@@ -997,14 +1406,12 @@ def main(
             "Set SWATPLUS_ALLOW_SYNTHETIC_SOILS=1 to override for diagnostic-only runs."
         )
 
-    # 9/11 Weather from GridMET
+    # 9/11 Weather from GridMET, with Daymet fallback when GridMET is unreachable.
     _section("9/11 Weather from GridMET")
     t0 = time.time()
     max_weather_stations = max(1, int(os.environ.get("SWATPLUS_MAX_WEATHER_STATIONS", "25")))
     subs_for_weather = list(tables.subbasins)
-    if len(subs_for_weather) > max_weather_stations:
-        step = max(1, len(subs_for_weather) // max_weather_stations)
-        subs_for_weather = subs_for_weather[::step][:max_weather_stations]
+    subs_for_weather = _sample_evenly(subs_for_weather, max_weather_stations)
     from datetime import datetime as _dt, timedelta
     eval_start_dt = _dt.strptime(sim_start, "%Y-%m-%d")
     weather_start = (_dt(eval_start_dt.year - warmup_years, eval_start_dt.month, eval_start_dt.day)
@@ -1012,12 +1419,59 @@ def main(
     weather_start_str = weather_start.strftime("%Y-%m-%d")
 
     stations = [(float(s.lat), float(s.lon), float(s.elev)) for s in subs_for_weather]
-    weather_bundle = fetch_gridmet(
-        stations,
-        start=weather_start_str,
-        end=sim_end,
-        settings=ref_settings
-    )
+    weather_provider_fallback_reason = None
+    weather_station_selection = "distributed_gridmet_points"
+    weather_source = "gridmet"
+    try:
+        weather_bundle = fetch_gridmet(
+            stations,
+            start=weather_start_str,
+            end=sim_end,
+            settings=ref_settings
+        )
+    except Exception as exc:
+        from swatplus_builder.errors import SwatBuilderExternalError
+
+        if not isinstance(exc, SwatBuilderExternalError) or len(stations) <= 1:
+            raise
+        fallback_max = max(
+            1,
+            int(os.environ.get("SWATPLUS_GRIDMET_FALLBACK_WEATHER_STATIONS", "5")),
+        )
+        fallback_subs = _sample_evenly(list(tables.subbasins), min(fallback_max, len(tables.subbasins)))
+        fallback_stations = [(float(s.lat), float(s.lon), float(s.elev)) for s in fallback_subs]
+        weather_provider_fallback_reason = (
+            "distributed_gridmet_point_fetch_failed; "
+            f"retrying_with_{len(fallback_stations)}_representative_gridmet_points"
+        )
+        weather_station_selection = "representative_gridmet_points_after_provider_timeout"
+        log.warning("%s: %s", weather_provider_fallback_reason, exc)
+        try:
+            weather_bundle = fetch_gridmet(
+                fallback_stations,
+                start=weather_start_str,
+                end=sim_end,
+                settings=ref_settings,
+            )
+        except Exception as fallback_exc:
+            if not isinstance(fallback_exc, SwatBuilderExternalError):
+                raise
+            daymet_enabled = os.environ.get("SWATPLUS_ENABLE_DAYMET_FALLBACK", "1") != "0"
+            if not daymet_enabled:
+                raise
+            weather_provider_fallback_reason = (
+                f"{weather_provider_fallback_reason}; representative_gridmet_fetch_failed; "
+                f"using_daymet_{len(fallback_stations)}_representative_points"
+            )
+            weather_station_selection = "representative_daymet_points_after_gridmet_failure"
+            weather_source = "daymet"
+            log.warning("%s: %s", weather_provider_fallback_reason, fallback_exc)
+            weather_bundle = fetch_daymet(
+                fallback_stations,
+                start=weather_start_str,
+                end=sim_end,
+                settings=ref_settings,
+            )
     
     # Weather signature validation
     all_pcp = [v for s in weather_bundle.stations for v in (s.pcp or [])]
@@ -1030,7 +1484,7 @@ def main(
     }
     log.info("Weather Signature: %s", json.dumps(pcp_stats, indent=2))
     _ok(
-        f"fetched GridMET for {len(weather_bundle.stations)} stations (from {len(tables.subbasins)} subbasins)",
+        f"fetched {weather_source} for {len(weather_bundle.stations)} stations (from {len(tables.subbasins)} subbasins)",
         elapsed=time.time() - t0,
     )
 
@@ -1367,9 +1821,29 @@ def main(
         notes.append(
             f"hru_overlay_repair={overlay_repair_report.reason}; "
             f"landuse_filled={overlay_repair_report.landuse_filled_cells}; "
-            f"soil_filled={overlay_repair_report.soil_filled_cells}"
+            f"soil_filled={overlay_repair_report.soil_filled_cells}; "
+            f"landuse_gap_fraction={overlay_repair_report.landuse_gap_fraction:.4f}; "
+            f"soil_gap_fraction={overlay_repair_report.soil_gap_fraction:.4f}; "
+            f"max_gap_fraction={overlay_repair_report.max_gap_fraction:.4f}"
         )
     notes.append(f"dem_conditioning={dem_conditioning}")
+    dem_source_path = dem_tif.with_suffix(".source.json")
+    if dem_source_path.exists():
+        try:
+            dem_source = json.loads(dem_source_path.read_text(encoding="utf-8"))
+        except Exception:
+            dem_source = {"source": "unknown"}
+        notes.append(
+            f"dem_source={dem_source.get('source', 'unknown')}; "
+            f"resolution_m={dem_source.get('resolution_m', DEM_RESOLUTION_M)}"
+        )
+    datasets_source_path = outdir / "reference_dbs" / "swatplus_datasets.source.json"
+    if datasets_source_path.exists():
+        try:
+            datasets_source = json.loads(datasets_source_path.read_text(encoding="utf-8"))
+        except Exception:
+            datasets_source = {"source": "unknown"}
+        notes.append(f"datasets_db_source={datasets_source.get('source', 'unknown')}")
     notes.append(f"basin_boundary_source={boundary_source}")
     if boundary_source != "nldi_authoritative" and boundary_provenance is not None:
         notes.append(
@@ -1380,8 +1854,10 @@ def main(
     notes.append(f"soil_provenance_mode={soil_provenance_mode}")
     if constant_soil_mukey is not None:
         notes.append(
-            f"constant_soil_mukey={constant_soil_mukey}; diagnostic soil-overlay recovery after empty gNATSGO raster"
+            f"constant_soil_mukey={constant_soil_mukey}; diagnostic soil-overlay recovery via {soil_overlay_source}"
         )
+    if gnatsgo_fetch_error is not None:
+        notes.append(f"gnatsgo_fetch_error={gnatsgo_fetch_error}")
     if pct_fallback_soils > soil_fallback_warn_threshold:
         msg = (
             f"Soil fallback ratio {pct_fallback_soils:.2%} exceeds threshold "
@@ -1389,6 +1865,8 @@ def main(
         )
         log.warning(msg)
         notes.append(msg)
+    if weather_provider_fallback_reason is not None:
+        notes.append(f"weather_provider_fallback={weather_provider_fallback_reason}")
 
     md = RunMetadata(
         timestamp_utc=utc_now_iso(),
@@ -1411,7 +1889,7 @@ def main(
         engine_version=engine_version,
         builder_git_sha=try_git_sha(Path(__file__).resolve().parents[1]),
         input_hashes=input_hashes,
-        weather_source="gridmet",
+        weather_source=weather_source,
         weather_coverage_flags={
             "nonzero_days": int(pcp_stats.get("nonzero_days", 0)),
             "precip_mean": float(pcp_stats.get("precip_mean", 0.0)),
@@ -1419,6 +1897,15 @@ def main(
             "date_range": str(pcp_stats.get("date_range", "")),
             "n_weather_stations": int(len(weather_bundle.stations)),
             "n_subbasins_for_weather_context": int(len(tables.subbasins)),
+            "station_selection": weather_station_selection,
+            "provider_fallback_reason": weather_provider_fallback_reason or "",
+            "weather_variables": sorted(
+                {
+                    var
+                    for series in weather_bundle.stations
+                    for var in series.variables()
+                }
+            ),
         },
         retry_attempts=retry_attempts,
         lte_hru_channel_scale_correction=(

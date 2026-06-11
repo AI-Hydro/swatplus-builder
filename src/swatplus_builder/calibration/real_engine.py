@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 import shutil
+import tempfile
 from hashlib import sha256
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 import pandas as pd
 
@@ -14,7 +15,7 @@ from ..output.eval import evaluate_run
 from ..run import run as run_swat
 
 
-RealObjective = Callable[[dict[str, float]], dict[str, float]]
+RealObjective = Callable[[dict[str, float]], dict[str, Any]]
 
 
 def make_real_objective(
@@ -29,8 +30,17 @@ def make_real_objective(
     objective_sim_file: str = "basin_sd_cha_day.txt",
     strict_objective_file: bool = True,
     allow_outlet_autodetect: bool = False,
+    objective_outlet_policy: str | None = None,
+    parameter_mode: str = "lte",
+    keep_workdirs: bool = True,
+    force_fresh: bool = False,
+    include_physical_gate: bool = False,
 ) -> RealObjective:
-    """Build an objective function that runs SWAT+ per parameter vector."""
+    """Build an objective function that runs SWAT+ per parameter vector.
+
+    ``force_fresh`` is for audit-authoritative reruns that must not reuse a
+    hashed objective workdir even when the cache marker looks compatible.
+    """
     base = Path(base_txtinout).expanduser().resolve()
     root = Path(work_root).expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
@@ -38,55 +48,192 @@ def make_real_objective(
     requested_file = str(objective_sim_file).strip()
     if not requested_file:
         raise ValueError("objective_sim_file must be a non-empty filename.")
+    outlet_policy = str(
+        objective_outlet_policy
+        or ("auto" if allow_outlet_autodetect else "strict")
+    ).strip()
+    if outlet_policy not in {"auto", "strict", "all_terminal_sum"}:
+        raise ValueError(
+            "objective_outlet_policy must be one of: 'auto', 'strict', "
+            "'all_terminal_sum'."
+        )
+    if outlet_policy == "auto" and not allow_outlet_autodetect:
+        raise ValueError(
+            "objective_outlet_policy='auto' requires allow_outlet_autodetect=True."
+        )
 
     def _objective(params: dict[str, float]) -> dict[str, float]:
         key = params_hash(params)
-        run_dir = root / key
-        txt = run_dir / "TxtInOut"
-        marker = run_dir / ".objective_v2_complete"
-        if not txt.exists():
-            shutil.copytree(base, txt)
-        if not marker.exists():
-            _prepare_txtinout_for_objective(txt)
-            apply_parameters_to_lte_txtinout(txt, params)
-            run_swat(
-                txt,
-                threads=threads,
-                timeout_s=timeout_s,
-                binary=binary,
-            )
-            marker.write_text("ok\n", encoding="utf-8")
-        _df, metrics, diagnostics = evaluate_run(
-            txt / requested_file,
-            obs,
-            outlet_gis_id=outlet_gis_id,
-            out_alignment_csv=txt / "alignment_calibration.csv",
-            outlet_policy="auto" if allow_outlet_autodetect else "strict",
-            return_diagnostics=True,
+        run_dir = (
+            root / key
+            if keep_workdirs
+            else Path(tempfile.mkdtemp(prefix=f"swatplus_obj_{key[:12]}_"))
         )
-        actual_file = str(diagnostics.get("sim_source_file"))
-        if strict_objective_file and actual_file != requested_file:
-            raise RuntimeError(
-                f"Objective source mismatch: requested '{requested_file}' "
-                f"but evaluator used '{actual_file}'."
+        cache_signature = _objective_cache_signature(parameter_mode)
+        try:
+            txt = run_dir / "TxtInOut"
+            marker = run_dir / ".objective_v2_complete"
+            if keep_workdirs and run_dir.exists() and (
+                force_fresh or not _objective_marker_matches(marker, cache_signature)
+            ):
+                shutil.rmtree(run_dir)
+                txt = run_dir / "TxtInOut"
+            if not txt.exists():
+                shutil.copytree(base, txt)
+            if not marker.exists():
+                _prepare_full_mode_txtinout_for_objective(txt, parameter_mode=parameter_mode)
+                _prepare_txtinout_for_objective(txt)
+                _apply_parameters_for_mode(txt, params, parameter_mode=parameter_mode)
+                run_swat(
+                    txt,
+                    threads=threads,
+                    timeout_s=timeout_s,
+                    binary=binary,
+                )
+                marker.write_text(
+                    json.dumps({"status": "ok", "cache_signature": cache_signature}, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+            _df, metrics, diagnostics = evaluate_run(
+                txt / requested_file,
+                obs,
+                outlet_gis_id=outlet_gis_id,
+                out_alignment_csv=txt / "alignment_calibration.csv",
+                outlet_policy=outlet_policy,
+                return_diagnostics=True,
             )
-        if diagnostics.get("outlet_autodetected", False) and not allow_outlet_autodetect:
-            raise RuntimeError(
-                "Outlet auto-detection occurred during calibration objective "
-                f"(requested outlet_gis_id={outlet_gis_id}, "
-                f"selected={diagnostics.get('selected_outlet_gis_id')}). "
-                "Pass allow_outlet_autodetect=True to permit this behavior."
+            diagnostics.setdefault("outlet_policy", outlet_policy)
+            actual_file = str(diagnostics.get("sim_source_file"))
+            if strict_objective_file and actual_file != requested_file:
+                raise RuntimeError(
+                    f"Objective source mismatch: requested '{requested_file}' "
+                    f"but evaluator used '{actual_file}'."
+                )
+            if diagnostics.get("outlet_autodetected", False) and not allow_outlet_autodetect:
+                raise RuntimeError(
+                    "Outlet auto-detection occurred during calibration objective "
+                    f"(requested outlet_gis_id={outlet_gis_id}, "
+                    f"selected={diagnostics.get('selected_outlet_gis_id')}). "
+                    "Pass allow_outlet_autodetect=True to permit this behavior."
+                )
+            metrics = dict(metrics)
+            if include_physical_gate:
+                physical_gate = _candidate_physical_gate(txt, metrics)
+                diagnostics["candidate_physical_gate"] = physical_gate
+                metrics["physical_gate_passed"] = 1.0 if physical_gate.get("pass") else 0.0
+                process_pass = physical_gate.get("calibration_process_gate_pass")
+                if process_pass is not None:
+                    metrics["calibration_process_gate_passed"] = 1.0 if process_pass else 0.0
+            for metric_key in (
+                "selected_terminal_fraction_of_all_terminal_flow",
+                "selected_terminal_nse",
+                "selected_terminal_kge",
+                "selected_terminal_pbias",
+                "all_terminal_nse",
+                "all_terminal_kge",
+                "all_terminal_pbias",
+                "all_terminal_volume_gate_passes_diagnostic",
+            ):
+                value = diagnostics.get(metric_key)
+                if isinstance(value, bool):
+                    metrics[metric_key] = 1.0 if value else 0.0
+                elif isinstance(value, (int, float)):
+                    metrics[metric_key] = float(value)
+            trace_path = run_dir / "objective_trace.json"
+            _write_objective_trace(
+                trace_path,
+                params=params,
+                requested_sim_file=requested_file,
+                diagnostics=diagnostics,
+                metrics=metrics,
             )
-        _write_objective_trace(
-            run_dir / "objective_trace.json",
-            params=params,
-            requested_sim_file=requested_file,
-            diagnostics=diagnostics,
-            metrics=metrics,
-        )
-        return {k: float(v) for k, v in metrics.items() if isinstance(v, (int, float))}
+            if not keep_workdirs:
+                compact_trace = root / f"{key}_objective_trace.json"
+                shutil.copy2(trace_path, compact_trace)
+            return {k: float(v) for k, v in metrics.items() if isinstance(v, (int, float))}
+        finally:
+            if not keep_workdirs:
+                shutil.rmtree(run_dir, ignore_errors=True)
 
     return _objective
+
+
+def _candidate_physical_gate(txtinout_dir: Path, metrics: dict[str, Any]) -> dict[str, Any]:
+    try:
+        from ..full_mode.water_balance_gate import check_water_balance
+
+        gate = check_water_balance(
+            txtinout_dir,
+            nse=_optional_float(metrics.get("nse")),
+            kge=_optional_float(metrics.get("kge")),
+            pbias=_optional_float(metrics.get("pbias")),
+        )
+        return _with_calibration_process_gate(gate)
+    except Exception as exc:
+        return {"pass": False, "status": "failed", "reason": str(exc)}
+
+
+_SKILL_ONLY_GATE_CODES = {"NEGATIVE_SKILL", "BELOW_RESEARCH_SKILL"}
+
+
+def _with_calibration_process_gate(gate: dict[str, Any]) -> dict[str, Any]:
+    result = dict(gate)
+    raw_codes = result.get("condition_codes") or []
+    codes = [str(code) for code in raw_codes if str(code)]
+    process_codes = [code for code in codes if code not in _SKILL_ONLY_GATE_CODES]
+    result["calibration_process_gate_pass"] = not process_codes
+    result["calibration_process_condition_codes"] = process_codes
+    result["calibration_process_gate_basis"] = (
+        "water_balance_gate_excluding_skill_threshold_codes"
+    )
+    return result
+
+
+def _optional_float(value: Any) -> float | None:
+    try:
+        result = float(value)
+    except Exception:
+        return None
+    import math
+
+    return result if math.isfinite(result) else None
+
+
+def _objective_cache_signature(parameter_mode: str) -> str:
+    payload: dict[str, str] = {"parameter_mode": str(parameter_mode or "lte").strip().lower()}
+    for name, path in {
+        "real_engine": Path(__file__),
+        "parameter_bridge": Path(__file__).parents[1] / "full_mode" / "parameter_bridge.py",
+        "routing_fixes": Path(__file__).parents[1] / "full_mode" / "routing_fixes.py",
+    }.items():
+        try:
+            payload[name] = sha256(path.read_bytes()).hexdigest()
+        except Exception:
+            payload[name] = "unavailable"
+    return sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def _objective_marker_matches(marker: Path, cache_signature: str) -> bool:
+    if not marker.exists():
+        return False
+    try:
+        payload = json.loads(marker.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    return payload.get("status") == "ok" and payload.get("cache_signature") == cache_signature
+
+
+def _apply_parameters_for_mode(txt: Path, params: dict[str, float], *, parameter_mode: str) -> None:
+    mode = str(parameter_mode or "lte").strip().lower()
+    if mode == "full":
+        from ..full_mode.parameter_bridge import apply_parameters_to_full_swat_txtinout
+
+        apply_parameters_to_full_swat_txtinout(txt, params)
+        return
+    if mode == "lte":
+        apply_parameters_to_lte_txtinout(txt, params)
+        return
+    raise ValueError(f"Unsupported calibration parameter_mode: {parameter_mode}")
 
 
 def load_observed_from_alignment_csv(path: Path | str) -> pd.Series:
@@ -247,6 +394,19 @@ def _prepare_txtinout_for_objective(txtinout: Path) -> None:
         (txtinout / name).unlink(missing_ok=True)
 
 
+def _prepare_full_mode_txtinout_for_objective(txtinout: Path, *, parameter_mode: str) -> None:
+    """Normalize full-mode routing before any candidate engine run is scored."""
+    if str(parameter_mode or "lte").strip().lower() != "full":
+        return
+    required = [txtinout / name for name in ("codes.bsn", "rout_unit.def", "rout_unit.con")]
+    if not any(path.exists() for path in required):
+        return
+
+    from ..full_mode.routing_fixes import apply_full_routing_fixes
+
+    apply_full_routing_fixes(txtinout)
+
+
 def _set_print_prt_for_daily_channel_outputs(path: Path) -> None:
     if not path.exists():
         raise FileNotFoundError(f"required file not found: {path}")
@@ -295,8 +455,13 @@ def _write_objective_trace(
         "actual_sim_file": diagnostics.get("sim_source_file"),
         "requested_outlet_gis_id": diagnostics.get("requested_outlet_gis_id"),
         "selected_outlet_gis_id": diagnostics.get("selected_outlet_gis_id"),
+        "selected_outlet_gis_ids": diagnostics.get("selected_outlet_gis_ids"),
+        "outlet_scope": diagnostics.get("outlet_scope", "single_channel"),
+        "outlet_policy": diagnostics.get("outlet_policy"),
         "outlet_autodetected": bool(diagnostics.get("outlet_autodetected", False)),
         "outlet_selection_reason": diagnostics.get("outlet_selection_reason"),
         "metrics": {k: float(v) for k, v in metrics.items() if isinstance(v, (int, float))},
     }
+    if "candidate_physical_gate" in diagnostics:
+        payload["candidate_physical_gate"] = diagnostics.get("candidate_physical_gate")
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")

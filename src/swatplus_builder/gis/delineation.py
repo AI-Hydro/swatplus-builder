@@ -26,6 +26,9 @@ from __future__ import annotations
 import json
 import logging
 import math
+import shutil
+import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -235,7 +238,7 @@ def delineate(
     rc = wbt.breach_depressions_least_cost(
         str(dem_proj), str(dem_cond), dist=5, fill=True
     )
-    _check_wbt(rc, "BreachDepressionsLeastCost")
+    _check_wbt_output(rc, "BreachDepressionsLeastCost", dem_cond)
 
     # ------------------------------------------------------------------
     # 3 & 4. D8 flow direction + accumulation
@@ -243,12 +246,12 @@ def delineate(
     log.info("[3/10] D8 flow direction …")
     flow_dir = rasters / "d8_pointer.tif"
     rc = wbt.d8_pointer(str(dem_cond), str(flow_dir))
-    _check_wbt(rc, "D8Pointer")
+    _check_wbt_output(rc, "D8Pointer", flow_dir)
 
     log.info("[4/10] D8 flow accumulation …")
     flow_acc = rasters / "d8_flow_acc.tif"
     rc = wbt.d8_flow_accumulation(str(dem_cond), str(flow_acc), out_type="cells")
-    _check_wbt(rc, "D8FlowAccumulation")
+    _check_wbt_output(rc, "D8FlowAccumulation", flow_acc)
 
     # ------------------------------------------------------------------
     # 5. Extract streams
@@ -256,7 +259,7 @@ def delineate(
     log.info("[5/10] Extracting streams (threshold=%d cells) …", stream_threshold_cells)
     streams_r = rasters / "streams.tif"
     rc = wbt.extract_streams(str(flow_acc), str(streams_r), stream_threshold_cells)
-    _check_wbt(rc, "ExtractStreams")
+    _check_wbt_output(rc, "ExtractStreams", streams_r)
 
     # ------------------------------------------------------------------
     # 6. Stream link identifier (unique int per channel segment)
@@ -264,7 +267,7 @@ def delineate(
     log.info("[6/10] Assigning stream link IDs …")
     stream_links = rasters / "stream_links.tif"
     rc = wbt.stream_link_identifier(str(flow_dir), str(streams_r), str(stream_links))
-    _check_wbt(rc, "StreamLinkIdentifier")
+    _check_wbt_output(rc, "StreamLinkIdentifier", stream_links)
 
     # ------------------------------------------------------------------
     # 7. Subbasins (one subbasin per stream link, same IDs)
@@ -272,7 +275,7 @@ def delineate(
     log.info("[7/10] Delineating subbasins …")
     subbasins_r = rasters / "subbasins.tif"
     rc = wbt.subbasins(str(flow_dir), str(streams_r), str(subbasins_r))
-    _check_wbt(rc, "Subbasins")
+    _check_wbt_output(rc, "Subbasins", subbasins_r)
 
     # ------------------------------------------------------------------
     # 8. Snap outlet to stream + watershed clip
@@ -328,6 +331,7 @@ def delineate(
     log.info("[10/10] Building routing graph and channel attributes …")
     graph = _build_topology(stream_links, watershed_r, channels_gdf)
     _attribute_channels(channels_gdf, subbasins_gdf, dem_cond, flow_acc)
+    graph = _prune_topology_to_valid_channels(graph, channels_gdf, subbasins_gdf)
 
     # ------------------------------------------------------------------
     # Save vectors + graph
@@ -503,7 +507,14 @@ def _init_wbt(settings: Settings) -> Any:
         ) from exc
 
     wbt = whitebox.WhiteboxTools()
-    wbt.verbose = settings.whitebox_verbose
+    writable_dir = _writable_whitebox_dir(Path(wbt.exe_path))
+    if writable_dir is not None:
+        wbt.set_whitebox_dir(str(writable_dir))
+    # whitebox-python passes "-v=false" when verbose is disabled; the bundled
+    # WhiteboxTools build can return success without writing raster outputs in
+    # that mode. Keep the tool verbose and silence callers at the workflow
+    # stream boundary when JSON output is required.
+    wbt.verbose = True
     return wbt
 
 
@@ -514,6 +525,44 @@ def _check_wbt(return_code: int, tool_name: str) -> None:
             tool=tool_name,
             exit_code=return_code,
         )
+
+
+def _check_wbt_output(return_code: int, tool_name: str, *outputs: Path) -> None:
+    _check_wbt(return_code, tool_name)
+    _wait_for_outputs(outputs)
+    missing = [str(p) for p in outputs if not Path(p).exists()]
+    if missing:
+        raise SwatBuilderExternalError(
+            f"WhiteboxTools '{tool_name}' did not create expected output.",
+            tool=tool_name,
+            missing_outputs=missing,
+        )
+
+
+def _wait_for_outputs(outputs: tuple[Path, ...], *, timeout_s: float = 5.0) -> None:
+    """Allow slow/cloud-backed filesystems to publish WBT outputs."""
+    if not outputs:
+        return
+    deadline = time.monotonic() + timeout_s
+    while True:
+        if all(Path(path).exists() for path in outputs):
+            return
+        if time.monotonic() >= deadline:
+            return
+        time.sleep(0.1)
+
+
+def _writable_whitebox_dir(source_dir: Path) -> Path | None:
+    binary = source_dir / "whitebox_tools"
+    if not binary.exists():
+        return None
+    target = Path(tempfile.gettempdir()) / "swatplus_builder_whitebox"
+    target.mkdir(parents=True, exist_ok=True)
+    target_binary = target / "whitebox_tools"
+    if not target_binary.exists() or target_binary.stat().st_size != binary.stat().st_size:
+        shutil.copy2(binary, target_binary)
+    target_binary.chmod(target_binary.stat().st_mode | 0o111)
+    return target
 
 
 def _ensure_projected_dem(
@@ -725,7 +774,7 @@ def _snap_and_watershed(
 
     # Delineate watershed above snapped outlet
     rc = wbt.watershed(str(flow_dir), str(outlet_snapped), str(watershed_r))
-    _check_wbt(rc, "Watershed")
+    _check_wbt_output(rc, "Watershed", watershed_r)
 
     # Back-transform snapped point to WGS84
     inv_transformer = Transformer.from_crs(proj_crs, "EPSG:4326", always_xy=True)
@@ -973,6 +1022,73 @@ def _build_topology(stream_links: Path, watershed_r: Path, channels_gdf=None) ->
         sum(1 for n in G.nodes if G.out_degree(n) == 0),
     )
     return G
+
+
+def _prune_topology_to_valid_channels(
+    graph: nx.DiGraph,
+    channels_gdf: gpd.GeoDataFrame,
+    subbasins_gdf: gpd.GeoDataFrame,
+) -> nx.DiGraph:
+    """Keep routing graph nodes that can be emitted as SWAT+ channels.
+
+    Raster/vector joins can produce a stream-link node whose channel centroid
+    falls outside every surviving subbasin polygon. Such a node cannot be
+    emitted into ``gis_channels``/``chandeg.con``. Keeping it in GraphML makes
+    downstream terminal diagnostics report graph terminals that the SWAT+
+    channel table can never contain.
+    """
+    if graph.number_of_nodes() == 0 or channels_gdf.empty:
+        return graph
+
+    sub_ids = {
+        sid
+        for sid in (_positive_int(getattr(row, "sub_id", None)) for row in subbasins_gdf.itertuples())
+        if sid is not None
+    }
+    valid_link_ids: set[int] = set()
+    for row in channels_gdf.itertuples():
+        link_id = _positive_int(getattr(row, "link_id", None))
+        if link_id is None:
+            continue
+        sub_id = _positive_int(getattr(row, "sub_id", None))
+        if sub_id in sub_ids or link_id in sub_ids or (sub_id is None and len(sub_ids) == 1):
+            valid_link_ids.add(link_id)
+
+    if not valid_link_ids:
+        return graph.copy()
+
+    pruned = graph.copy()
+    removed: list[int] = []
+    for node in list(pruned.nodes):
+        node_id = _positive_int(node)
+        if node_id is None or node_id in valid_link_ids:
+            continue
+        preds = list(pruned.predecessors(node))
+        succs = list(pruned.successors(node))
+        for pred in preds:
+            for succ in succs:
+                if pred != succ:
+                    pruned.add_edge(pred, succ)
+        pruned.remove_node(node)
+        removed.append(node_id)
+
+    if removed:
+        log.warning(
+            "Pruned %d routing graph node(s) without valid channel/subbasin rows: %s",
+            len(removed),
+            ",".join(str(v) for v in sorted(removed)[:20]),
+        )
+    return pruned
+
+
+def _positive_int(value: object) -> int | None:
+    try:
+        if isinstance(value, float) and math.isnan(value):
+            return None
+        out = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return out if out > 0 else None
 
 
 

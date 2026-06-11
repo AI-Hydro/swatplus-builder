@@ -36,6 +36,8 @@ does not import ``pygridmet``; the import is deferred until
 from __future__ import annotations
 
 import datetime as _dt
+import os
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterable, Sequence
 
@@ -71,6 +73,10 @@ GRIDMET_VARIABLE_MAP: dict[WeatherVar, tuple[str, ...]] = {
     "wnd": ("vs",),
     "slr": ("srad",),
 }
+
+_GRIDMET_FETCH_ATTEMPTS = 3
+_GRIDMET_RETRY_SLEEP_SECONDS = 2.0
+_GRIDMET_CONN_TIMEOUT_SECONDS = 1800
 
 
 # ---------------------------------------------------------------------------
@@ -161,6 +167,7 @@ def fetch_gridmet(
 
     client = _load_pygridmet()
     cache_path = _resolve_cache_dir(cache_dir, settings)
+    os.environ.setdefault("HYRIVER_CACHE_NAME", str(cache_path / "hyriver_cache.sqlite"))
 
     series_list: list[StationSeries] = []
     for station in stations_typed:
@@ -171,6 +178,13 @@ def fetch_gridmet(
             end=end,
             variables=gridmet_vars,
             cache_dir=cache_path,
+        )
+        df = _repair_bounded_day_gaps(
+            df,
+            station=station,
+            start=start,
+            end=end,
+            n_days=n_days,
         )
         _validate_response_shape(df, station=station, n_days=n_days)
         series = _build_series(
@@ -276,26 +290,99 @@ def _fetch_one(
     cache_dir: Path,
 ) -> "pd.DataFrame":
     """Call pygridmet for a single (lon, lat). Translate errors."""
-    try:
-        df = client.get_bycoords(
-            coords=(station.lon, station.lat),
-            dates=(start, end),
-            variables=list(variables),
-            to_xarray=False,
-        )
-    except Exception as exc:  # pygridmet raises a medley of types
-        raise SwatBuilderExternalError(
-            f"pygridmet.get_bycoords failed for station {station.name!r} "
-            f"at ({station.lat}, {station.lon}): {exc}",
-            station=station.name,
-            lat=station.lat,
-            lon=station.lon,
-            start=start,
-            end=end,
-            variables=list(variables),
-            cache_dir=str(cache_dir),
-        ) from exc
-    return df
+    last_exc: Exception | None = None
+    for attempt in range(1, _GRIDMET_FETCH_ATTEMPTS + 1):
+        try:
+            return client.get_bycoords(
+                coords=(station.lon, station.lat),
+                dates=(start, end),
+                variables=list(variables),
+                to_xarray=False,
+                conn_timeout=_GRIDMET_CONN_TIMEOUT_SECONDS,
+                validate_filesize=False,
+            )
+        except TypeError as exc:
+            if "conn_timeout" not in str(exc) and "validate_filesize" not in str(exc):
+                raise
+            try:
+                return client.get_bycoords(
+                    coords=(station.lon, station.lat),
+                    dates=(start, end),
+                    variables=list(variables),
+                    to_xarray=False,
+                )
+            except Exception as fallback_exc:
+                last_exc = fallback_exc
+                if attempt < _GRIDMET_FETCH_ATTEMPTS:
+                    time.sleep(_GRIDMET_RETRY_SLEEP_SECONDS)
+        except Exception as exc:  # pygridmet raises a medley of types
+            last_exc = exc
+            if attempt < _GRIDMET_FETCH_ATTEMPTS:
+                time.sleep(_GRIDMET_RETRY_SLEEP_SECONDS)
+
+    assert last_exc is not None
+    raise SwatBuilderExternalError(
+        f"pygridmet.get_bycoords failed for station {station.name!r} "
+        f"at ({station.lat}, {station.lon}) after "
+        f"{_GRIDMET_FETCH_ATTEMPTS} attempts: {last_exc}",
+        station=station.name,
+        lat=station.lat,
+        lon=station.lon,
+        start=start,
+        end=end,
+        variables=list(variables),
+        cache_dir=str(cache_dir),
+        attempts=_GRIDMET_FETCH_ATTEMPTS,
+    ) from last_exc
+
+
+def _repair_bounded_day_gaps(
+    df: "pd.DataFrame",
+    *,
+    station: WeatherStation,
+    start: str,
+    end: str,
+    n_days: int,
+) -> "pd.DataFrame":
+    """Fill a few isolated provider-missing days using adjacent or nearest data."""
+    if len(df) == n_days:
+        return df
+
+    missing_count = n_days - len(df)
+    if missing_count < 1 or missing_count > 3:
+        return df
+
+    import pandas as pd
+
+    if not isinstance(df.index, pd.DatetimeIndex):
+        return df
+
+    expected = pd.date_range(start, end, freq="D")
+    got = pd.DatetimeIndex(df.index).normalize()
+    missing = expected.difference(got)
+    if len(missing) != missing_count:
+        return df
+
+    repaired = df.copy()
+    for day in missing:
+        if day == expected[0]:
+            row = repaired.iloc[[0]].copy()
+            row.index = pd.DatetimeIndex([day])
+            repaired = pd.concat([repaired, row])
+        elif day == expected[-1]:
+            row = repaired.iloc[[-1]].copy()
+            row.index = pd.DatetimeIndex([day])
+            repaired = pd.concat([row, repaired])
+        else:
+            prev_day = day - pd.Timedelta(days=1)
+            next_day = day + pd.Timedelta(days=1)
+            if prev_day not in got or next_day not in got:
+                return df
+            row = ((repaired.loc[[prev_day]].reset_index(drop=True) + repaired.loc[[next_day]].reset_index(drop=True)) / 2.0)
+            row.index = pd.DatetimeIndex([day])
+            repaired = pd.concat([repaired, row])
+
+    return repaired.sort_index()
 
 
 def _validate_response_shape(
