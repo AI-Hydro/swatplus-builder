@@ -21,18 +21,18 @@ See :file:`examples/real_basin_marsh_creek.py` for a hands-on demo.
 
 from __future__ import annotations
 
+import inspect
+import json
 import os
 import sys
 from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.skipif(
+@pytest.mark.skipif(
     os.environ.get("SWATPLUS_BUILDER_RUN_REAL_BASIN") != "1",
     reason="Set SWATPLUS_BUILDER_RUN_REAL_BASIN=1 to run the real-basin E2E.",
 )
-
-
 @pytest.mark.slow
 def test_marsh_creek_full_pipeline(tmp_path: Path) -> None:
     pytest.importorskip("whitebox")
@@ -84,3 +84,70 @@ def test_marsh_creek_full_pipeline(tmp_path: Path) -> None:
         f"no expected NLCD-derived plant codes in hru-lte.hru; "
         f"got none of {expected_codes}"
     )
+
+
+def test_marsh_creek_main_accepts_custom_simulation_window() -> None:
+    """Custom windows are needed for Phase 3F multi-year evidence runs."""
+    examples_dir = Path(__file__).parent.parent / "examples"
+    sys.path.insert(0, str(examples_dir))
+    try:
+        import real_basin_marsh_creek as demo  # type: ignore
+    finally:
+        sys.path.pop(0)
+
+    sig = inspect.signature(demo.main)
+    assert sig.parameters["sim_start"].default == demo.SIM_START
+    assert sig.parameters["sim_end"].default == demo.SIM_END
+
+
+def test_external_soil_profiles_fill_missing_mukeys(tmp_path: Path) -> None:
+    """Pre-acquired SDA profiles can drive Phase 3G without PC fallback."""
+    examples_dir = Path(__file__).parent.parent / "examples"
+    sys.path.insert(0, str(examples_dir))
+    try:
+        import real_basin_marsh_creek as demo  # type: ignore
+    finally:
+        sys.path.pop(0)
+
+    soils_json = tmp_path / "soils.json"
+    soils_json.write_text(
+        json.dumps(
+            {
+                "source": "test_external",
+                "profiles": {
+                    "101": {
+                        "name": "gnatsgo_101",
+                        "hyd_grp": "NAN",
+                        "source": "sda_horizon",
+                        "layers": [
+                            {
+                                "layer_num": 1,
+                                "dp": 1000.0,
+                                "bd": 1.4,
+                                "awc": 0.15,
+                                "soil_k": 5.0,
+                                "carbon": 1.0,
+                                "clay": 20.0,
+                                "silt": 40.0,
+                                "sand": 40.0,
+                                "rock": 0.0,
+                                "alb": 0.13,
+                                "usle_k": 0.3,
+                                "ec": 0.0,
+                            }
+                        ],
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    profiles, report = demo._load_external_soil_profiles(soils_json, [101, 202])
+
+    by_name = {p.name: p for p in profiles}
+    assert set(by_name) == {"gnatsgo_101", "gnatsgo_202"}
+    assert by_name["gnatsgo_101"].hyd_grp == "D"
+    assert by_name["gnatsgo_202"].source == "external_soil_json_missing_fallback"
+    assert report["external_profiles"] == 1
+    assert report["aggregated"]["default_fallback"] == 1

@@ -1,4 +1,3 @@
-from __future__ import annotations
 from peewee import *
 from .base import BaseModel
 

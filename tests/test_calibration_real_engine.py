@@ -200,3 +200,109 @@ def test_make_real_objective_rejects_outlet_autodetect_when_disallowed(
     )
     with pytest.raises(RuntimeError, match="Outlet auto-detection occurred"):
         obj({})
+
+
+def test_make_real_objective_scores_strict_pinned_outlet_by_default(
+    monkeypatch, tmp_path: Path
+) -> None:
+    base = tmp_path / "base"
+    base.mkdir(parents=True, exist_ok=True)
+    _write(
+        base / "print.prt",
+        "hdr\n"
+        "nyskip day_start yrc_start day_end yrc_end interval\n"
+        "1 0 0 0 0 1\n"
+        "aa_int_cnt\n"
+        "0\n"
+        "csvout dbout cdfout\n"
+        "n n n\n"
+        "objects daily monthly yearly avann\n"
+        "channel n n y y\n"
+        "channel_sd n n y y\n"
+        "basin_cha n n y y\n"
+        "basin_sd_cha n n y y\n",
+    )
+
+    monkeypatch.setattr(real_engine, "run_swat", lambda *args, **kwargs: None)
+    seen: dict[str, object] = {}
+
+    def _fake_eval(*args, **kwargs):
+        seen.update(kwargs)
+        df = pd.DataFrame(
+            {"obs": [1.0], "sim": [1.0]},
+            index=pd.to_datetime(["2015-01-01"]),
+        )
+        metrics = {"nse": 0.5, "kge": 0.4}
+        diagnostics = {
+            "requested_outlet_gis_id": 1,
+            "selected_outlet_gis_id": 1,
+            "outlet_autodetected": False,
+            "outlet_selection_reason": "strict_requested_outlet",
+            "sim_source_file": "basin_sd_cha_day.txt",
+        }
+        return df, metrics, diagnostics
+
+    monkeypatch.setattr(real_engine, "evaluate_run", _fake_eval)
+
+    obj = make_real_objective(
+        base_txtinout=base,
+        observed_series=pd.Series([1.0], index=pd.to_datetime(["2015-01-01"])),
+        work_root=tmp_path / "work",
+        objective_sim_file="basin_sd_cha_day.txt",
+        allow_outlet_autodetect=False,
+    )
+    assert obj({})["nse"] == 0.5
+    assert seen["outlet_policy"] == "strict"
+
+
+def test_make_real_objective_can_allow_outlet_autodetect_explicitly(
+    monkeypatch, tmp_path: Path
+) -> None:
+    base = tmp_path / "base"
+    base.mkdir(parents=True, exist_ok=True)
+    _write(
+        base / "print.prt",
+        "hdr\n"
+        "nyskip day_start yrc_start day_end yrc_end interval\n"
+        "1 0 0 0 0 1\n"
+        "aa_int_cnt\n"
+        "0\n"
+        "csvout dbout cdfout\n"
+        "n n n\n"
+        "objects daily monthly yearly avann\n"
+        "channel n n y y\n"
+        "channel_sd n n y y\n"
+        "basin_cha n n y y\n"
+        "basin_sd_cha n n y y\n",
+    )
+
+    monkeypatch.setattr(real_engine, "run_swat", lambda *args, **kwargs: None)
+    seen: dict[str, object] = {}
+
+    def _fake_eval(*args, **kwargs):
+        seen.update(kwargs)
+        df = pd.DataFrame(
+            {"obs": [1.0], "sim": [1.0]},
+            index=pd.to_datetime(["2015-01-01"]),
+        )
+        metrics = {"nse": 0.5, "kge": 0.4}
+        diagnostics = {
+            "requested_outlet_gis_id": 1,
+            "selected_outlet_gis_id": 3,
+            "outlet_autodetected": True,
+            "outlet_selection_reason": "requested_outlet_non_terminal_best_nse",
+            "sim_source_file": "basin_sd_cha_day.txt",
+        }
+        return df, metrics, diagnostics
+
+    monkeypatch.setattr(real_engine, "evaluate_run", _fake_eval)
+
+    obj = make_real_objective(
+        base_txtinout=base,
+        observed_series=pd.Series([1.0], index=pd.to_datetime(["2015-01-01"])),
+        work_root=tmp_path / "work",
+        objective_sim_file="basin_sd_cha_day.txt",
+        allow_outlet_autodetect=True,
+    )
+    assert obj({})["nse"] == 0.5
+    assert seen["outlet_policy"] == "auto"

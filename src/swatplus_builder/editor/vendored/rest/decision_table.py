@@ -1,4 +1,3 @@
-from __future__ import annotations
 from flask import Blueprint, request, abort
 from .config import RequestHeaders as rh
 

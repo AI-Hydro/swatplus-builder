@@ -47,10 +47,14 @@ def plot_soil_sources(
 
     title_parts = ["Soil Architecture Provenance"]
     if metadata:
-        if metadata.get("basin_name"):
-            title_parts.insert(0, metadata["basin_name"])
-        if metadata.get("usgs_id"):
-            title_parts[0] += f" ({metadata['usgs_id']})"
+        basin_name = str(metadata.get("basin_name", "")).strip()
+        usgs_id = str(metadata.get("usgs_id", "")).strip()
+        has_usgs_in_name = usgs_id and (f"({usgs_id})" in basin_name or usgs_id in basin_name)
+        if basin_name:
+            name = basin_name
+            if not has_usgs_in_name and usgs_id:
+                name += f" ({usgs_id})"
+            title_parts.insert(0, name)
     title = "\n".join(title_parts)
 
     fig, ax = plt.subplots(figsize=(7, 5))

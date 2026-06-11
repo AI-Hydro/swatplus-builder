@@ -63,6 +63,84 @@ _D8_OFFSETS: dict[int, tuple[int, int]] = {
 # Public entry point
 # ---------------------------------------------------------------------------
 
+def check_topology_realism(
+    stats: dict[str, float],
+    *,
+    expected_area_km2: float | None = None,
+    usgs_id: str | None = None,
+    min_area_ratio: float = 0.10,
+    max_channels_per_subbasin: float = 50.0,
+    max_terminals: int = 5,
+    max_terminal_rate: float = 0.08,
+) -> None:
+    """Fail loud when delineation topology is physically implausible.
+
+    Raises:
+        SwatBuilderPipelineError: Any topology check fails.
+    """
+    n_sub = stats.get("n_subbasins", 0.0)
+    n_cha = stats.get("n_channels", 0.0)
+    n_ter = stats.get("n_terminals", 0.0)
+    gen_area = stats.get("total_area_km2", 0.0)
+
+    context: dict[str, object] = {
+        "n_subbasins": int(n_sub),
+        "n_channels": int(n_cha),
+        "n_terminals": int(n_ter),
+        "generated_area_km2": gen_area,
+    }
+    if usgs_id:
+        context["usgs_id"] = usgs_id
+    if expected_area_km2 is not None:
+        context["expected_area_km2"] = expected_area_km2
+        context["min_area_ratio"] = min_area_ratio
+
+    # 1. Area ratio: generated watershed must be at least min_area_ratio of expected.
+    if expected_area_km2 is not None and expected_area_km2 > 0:
+        ratio = gen_area / expected_area_km2
+        context["area_ratio"] = round(ratio, 6)
+        if ratio < min_area_ratio:
+            raise SwatBuilderPipelineError(
+                f"Delineation area mismatch: generated {gen_area:.2f} km² is only "
+                f"{ratio:.4%} of expected {expected_area_km2:.1f} km² "
+                f"(threshold: {min_area_ratio:.0%}). "
+                "Likely cause: outlet snap failure or DEM clip boundary mismatch. "
+                "Try increasing snap_dist_m or lowering stream_threshold_cells.",
+                **context,
+            )
+
+    # 2. Channel explosion: channels per subbasin must stay below threshold.
+    if n_sub > 0:
+        ratio_cha = n_cha / n_sub
+        context["channels_per_subbasin"] = round(ratio_cha, 1)
+        context["max_channels_per_subbasin"] = max_channels_per_subbasin
+        if ratio_cha > max_channels_per_subbasin:
+            raise SwatBuilderPipelineError(
+                f"Channel explosion: {int(n_cha)} channels across {int(n_sub)} subbasin(s) "
+                f"({ratio_cha:.0f} channels/subbasin, threshold: {max_channels_per_subbasin:.0f}). "
+                "Likely cause: outlet snapped outside the intended drainage area, "
+                "producing a degenerate near-zero watershed with a dense stream network. "
+                "Try increasing snap_dist_m or adjusting stream_threshold_cells.",
+                **context,
+            )
+
+    # 3. Terminal explosion: for large basins, DEM-boundary truncation creates legitimate
+    #    boundary terminals. Use rate-based threshold: max(abs, n_sub * rate).
+    #    For small basins (<= 60 subbasins) the absolute max_terminals floor applies.
+    effective_max_terminals = max(max_terminals, int(n_sub * max_terminal_rate))
+    context["max_terminals"] = effective_max_terminals
+    context["max_terminal_rate"] = max_terminal_rate
+    if int(n_ter) > effective_max_terminals:
+        raise SwatBuilderPipelineError(
+            f"Multiple routing terminals: {int(n_ter)} terminals detected "
+            f"(threshold: {effective_max_terminals} = max({max_terminals}, "
+            f"{int(n_sub)}×{max_terminal_rate:.0%})). "
+            "Likely cause: disconnected subgraphs from a fragmented delineation. "
+            "Try increasing snap_dist_m or using a coarser stream_threshold_cells.",
+            **context,
+        )
+
+
 def delineate(
     dem_path: Path | str,
     outlet: Outlet | tuple[float, float],
@@ -70,6 +148,11 @@ def delineate(
     *,
     stream_threshold_cells: int = 500,
     snap_dist_m: float = 500.0,
+    expected_area_km2: float | None = None,
+    min_area_ratio: float = 0.10,
+    max_channels_per_subbasin: float = 50.0,
+    max_terminals: int = 5,
+    max_terminal_rate: float = 0.08,
     settings: Settings = DEFAULT_SETTINGS,
 ) -> WatershedResult:
     """Delineate subbasins and channels from a DEM and a pour point.
@@ -85,6 +168,20 @@ def delineate(
                                 Typical range: 100 (small basin, fine DEM) – 5000 (large basin).
         snap_dist_m:            Outlet snap radius in metres. The outlet point is moved to the
                                 nearest high-accumulation cell within this radius.
+        expected_area_km2:      NLDI or user-provided basin area in km². When supplied, the
+                                gate raises if the delineated area is < ``min_area_ratio``
+                                of this value.
+        min_area_ratio:         Minimum fraction of ``expected_area_km2`` the delineated
+                                watershed must cover. Default 0.10 (10%).
+        max_channels_per_subbasin: Maximum channels-per-subbasin ratio before raising a
+                                channel-explosion error. Default 50.
+        max_terminals:          Absolute minimum maximum routing-graph terminals before raising.
+                                For large basins the effective limit is
+                                max(max_terminals, n_subbasins × max_terminal_rate).
+                                Default 5.
+        max_terminal_rate:      Fraction of subbasins allowed to be terminals. DEM-boundary-
+                                truncated large basins legitimately have boundary terminals.
+                                Default 0.08 (8%).
         settings:               Runtime overrides (backend, verbosity, …).
 
     Returns:
@@ -92,7 +189,7 @@ def delineate(
 
     Raises:
         SwatBuilderInputError:    DEM unreadable, outlet outside DEM extent, CRS invalid.
-        SwatBuilderPipelineError: Delineation produced zero subbasins.
+        SwatBuilderPipelineError: Delineation produced zero subbasins or topology check fails.
         SwatBuilderExternalError: WhiteboxTools binary missing or returned non-zero.
     """
     # Normalise inputs
@@ -189,11 +286,18 @@ def delineate(
     outlet_snapped = shapes_dir / "outlet_snapped.shp"
     watershed_r = rasters / "watershed.tif"
 
-    snapped_lon, snapped_lat = _snap_and_watershed(
+    # Scale snap radius for large basins: sqrt(area_km2)*30 m gives ~1730 m
+    # for a 3340 km² basin vs the 500 m default — enough to reach the main stem.
+    effective_snap_m = _adaptive_snap_dist(snap_dist_m, expected_area_km2)
+    if effective_snap_m > snap_dist_m:
+        log.info("       Adaptive snap: %.0f m (basin area %.1f km²)",
+                 effective_snap_m, expected_area_km2)
+
+    snapped_lon, snapped_lat, snap_diag = _snap_and_watershed(
         wbt, outlet, proj_crs,
         flow_dir, flow_acc, stream_links, subbasins_r,
         outlet_raw, outlet_snapped, watershed_r,
-        snap_dist_m,
+        effective_snap_m,
     )
 
     # ------------------------------------------------------------------
@@ -262,12 +366,68 @@ def delineate(
         "outlet_lon": snapped_lon,
         "outlet_lat": snapped_lat,
         "stream_threshold_cells": float(stream_threshold_cells),
+        # Snap diagnostics (surfaced for audit/realism checks)
+        "snap_dist_used_m": snap_diag["snap_radius_m"],
+        "snap_dist_actual_m": snap_diag["snap_dist_actual_m"],
+        "flow_acc_raw_km2": snap_diag["flow_acc_raw_km2"],
+        "flow_acc_snapped_km2": snap_diag["flow_acc_snapped_km2"],
     }
+
+    # Write snap diagnostic artifact — standalone JSON for traceability
+    snap_artifact = workdir / "snap_diagnostic.json"
+    snap_artifact_data: dict[str, object] = {
+        "usgs_id": outlet.usgs_id if hasattr(outlet, "usgs_id") else None,
+        "snap_strategy": "max_accumulation",
+        "snap_radius_m": snap_diag["snap_radius_m"],
+        "snap_dist_actual_m": snap_diag["snap_dist_actual_m"],
+        "outlet_raw": {
+            "lon": outlet.lon, "lat": outlet.lat,
+            "x_proj": snap_diag["outlet_raw_x"],
+            "y_proj": snap_diag["outlet_raw_y"],
+            "flow_acc_cells": snap_diag["flow_acc_raw_cells"],
+            "flow_acc_km2": snap_diag["flow_acc_raw_km2"],
+        },
+        "outlet_snapped": {
+            "lon": snapped_lon, "lat": snapped_lat,
+            "x_proj": snap_diag["outlet_snapped_x"],
+            "y_proj": snap_diag["outlet_snapped_y"],
+            "flow_acc_cells": snap_diag["flow_acc_snapped_cells"],
+            "flow_acc_km2": snap_diag["flow_acc_snapped_km2"],
+        },
+        "dem_resolution_m": snap_diag["dem_resolution_m"],
+        "expected_area_km2": expected_area_km2,
+        "generated_area_km2": round(total_area_km2, 3),
+    }
+    snap_artifact.write_text(json.dumps(snap_artifact_data, indent=2), encoding="utf-8")
 
     log.info("=== Delineation complete ===")
     log.info("    Subbasins:      %d", int(stats["n_subbasins"]))
     log.info("    Channels:       %d", int(stats["n_channels"]))
     log.info("    Total area:     %.1f km²", stats["total_area_km2"])
+
+    check_topology_realism(
+        stats,
+        expected_area_km2=expected_area_km2,
+        usgs_id=outlet.usgs_id if hasattr(outlet, "usgs_id") else None,
+        min_area_ratio=min_area_ratio,
+        max_channels_per_subbasin=max_channels_per_subbasin,
+        max_terminals=max_terminals,
+        max_terminal_rate=max_terminal_rate,
+    )
+
+    # Warn when area coverage is partial (passes gate but may affect calibration).
+    if expected_area_km2 and expected_area_km2 > 0:
+        area_ratio = total_area_km2 / expected_area_km2
+        if area_ratio < 0.90:
+            log.warning(
+                "TOPOLOGY WARNING: delineated area %.1f km² is %.0f%% of expected %.1f km². "
+                "Likely cause: routing graph fragmentation from D8 cycle removal — some "
+                "subbasins disconnected from the main outlet. Model will under-represent "
+                "upstream inflow for the missing %.0f%%. Consider FillDepressions instead "
+                "of BreachDepressionsLeastCost for low-gradient basins.",
+                total_area_km2, area_ratio * 100, expected_area_km2,
+                (1 - area_ratio) * 100,
+            )
 
     result = WatershedResult(
         workdir=workdir,
@@ -419,6 +579,77 @@ def _reproject_raster(src_path: Path, dst_path: Path, dst_epsg: str) -> None:
 # Private helpers — outlet snapping + watershed
 # ---------------------------------------------------------------------------
 
+def _adaptive_snap_dist(default_m: float, expected_area_km2: float | None) -> float:
+    """Scale snap radius for large basins.
+
+    For a ~3340 km² basin the main channel can be >700 m from the gauge
+    point, well beyond the default 500 m.  sqrt(area_km2) * 30 gives
+    ~1730 m for 03339000 and ~320 m for Marsh Creek (floored to default).
+    """
+    if expected_area_km2 and expected_area_km2 > 0:
+        return max(default_m, math.sqrt(expected_area_km2) * 30.0)
+    return default_m
+
+
+def _snap_to_max_accumulation(
+    flow_acc: Path,
+    px: float,
+    py: float,
+    radius_m: float,
+) -> tuple[float, float, float, float, float]:
+    """Find the highest-accumulation cell within radius_m of (px, py).
+
+    Returns (snapped_px, snapped_py, acc_raw_cells, acc_snapped_cells, dist_m).
+    Falls back to (px, py) when no valid cells exist in the window.
+
+    This is more robust than WBT SnapPourPoints for large / low-gradient
+    basins where the nearest stream may be a tributary, not the main stem.
+    The highest-accumulation cell within the radius is always the main stem.
+    """
+    with rasterio.open(flow_acc) as src:
+        res_m = abs(src.res[0])
+        radius_cells = int(math.ceil(radius_m / res_m))
+
+        # Clamp outlet row/col to raster bounds
+        row, col = src.index(px, py)
+        row = max(0, min(src.height - 1, row))
+        col = max(0, min(src.width  - 1, col))
+
+        # Flow acc at the raw outlet pixel
+        full = src.read(1)
+        acc_raw = float(full[row, col])
+
+        # Read the bounding-box window
+        r0 = max(0, row - radius_cells)
+        r1 = min(src.height, row + radius_cells + 1)
+        c0 = max(0, col - radius_cells)
+        c1 = min(src.width,  col + radius_cells + 1)
+
+        from rasterio.windows import Window as _W
+        win_data = src.read(1, window=_W(c0, r0, c1 - c0, r1 - r0)).astype(np.float64)
+
+        # Mask nodata and cells outside the circular radius
+        if src.nodata is not None:
+            win_data = np.where(win_data == src.nodata, -1.0, win_data)
+        rr = np.arange(r0, r1) - row
+        cc = np.arange(c0, c1) - col
+        dist_grid = np.sqrt(rr[:, None] ** 2 + cc[None, :] ** 2)
+        win_data = np.where(dist_grid <= radius_cells, win_data, -1.0)
+
+        if win_data.max() <= 0:
+            return px, py, acc_raw, acc_raw, 0.0
+
+        max_idx = np.unravel_index(int(np.argmax(win_data)), win_data.shape)
+        snap_row = r0 + max_idx[0]
+        snap_col = c0 + max_idx[1]
+        acc_snapped = float(win_data[max_idx])
+
+        snapped_px, snapped_py = src.xy(snap_row, snap_col)
+        dist_m = math.sqrt((snapped_px - px) ** 2 + (snapped_py - py) ** 2)
+
+        return float(snapped_px), float(snapped_py), acc_raw, acc_snapped, dist_m
+
+
 def _snap_and_watershed(
     wbt: Any,
     outlet: Outlet,
@@ -431,8 +662,11 @@ def _snap_and_watershed(
     outlet_snapped: Path,
     watershed_r: Path,
     snap_dist_m: float,
-) -> tuple[float, float]:
-    """Snap outlet to nearest stream, delineate watershed. Returns snapped (lon, lat)."""
+) -> tuple[float, float, dict[str, float]]:
+    """Snap outlet to highest-accumulation cell, delineate watershed.
+
+    Returns (snapped_lon, snapped_lat, snap_diagnostic_dict).
+    """
     assert outlet.lon is not None and outlet.lat is not None
 
     # Transform WGS84 → projected CRS
@@ -442,6 +676,7 @@ def _snap_and_watershed(
     # Validate outlet is within DEM extent
     with rasterio.open(flow_acc) as src:
         bounds = src.bounds
+        res_m = abs(src.res[0])
         if not (bounds.left <= px <= bounds.right and bounds.bottom <= py <= bounds.top):
             raise SwatBuilderInputError(
                 "Outlet is outside the DEM extent.",
@@ -449,23 +684,44 @@ def _snap_and_watershed(
                 dem_bounds=(bounds.left, bounds.bottom, bounds.right, bounds.top),
             )
 
-    # Write raw outlet shapefile (WBT needs a vector file)
+    # Snap to the highest-accumulation cell within snap_dist_m (main-stem robust)
+    snapped_px, snapped_py, acc_raw, acc_snapped, snap_dist_actual = (
+        _snap_to_max_accumulation(flow_acc, px, py, snap_dist_m)
+    )
+
+    log.info(
+        "       Snap: raw acc=%.0f cells (%.2f km²), snapped acc=%.0f cells (%.2f km²), dist=%.0f m",
+        acc_raw,   acc_raw   * res_m ** 2 / 1e6,
+        acc_snapped, acc_snapped * res_m ** 2 / 1e6,
+        snap_dist_actual,
+    )
+
+    snap_diag: dict[str, float] = {
+        "snap_strategy": 0.0,          # 0 = max_accumulation
+        "outlet_raw_x": px,
+        "outlet_raw_y": py,
+        "outlet_snapped_x": snapped_px,
+        "outlet_snapped_y": snapped_py,
+        "snap_radius_m": snap_dist_m,
+        "snap_dist_actual_m": round(snap_dist_actual, 1),
+        "flow_acc_raw_cells": acc_raw,
+        "flow_acc_snapped_cells": acc_snapped,
+        "flow_acc_raw_km2": round(acc_raw   * res_m ** 2 / 1e6, 4),
+        "flow_acc_snapped_km2": round(acc_snapped * res_m ** 2 / 1e6, 2),
+        "dem_resolution_m": round(res_m, 2),
+    }
+
+    # Write snapped outlet shapefile for WBT Watershed tool
+    snapped_gdf = gpd.GeoDataFrame(
+        {"id": [1]}, geometry=[Point(snapped_px, snapped_py)], crs=proj_crs
+    )
+    snapped_gdf.to_file(str(outlet_snapped), driver="ESRI Shapefile")
+
+    # Also write raw outlet for provenance
     outlet_gdf = gpd.GeoDataFrame(
         {"id": [1]}, geometry=[Point(px, py)], crs=proj_crs
     )
     outlet_gdf.to_file(str(outlet_raw), driver="ESRI Shapefile")
-
-    # Snap to nearest stream cell
-    rc = wbt.snap_pour_points(
-        str(outlet_raw), str(flow_acc), str(outlet_snapped), snap_dist_m
-    )
-    _check_wbt(rc, "SnapPourPoints")
-
-    # Read back snapped location.  WBT writes .shp without .prj.
-    snapped_gdf = gpd.read_file(str(outlet_snapped))
-    if snapped_gdf.crs is None:
-        snapped_gdf = snapped_gdf.set_crs(proj_crs, allow_override=True)
-    snapped_proj = snapped_gdf.geometry.iloc[0]
 
     # Delineate watershed above snapped outlet
     rc = wbt.watershed(str(flow_dir), str(outlet_snapped), str(watershed_r))
@@ -473,9 +729,9 @@ def _snap_and_watershed(
 
     # Back-transform snapped point to WGS84
     inv_transformer = Transformer.from_crs(proj_crs, "EPSG:4326", always_xy=True)
-    snapped_lon, snapped_lat = inv_transformer.transform(snapped_proj.x, snapped_proj.y)
+    snapped_lon, snapped_lat = inv_transformer.transform(snapped_px, snapped_py)
 
-    return float(snapped_lon), float(snapped_lat)
+    return float(snapped_lon), float(snapped_lat), snap_diag
 
 
 # ---------------------------------------------------------------------------
@@ -565,6 +821,45 @@ def _vectorize_channels(
 # ---------------------------------------------------------------------------
 # Private helpers — topology
 # ---------------------------------------------------------------------------
+
+def _remove_back_edges(G: nx.DiGraph) -> None:
+    """Remove all back-edges from G in a single O(V+E) DFS coloring pass.
+
+    Uses tri-color DFS (WHITE=unvisited, GRAY=in-stack, BLACK=done).
+    A back-edge u→v exists when v is still GRAY (v is an ancestor of u in DFS).
+    Removing it breaks the cycle while keeping forward/cross edges intact.
+    """
+    WHITE, GRAY, BLACK = 0, 1, 2
+    color: dict[int, int] = {n: WHITE for n in G}
+    back_edges: list[tuple[int, int]] = []
+
+    # Iterative DFS to avoid Python recursion limit on large graphs.
+    for start in G.nodes:
+        if color[start] != WHITE:
+            continue
+        stack = [(start, iter(G.successors(start)))]
+        color[start] = GRAY
+        while stack:
+            node, children = stack[-1]
+            try:
+                child = next(children)
+                if color[child] == GRAY:
+                    back_edges.append((node, child))
+                elif color[child] == WHITE:
+                    color[child] = GRAY
+                    stack.append((child, iter(G.successors(child))))
+            except StopIteration:
+                color[node] = BLACK
+                stack.pop()
+
+    n_removed = 0
+    for u, v in back_edges:
+        if G.has_edge(u, v):
+            G.remove_edge(u, v)
+            n_removed += 1
+    if n_removed:
+        log.info("Removed %d back-edge(s) to make routing graph acyclic.", n_removed)
+
 
 def _build_topology(stream_links: Path, watershed_r: Path, channels_gdf=None) -> nx.DiGraph:
     """Build a DiGraph of channel links.
@@ -665,15 +960,12 @@ def _build_topology(stream_links: Path, watershed_r: Path, channels_gdf=None) ->
             except Exception as exc:
                 log.warning("Spatial topology (disk fallback) failed: %s", exc)
 
-    # Validate DAG, remove back-edges if needed
+    # Validate DAG, remove back-edges in a single O(V+E) coloring DFS.
+    # The prior iterative approach (find_cycle + remove one edge, repeat) is
+    # O(k × (V+E)) and hangs for large basins with many cycles.
     if not nx.is_directed_acyclic_graph(G):
         log.warning("Routing graph has cycles — removing back-edges.")
-        while not nx.is_directed_acyclic_graph(G):
-            try:
-                cycle = nx.find_cycle(G, orientation="original")
-                G.remove_edge(cycle[-1][0], cycle[-1][1])
-            except nx.NetworkXNoCycle:
-                break
+        _remove_back_edges(G)
 
     log.info(
         "Routing graph: %d nodes, %d edges, %d terminal",

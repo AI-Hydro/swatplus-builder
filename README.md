@@ -1,49 +1,89 @@
 # swatplus-builder
 
-> Headless, agent‑friendly generator for SWAT+ project inputs (SQLite + `TxtInOut`) — **no QGIS required**.
+> Headless, agent-friendly SWAT+ framework (no QGIS) — scientifically defensible basin modelling at agent speed.
 
-`swatplus-builder` is a standalone Python package that produces valid SWAT+ model inputs from GIS primitives (DEM, land use, soil, weather) entirely in Python. It is designed to be called as a set of typed tool functions by AI agents (via MCP or direct function calls) or from the `swat` CLI in notebooks and CI pipelines.
+`swatplus-builder` produces valid SWAT+ model inputs from GIS primitives (DEM, land use, soil, weather) entirely in Python. It is designed to be operated by AI agents via MCP or from the `swat` CLI in notebooks and CI pipelines, and embeds a complete locked-benchmark calibration protocol for reproducible, auditable results.
 
-The package deliberately **avoids QGIS, PyQGIS, and the QSWATPlus plugin at runtime**. It replaces the GIS stage with pure‑Python tooling (WhiteboxTools, pyflwdir, rasterio, geopandas) and delegates the SQLite → `TxtInOut` translation to the vendored, open‑source [SWAT+ Editor Python API](https://github.com/swat-model/swatplus-editor) (Peewee ORM + SQLite).
+The package deliberately **avoids QGIS, PyQGIS, and the QSWATPlus plugin**. GIS work is done with WhiteboxTools + rasterio + geopandas. The SQLite → `TxtInOut` translation uses the vendored [SWAT+ Editor Python API](https://github.com/swat-model/swatplus-editor).
+
+> **New here? Read [`QUICKSTART.md`](QUICKSTART.md).** It covers requirements,
+> install, engine/reference-DB bootstrap, the canonical one-command workflow,
+> and how to operate the pipeline through an AI agent (MCP).
+
+The canonical end-to-end path is a single command:
+
+```bash
+swat workflow run --usgs-id <id> --model-family full \
+  --start 2000-01-01 --end 2019-12-31 --warmup-years 3 \
+  --calibrate --claim-tier research_grade --json
+```
+
+It builds the model, runs the engine, locks a benchmark, runs gated diagnostic
+calibration, independently verifies a locked rerun, and writes a machine-readable
+**evidence bundle** with explicit allowed/blocked claims. The package — not the
+agent — decides what may be claimed.
 
 ---
 
 ## Status
 
-**Alpha, v0.4.0 — Feature-complete for single-basin hydrological workflows.**
-- [x] Pure-Python GIS (WhiteboxTools)
-- [x] Automated SWAT+ Project Generation
-- [x] Weather (GridMET / Synthetic)
-- [x] **USGS NWIS Validation**: Automated observed discharge fetching.
-- [x] **Evaluation Suite**: Dependency-free NSE, KGE, and BFI metrics.
-- [x] **Manuscript Suite**: 7+ publication-ready figure types in PNG/PDF.
+**Alpha, v0.4.0** — Agent-native, locked-benchmark calibration, 11-tool MCP surface, container baseline.
+
+- [x] Pure-Python GIS (WhiteboxTools, rasterio, geopandas)
+- [x] Automated SWAT+ project generation
+- [x] Weather (GridMET / synthetic)
+- [x] USGS NWIS observed discharge fetch
+- [x] Two-pass outlet evaluation (auto-select → strict-pin)
+- [x] NSE / KGE / BFI metrics (`evaluate_run` — authoritative)
+- [x] **Locked-benchmark calibration protocol** (lock → calibrate → verify)
+- [x] pySWATPlus bridge with fail-loud diagnostics artifact
+- [x] 11-tool MCP server (`swat mcp` / docker-compose mcp service)
+- [x] Container baseline (Dockerfile + docker-compose)
+- [x] Publication-ready figures (7+ types)
 
 See:
 
+- [`QUICKSTART.md`](QUICKSTART.md) — install, run, and operate via agents
 - [`ROADMAP.md`](ROADMAP.md) — phased plan with checkboxes
 - [`PROGRESS.md`](PROGRESS.md) — running progress journal
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — architecture + diagrams
-- [`DECISIONS.md`](DECISIONS.md) — architecture decision records (ADRs)
-- [`docs/SCHEMA.md`](docs/SCHEMA.md) — SWAT+ `gis_*` table contracts
-- [`docs/INTEGRATION.md`](docs/INTEGRATION.md) — plugging into AI‑Hydro and other agent frameworks
-- [`docs/REFERENCES.md`](docs/REFERENCES.md) — reverse‑engineering notes on QSWATPlus / SWAT+ Editor
+- [`DECISIONS.md`](DECISIONS.md) — architecture decision records
+- [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md) — implemented negotiate → run → evidence flow
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — system architecture
 
 ---
 
-## Soil Fidelity Flags
+## Authoritative calibration path
 
-Every run now persists explicit soil realism metadata in `metadata.json`:
+The **lock → calibrate → verify** chain is the only scientifically defensible route to reported calibration metrics.
 
-- `soil_mode`: `high_fidelity` | `fallback` | `synthetic`
-- `pct_fallback_soils`: fraction of basin polygons that used fallback soil profiles
+```
+1. swat lock-benchmark     # snapshot baseline metrics + alignment CSV
+       ↓
+2. swat locked-calibrate   # real-engine DDS on CN2 + ALPHA_BF only
+       ↓                   # (calls verify automatically unless --skip-verify)
+3. metrics reported        # delta NSE/KGE vs locked baseline, independently verified
+```
 
-Behavior:
+**Rules** (enforced by the toolchain):
+- Parameters are restricted to `CN2` and `ALPHA_BF` — no silent scope expansion.
+- Calibrated metrics are always delta-reported against the locked baseline.
+- `verify_calibration` is mandatory — it re-runs the best solution independently to confirm reproducibility.
+- `evaluate_run` is the authoritative metric source for all reporting.
 
-- If fallback usage exceeds 25% (default), the run emits a warning.
-- Threshold is configurable via `SWATPLUS_SOIL_FALLBACK_WARN_THRESHOLD`.
-- Generated figures include a visible quality annotation for fallback/synthetic runs.
+One-liner for agents:
+```bash
+swat locked-calibrate \
+  --benchmark-dir artifacts/locks/usgs_01547700/benchmark \
+  --base-txtinout TxtInOut/ \
+  --out-dir artifacts/calibration/ \
+  --json
+```
 
-Use `swat inspect <run_path>` to inspect persisted metadata for any run.
+### Bridge diagnostics (non-authoritative / fail-loud)
+
+The **pySWATPlus bridge** (`swat calibrate --calibration-engine pyswatplus`) is a secondary calibration path. When it fails, it writes a structured `bridge_failure_diagnostic.json` artifact (timestamp, traceback, staged file manifest, failure stage) and exits non-zero. Do not rely on raw bridge objective values for reporting — the bridge metric parity layer redirects all reported metrics through `evaluate_run`.
+
+**If the bridge path fails:** check `bridge_failure_diagnostic.json` under the calibration artifacts directory. The real-engine path (`swat calibrate --real-engine` or `swat locked-calibrate`) is the currently reliable authoritative route.
 
 ---
 
@@ -53,7 +93,7 @@ Use `swat inspect <run_path>` to inspect persisted metadata for any run.
 # Core only
 pip install swatplus-builder
 
-# With the GIS stack (recommended for actually running anything)
+# With GIS stack (recommended)
 pip install "swatplus-builder[gis]"
 
 # With HyRiver helpers (USGS gauges, NHDPlus, py3dep, GridMET)
@@ -63,40 +103,140 @@ pip install "swatplus-builder[gis,hyriver]"
 pip install -e ".[all]"
 ```
 
-SWAT+ engine binary and reference databases are fetched by bootstrap scripts (see `scripts/`). They are **not** pip dependencies.
+SWAT+ engine binary is **not** a pip dependency — bring your own `swatplus_exe` and mount it at runtime.
+
+---
+
+## Container quick-start
+
+```bash
+# Build image
+docker compose build
+
+# Check runtime health (no binary mounted — expect degraded)
+docker compose run --rm swat health --json
+
+# Run with binary mounted
+SWATPLUS_BIN_DIR=/path/to/swatplus_dir docker compose run --rm swat version
+SWATPLUS_BIN_DIR=/path/to/swatplus_dir docker compose run --rm swat health
+
+# Run locked-calibrate inside container (artifacts persisted to ./artifacts/)
+SWATPLUS_BIN_DIR=/path/to/swatplus_dir docker compose run --rm swat \
+  locked-calibrate \
+  --benchmark-dir /data/artifacts/locks/usgs_01547700/benchmark \
+  --base-txtinout /data/TxtInOut \
+  --out-dir /data/artifacts/calibration \
+  --json
+
+# MCP stdio server (for agent connections)
+SWATPLUS_BIN_DIR=/path/to/swatplus_dir docker compose run --rm mcp
+```
+
+Volume mounts (configured in `docker-compose.yml`):
+- `./artifacts` → `/data/artifacts` (persisted run/calibration artifacts)
+- `$SWATPLUS_BIN_DIR` → `/opt/swatplus` (SWAT+ engine binary directory, read-only)
+- `$SWATPLUS_DATASETS_DIR` → `/data` (reference datasets SQLite)
 
 ---
 
 ## CLI (`swat`)
 
-The command is **`swat`** — not `swatplus-builder`, not `swatgen`. What users remember.
-
 ```bash
-# Full pipeline (one‑liner)
-swat build \
-  --dem dem.tif \
-  --lon -77.12 --lat 41.45 \
-  --landuse nlcd.tif --soil mukey.tif \
-  --weather weather/ \
-  --start 2000-01-01 --end 2010-12-31 \
-  --name marsh_creek -w runs/marsh_creek/
+# Version with git SHA
+swat version
+swat version --json   # machine-readable
 
-# Or step by step
-swat watershed --dem dem.tif --lon -77.12 --lat 41.45  -w runs/marsh_creek/
-swat hrus      --landuse nlcd.tif --soil mukey.tif      -w runs/marsh_creek/
-swat project   --weather weather/ --start 2000-01-01 --end 2010-12-31 --name marsh_creek -w runs/marsh_creek/
-swat run       -w runs/marsh_creek/
+# Runtime health check (deterministic exit codes: 0=healthy, 1=degraded, 2=unhealthy)
+swat health
+swat health --json
 
-# Launch MCP server
-swat-mcp
+# Full pipeline (one-liner for existing TxtInOut)
+swat run --txtinout TxtInOut/ --threads 4
 
-# Benchmark validation over a basin suite JSON
+# Locked-benchmark protocol
+swat lock-benchmark \
+  --txtinout TxtInOut/ \
+  --observed-csv observed.csv \
+  --out-dir artifacts/locks/my_basin \
+  --basin-id usgs_01547700
+
+swat locked-calibrate \
+  --benchmark-dir artifacts/locks/my_basin/benchmark \
+  --base-txtinout TxtInOut/ \
+  --out-dir artifacts/calibration/my_basin \
+  --parameters CN2,ALPHA_BF \
+  --json
+
+# Multi-basin readiness table
+swat readiness-table --locks-root artifacts/locks/ --json
+
+# Inspect persisted run metadata
+swat inspect <run_path>
+
+# Benchmark validation over a basin suite
 swat validate --basins basins/curated_v1.json
+
+# Launch MCP server (stdio)
+swat mcp
 ```
+
+### Exit-code contract
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | Runtime / engine failure (external tool failed, bridge error) |
+| 2 | User / config error (bad arguments, missing required files, unknown parameters) |
+| 3 | Quality gate failure (e.g., `--min-improvement-nse` not met) |
 
 ---
 
-## Agent‑facing API (4 tools)
+## MCP server — 11-tool surface
+
+```bash
+pip install "swatplus-builder[mcp]"
+swat mcp   # stdio transport
+```
+
+MCP client config (Claude Desktop / Cursor / any MCP host):
+
+```json
+{
+  "mcpServers": {
+    "swatplus-builder": {
+      "command": "swat",
+      "args": ["mcp"],
+      "env": {
+        "SWATPLUS_EXE": "/usr/local/bin/swatplus_exe",
+        "SWATPLUS_BUILDER_ARTIFACTS": "/data/artifacts"
+      }
+    }
+  }
+}
+```
+
+Tool tiers:
+
+**Tier 1 — Basin workflow** (8 tools): `build_project`, `run_basin`, `calibrate`, `propose_parameters`, `compare_runs`, `query_artifacts`, `diagnose_failure`, `validate`
+
+**Tier 2 — Benchmark / readiness** (3 tools): `lock_benchmark`, `locked_calibrate`, `readiness_table`
+
+---
+
+## Soil fidelity flags
+
+Every run persists soil realism metadata in `metadata.json`:
+
+- `soil_mode`: `high_fidelity` | `fallback` | `synthetic`
+- `pct_fallback_soils`: fraction of basin polygons using fallback soil profiles
+
+Fallback usage >25% emits a warning. Threshold configurable via `SWATPLUS_SOIL_FALLBACK_WARN_THRESHOLD`. Generated figures include a visible quality annotation for fallback/synthetic runs.
+
+Use `swat inspect <run_path>` to view persisted metadata.
+
+---
+
+## Agent-facing API
 
 ```python
 from swatplus_builder.tools import (
@@ -108,67 +248,60 @@ from swatplus_builder.tools import (
 
 ws = build_watershed(
     dem_path="data/dem.tif",
-    outlet=(-77.123, 41.456),         # or usgs_id="01547700"
+    outlet=(-77.123, 41.456),
     stream_threshold_cells=500,
     workdir="runs/marsh_creek/",
 )
 
-hrus = create_hrus(
-    watershed=ws,
-    landuse_raster="data/nlcd_2019.tif",
-    soil_raster="data/gnatsgo_mukey.tif",
-)
-
-project = generate_swat_project(
-    watershed=ws,
-    hrus=hrus,
-    weather_dir="data/weather/",
-    sim_start="2000-01-01",
-    sim_end="2010-12-31",
-    project_name="marsh_creek_v1",
-)
-
+hrus = create_hrus(ws, "data/nlcd_2019.tif", "data/gnatsgo_mukey.tif")
+project = generate_swat_project(ws, hrus, "data/weather/", "2000-01-01", "2010-12-31", "marsh_creek_v1")
 result = run_swat(project, threads=4)
-print(result.summary)
 ```
 
-Every function is **pure, stateless, file‑system‑side‑effect‑only**. No Qt event loop, no global QGIS init, no hidden state. Safe to call concurrently on different `workdir`s.
+Locked-benchmark API (for direct Python use):
+
+```python
+from swatplus_builder.calibration.locked_benchmark import (
+    lock_benchmark,
+    calibrate_against_lock,
+    verify_calibration,
+    build_readiness_table,
+)
+
+lock = lock_benchmark(txtinout_dir, obs_series, out_dir, basin_id="usgs_01547700", outlet_gis_id=1)
+evidence = calibrate_against_lock(lock, base_txtinout, out_dir, parameters=["CN2", "ALPHA_BF"])
+result = verify_calibration(lock, evidence.best_solution_json, base_txtinout, out_dir)
+rows = build_readiness_table(locks_root)
+```
 
 ---
 
-## MCP server (plug into any MCP host)
+## Phase 3E calibration evidence baseline
 
-```bash
-pip install "swatplus-builder[mcp]"
-swat-mcp   # stdio transport
-```
+As of 2026-04-25, the locked real-engine calibration protocol has been run and independently verified on two USGS basins (CN2 + ALPHA_BF only, real-engine DDS):
 
-MCP client config (Claude Desktop / Cursor / Continue / any MCP host):
+| Basin | Baseline NSE | Calibrated NSE | ΔNSE | Baseline KGE | Calibrated KGE | ΔKGE | Status |
+|-------|-------------|----------------|------|-------------|----------------|------|--------|
+| `usgs_01547700` | 0.1256 | **0.2107** | +0.085 | 0.036 | **0.116** | +0.080 | PASS |
+| `usgs_03339000` | 0.0618 | **0.3192** | +0.257 | -0.097 | **0.187** | +0.284 | PASS |
 
-```json
-{
-  "mcpServers": {
-    "swatplus-builder": {
-      "command": "swat-mcp",
-      "args": [],
-      "env": {
-        "SWATGEN_REFERENCE_DB_DIR": "~/.swatplus-builder/reference_dbs",
-        "SWATPLUS_EXE": "/usr/local/bin/swatplus"
-      }
-    }
-  }
-}
-```
+Both basins: independently verified (re-run of best solution, not calibration-loop metrics). Evidence bundle: `tests/_artifacts/phase3e_readiness/real_engine_bundle_20260425/`.
 
-See `docs/INTEGRATION.md` for AI‑Hydro‑specific wiring and LangChain / LangGraph adapters.
+> **Note:** the current canonical path is `swat workflow run` (see
+> [`QUICKSTART.md`](QUICKSTART.md)); the `lock-benchmark` / `locked-calibrate`
+> commands above remain valid lower-level primitives. For the current honest
+> validation status across the basin suite, see
+> [`docs/PIPELINE_RESEARCH_GRADE_AUDIT.md`](docs/PIPELINE_RESEARCH_GRADE_AUDIT.md).
+
+**Honest caveats:** NSE < 0.5 for both basins — improvement is real and verified but absolute skill is not yet benchmark-grade. Physical realism work (soil conductivity, routing) is needed before positive-skill claims. pySWATPlus bridge is non-authoritative until bridge stability is proven.
 
 ---
 
 ## What this package does NOT do
 
-- **It does not wrap QGIS.** If you need byte‑for‑byte QSWATPlus parity, use QSWATPlus. We aim for numerical agreement within a few percent.
-- **It does not replace `pySWATPlus`.** `pySWATPlus` reads/edits an existing `TxtInOut` and runs calibrations. `swatplus-builder` builds the `TxtInOut` in the first place. They are complementary.
-- **It does not ship the SWAT+ engine.** You bring your own `swatplus` executable.
+- **No QGIS.** If you need byte-for-byte QSWATPlus parity, use QSWATPlus. We aim for numerical agreement within a few percent.
+- **No pySWATPlus replacement.** pySWATPlus edits an existing `TxtInOut` and runs calibrations. swatplus-builder builds the `TxtInOut`. They are complementary.
+- **No SWAT+ engine bundled.** Bring your own `swatplus_exe` and mount it at runtime.
 
 ---
 
@@ -176,4 +309,4 @@ See `docs/INTEGRATION.md` for AI‑Hydro‑specific wiring and LangChain / LangG
 
 MIT. See [LICENSE](LICENSE).
 
-Vendored: [`swat-model/swatplus-editor`](https://github.com/swat-model/swatplus-editor) (Apache‑2.0, pinned commit in `docs/REFERENCES.md`). Reference databases downloaded at install time from the `ai-hydro/swatplus-reference-data` mirror.
+Vendored: [`swat-model/swatplus-editor`](https://github.com/swat-model/swatplus-editor) (Apache-2.0). Reference databases downloaded at install time from the `ai-hydro/swatplus-reference-data` mirror. pySWATPlus is GPL-3.0 and is an optional dependency — see `DECISIONS.md` for the licensing posture.

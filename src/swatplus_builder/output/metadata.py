@@ -34,6 +34,8 @@ class RunMetadata(BaseModel):
     input_hashes: dict[str, str] = Field(default_factory=dict)
     weather_source: str | None = Field(default=None)
     weather_coverage_flags: dict[str, Any] = Field(default_factory=dict)
+    lte_hru_channel_scale_correction: float | None = Field(default=None)
+    lte_hru_channel_scale_correction_reason: str | None = Field(default=None)
     notes: list[str] = Field(default_factory=list)
 
 

@@ -12,6 +12,11 @@ venv/
 env/
 .python-version
 .ipynb_checkpoints/
+.claude/
+demo_runs/
+docs/
+
+
 
 # Editors / OS
 .vscode/
@@ -62,11 +67,25 @@ simulation.out
 area_calc.out
 files_out.out
 erosion.txt
+docs/
 
 # Local working docs (authoritative docs live elsewhere)
 docs/DECISIONS.md
 docs/PROGRESS.md
 docs/TROUBLESHOOTING_AND_WORKFLOW.md
+
+# Planning / phase docs — local only, never commit
+PROGRESS.md
+DECISIONS.md
+ROADMAP.md
+SKILL.md
+BACKLOG.md
+PHASE_*.md
+*_PLAN.md
+*_CLOSEOUT.md
+*_READINESS.md
+CALIBRATION_PLAN*.md
+handover_docs.md
 
 # Local-only notes (never commit)
 local-docs/
@@ -90,3 +109,29 @@ src/swatplus_builder/editor/vendored/database/output/
 
 # Local test artifacts
 tests/_artifacts/
+
+# Build artifacts and test data
+multibasin_test/
+demo_runs/
+docs/
+Research_article/
+SWATplus_original_docs/
+.codebuddy/
+.claude/
+**/__pycache__/
+
+# SWAT+ temp files
+codes.bsn
+.commandcode/
+
+tests/_artifacts/
+
+
+
+
+# Build/test artifact directories
+basins/
+examples/build_real_basin.py
+examples/real_basin_marsh_creek.py
+PROGRESS.md
+PLAYBOOK.md

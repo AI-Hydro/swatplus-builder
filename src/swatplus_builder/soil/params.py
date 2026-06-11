@@ -111,9 +111,13 @@ def collapse_dual_hyd_group(code: str | None) -> HydGroup:
     Raises:
         SwatBuilderInputError: unrecognized code (e.g. ``"E"``).
     """
-    if code is None or code == "":
+    if code is None:
         return "D"
-    code = code.strip().upper()
+    if isinstance(code, float) and math.isnan(code):
+        return "D"
+    code = str(code).strip().upper()
+    if code in {"", "NAN", "NONE", "NULL"}:
+        return "D"
     if code in {"A", "B", "C", "D"}:
         return code  # type: ignore[return-value]
     if "/" in code:
