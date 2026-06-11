@@ -1,0 +1,35 @@
+cff-version: 1.2.0
+message: >-
+  If you use swatplus-builder in your research, please cite it using
+  the metadata in this file. When reporting a specific result, also
+  cite the run's provenance hash from evidence_summary.json so the
+  claim is traceable to the exact run.
+title: "swatplus-builder: Build and calibrate SWAT+ hydrologic models from a USGS gauge ID — with evidence-backed, claim-governed results"
+version: 0.4.0
+date-released: "2026-06-11"
+license: MIT
+repository-code: "https://github.com/AI-Hydro/swatplus-builder"
+url: "https://ai-hydro.github.io/swatplus-builder/"
+authors:
+  - family-names: Galib
+    given-names: Mohammad
+    affiliation: Purdue University
+abstract: >-
+  swatplus-builder builds and calibrates SWAT+ hydrologic models in Python,
+  starting from one USGS streamgage ID. The software, not the operator,
+  decides what each result is allowed to claim — through runtime gates,
+  provenance tracking, locked reruns, and evidence-backed claim tiers.
+  The pipeline runs with no desktop GIS (no QGIS) and exposes an
+  11-tool MCP surface for AI agent operation.
+keywords:
+  - SWAT+
+  - hydrology
+  - watershed modeling
+  - calibration
+  - claim governance
+  - GIS
+  - Python
+  - MCP
+  - AI agents
+  - streamflow
+  - USGS

@@ -12,7 +12,7 @@ requires-python = ">=3.10,<3.14"
 authors = [{ name = "Mohammad Galib" }]
 keywords = ["swat+", "swatplus", "hydrology", "gis", "calibration", "watershed", "hru", "mcp", "claim-governance"]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
@@ -99,9 +99,10 @@ docs = [
 all = ["swatplus-builder[gis,hyriver,gridmet,soils,mcp,swatplus,viz,dev,docs]"]
 
 [project.urls]
-Homepage = "https://github.com/ai-hydro/swatplus-builder"
-Issues = "https://github.com/ai-hydro/swatplus-builder/issues"
+Homepage = "https://github.com/AI-Hydro/swatplus-builder"
 Documentation = "https://ai-hydro.github.io/swatplus-builder/"
+Issues = "https://github.com/AI-Hydro/swatplus-builder/issues"
+Changelog = "https://github.com/AI-Hydro/swatplus-builder/blob/main/CHANGELOG.md"
 
 # ---- CLI entry points ----
 # The command is `swat` (memorable, short). Subcommands: build, run, watershed, hrus, project, mcp.
