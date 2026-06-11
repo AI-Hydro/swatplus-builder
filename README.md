@@ -1,10 +1,17 @@
 # swatplus-builder
 
-> Headless, agent-friendly SWAT+ framework (no QGIS) — scientifically defensible basin modelling at agent speed.
+> **Calibrated SWAT+ models from a single gauge ID — with evidence you can audit.**
 
-`swatplus-builder` produces valid SWAT+ model inputs from GIS primitives (DEM, land use, soil, weather) entirely in Python. It is designed to be operated by AI agents via MCP or from the `swat` CLI in notebooks and CI pipelines, and embeds a complete locked-benchmark calibration protocol for reproducible, auditable results.
+`swatplus-builder` builds and calibrates SWAT+ hydrologic models in Python,
+starting from one USGS streamgage ID. It can be driven by a person or by an AI
+agent — and either way, the **software, not the operator, decides what each
+result is allowed to claim**, through runtime gates, provenance, locked reruns,
+and evidence-backed claim tiers.
 
-The package deliberately **avoids QGIS, PyQGIS, and the QSWATPlus plugin**. GIS work is done with WhiteboxTools + rasterio + geopandas. The SQLite → `TxtInOut` translation uses the vendored [SWAT+ Editor Python API](https://github.com/swat-model/swatplus-editor).
+The whole pipeline runs in Python with **no desktop GIS** — no QGIS, PyQGIS, or
+the QSWATPlus plugin. GIS work uses WhiteboxTools + rasterio + geopandas, and
+the SQLite → `TxtInOut` translation uses the vendored
+[SWAT+ Editor Python API](https://github.com/swat-model/swatplus-editor).
 
 > **📚 Full documentation: <https://ai-hydro.github.io/swatplus-builder/>**
 > Concepts (claim governance, locked calibration, the evidence bundle), a user
@@ -31,7 +38,7 @@ agent — decides what may be claimed.
 
 ## Status
 
-**Alpha, v0.4.0** — Agent-native, locked-benchmark calibration, 11-tool MCP surface, container baseline.
+**Alpha, v0.4.0** — locked-benchmark calibration, 11-tool agent (MCP) surface, container baseline.
 
 - [x] Pure-Python GIS (WhiteboxTools, rasterio, geopandas)
 - [x] Automated SWAT+ project generation
