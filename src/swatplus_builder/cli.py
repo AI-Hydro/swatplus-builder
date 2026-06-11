@@ -22,6 +22,8 @@ from __future__ import annotations
 import typer
 from rich import print as rprint
 import json
+import contextlib
+import os
 
 from . import __version__
 import sys
@@ -38,6 +40,224 @@ app = typer.Typer(
     no_args_is_help=True,
     rich_markup_mode="markdown",
 )
+workflow_app = typer.Typer(
+    name="workflow",
+    help="Agent-governed workflow commands (negotiate/run).",
+    no_args_is_help=True,
+)
+app.add_typer(workflow_app, name="workflow")
+
+
+class _DiscardingBuffer:
+    closed = False
+    _devnull_fd: int | None = None
+
+    def write(self, data) -> int:
+        return len(data)
+
+    def writelines(self, lines) -> None:
+        for line in lines:
+            self.write(line)
+
+    def flush(self) -> None:
+        return None
+
+    def isatty(self) -> bool:
+        return False
+
+    def readable(self) -> bool:
+        return False
+
+    def writable(self) -> bool:
+        return True
+
+    def seekable(self) -> bool:
+        return False
+
+    def fileno(self) -> int:
+        if self.__class__._devnull_fd is None:
+            self.__class__._devnull_fd = os.open(os.devnull, os.O_WRONLY)
+        return self.__class__._devnull_fd
+
+    def close(self) -> None:
+        return None
+
+
+class _DiscardingTextIO:
+    """Non-closing text sink for JSON-mode workflow internals."""
+
+    encoding = "utf-8"
+    errors = "replace"
+    closed = False
+    line_buffering = False
+    newlines = None
+    name = os.devnull
+    mode = "w"
+    _devnull_fd: int | None = None
+
+    def __init__(self) -> None:
+        self.buffer = _DiscardingBuffer()
+
+    def write(self, _text) -> int:
+        return len(_text)
+
+    def writelines(self, lines) -> None:
+        for line in lines:
+            self.write(str(line))
+
+    def flush(self) -> None:
+        return None
+
+    def isatty(self) -> bool:
+        return False
+
+    def readable(self) -> bool:
+        return False
+
+    def writable(self) -> bool:
+        return True
+
+    def seekable(self) -> bool:
+        return False
+
+    def fileno(self) -> int:
+        if self.__class__._devnull_fd is None:
+            self.__class__._devnull_fd = os.open(os.devnull, os.O_WRONLY)
+        return self.__class__._devnull_fd
+
+    def close(self) -> None:
+        return None
+
+
+class _FdBuffer:
+    closed = False
+
+    def __init__(self, fd: int) -> None:
+        self._fd = fd
+        self._write = os.write
+
+    def write(self, data) -> int:
+        if isinstance(data, str):
+            data = data.encode("utf-8", "replace")
+        payload = bytes(data)
+        self._write(self._fd, payload)
+        return len(payload)
+
+    def writelines(self, lines) -> None:
+        for line in lines:
+            self.write(line)
+
+    def flush(self) -> None:
+        return None
+
+    def isatty(self) -> bool:
+        return False
+
+    def readable(self) -> bool:
+        return False
+
+    def writable(self) -> bool:
+        return True
+
+    def seekable(self) -> bool:
+        return False
+
+    def fileno(self) -> int:
+        return self._fd
+
+    def close(self) -> None:
+        return None
+
+
+class _FdTextIO:
+    """Non-closing stream that routes late shutdown chatter to a log file."""
+
+    encoding = "utf-8"
+    errors = "replace"
+    closed = False
+    line_buffering = False
+    newlines = None
+    mode = "a"
+
+    def __init__(self, path: str) -> None:
+        self.name = path
+        self._fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+        self._write = os.write
+        self.buffer = _FdBuffer(self._fd)
+
+    def write(self, text) -> int:
+        payload = str(text)
+        data = payload.encode("utf-8", "replace")
+        self._write(self._fd, data)
+        return len(payload)
+
+    def writelines(self, lines) -> None:
+        for line in lines:
+            self.write(line)
+
+    def flush(self) -> None:
+        return None
+
+    def isatty(self) -> bool:
+        return False
+
+    def readable(self) -> bool:
+        return False
+
+    def writable(self) -> bool:
+        return True
+
+    def seekable(self) -> bool:
+        return False
+
+    def fileno(self) -> int:
+        return self._fd
+
+    def close(self) -> None:
+        return None
+
+
+@contextlib.contextmanager
+def _quiet_json_workflow_streams():
+    """Suppress noisy workflow internals without closing retained streams."""
+
+    with contextlib.redirect_stdout(_DiscardingTextIO()), contextlib.redirect_stderr(
+        _DiscardingTextIO()
+    ):
+        yield
+
+
+def _prepare_json_shutdown_stream_logs(artifact_dir: str) -> dict[str, str]:
+    from pathlib import Path as _Path
+
+    logs = _Path(artifact_dir).expanduser().resolve() / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    return {
+        "stdout": str(logs / "json_shutdown_stdout.log"),
+        "stderr": str(logs / "json_shutdown_stderr.log"),
+    }
+
+
+def _redirect_json_shutdown_streams(paths: dict[str, str], *, redirect_fds: bool = False) -> None:
+    """Keep final stdout JSON parseable if libraries write during shutdown.
+
+    In-process test runners replace ``sys.stdout``/``sys.stderr`` with capture
+    objects. Only replace the process-owned streams used by real CLI
+    invocations.
+    """
+
+    if sys.stdout is sys.__stdout__:
+        stdout = _FdTextIO(paths["stdout"])
+        sys.stdout = stdout
+        if redirect_fds:
+            sys.__stdout__ = stdout
+            os.dup2(stdout.fileno(), 1)
+    if sys.stderr is sys.__stderr__:
+        stderr = _FdTextIO(paths["stderr"])
+        sys.stderr = stderr
+        if redirect_fds:
+            sys.__stderr__ = stderr
+            os.dup2(stderr.fileno(), 2)
 
 
 def _git_sha(length: int = 8) -> str:
@@ -285,7 +505,12 @@ def cmd_watershed(
 
     Writes shapefiles, routing GraphML, and a WatershedResult manifest to WORKDIR.
     """
-    raise typer.Exit("Not implemented yet (Phase 1). See docs/ROADMAP.md §1.2.")
+    typer.echo(
+        "swat watershed is not yet available as a standalone command.\n"
+        "Use 'swat workflow run --usgs-id <ID>' for the full end-to-end pipeline,\n"
+        "or see the documentation at https://ai-hydro.github.io/swatplus-builder/"
+    )
+    raise typer.Exit(code=1)
 
 
 @app.command("hrus")
@@ -296,7 +521,12 @@ def cmd_hrus(
     slope_bands: str = typer.Option("5,15", "--slope-bands", help="Comma-separated slope breakpoints (degrees)."),
 ) -> None:
     """Build HRUs by LU × Soil × Slope overlay within each landscape unit."""
-    raise typer.Exit("Not implemented yet (Phase 1). See docs/ROADMAP.md §1.2.")
+    typer.echo(
+        "swat hrus is not yet available as a standalone command.\n"
+        "Use 'swat workflow run --usgs-id <ID>' for the full end-to-end pipeline,\n"
+        "or see the documentation at https://ai-hydro.github.io/swatplus-builder/"
+    )
+    raise typer.Exit(code=1)
 
 
 @app.command("project")
@@ -308,7 +538,12 @@ def cmd_project(
     name: str = typer.Option(..., "--name", "-n", help="Project name (becomes <name>.sqlite)."),
 ) -> None:
     """Build a complete SWAT+ project: gis_* tables → import_gis → write_files → TxtInOut."""
-    raise typer.Exit("Not implemented yet (Phase 1). See docs/ROADMAP.md §1.4.")
+    typer.echo(
+        "swat project is not yet available as a standalone command.\n"
+        "Use 'swat workflow run --usgs-id <ID>' for the full end-to-end pipeline,\n"
+        "or see the documentation at https://ai-hydro.github.io/swatplus-builder/"
+    )
+    raise typer.Exit(code=1)
 
 
 @app.command("run")
@@ -897,7 +1132,12 @@ def cmd_build(
 
     The one-liner for agents and CI. Equivalent to calling each subcommand in sequence.
     """
-    raise typer.Exit("Not implemented yet (Phase 1). See docs/ROADMAP.md §1.7.")
+    typer.echo(
+        "swat build is not yet available as a standalone command.\n"
+        "Use 'swat workflow run --usgs-id <ID>' for the full end-to-end pipeline,\n"
+        "or see the documentation at https://ai-hydro.github.io/swatplus-builder/"
+    )
+    raise typer.Exit(code=1)
 
 
 @app.command("sensitivity")
@@ -1078,6 +1318,16 @@ def cmd_lock_benchmark(
         "--sim-source-file",
         help="Objective sim output file name inside TxtInOut.",
     ),
+    virtual_all_terminal_outlet: bool = typer.Option(
+        False,
+        "--virtual-all-terminal-outlet",
+        help="Lock an explicit virtual outlet formed by summing all terminal channels.",
+    ),
+    virtual_outlet_authority: str = typer.Option(
+        None,
+        "--virtual-outlet-authority",
+        help="Required authority/justification when --virtual-all-terminal-outlet is used.",
+    ),
     json_output: bool = typer.Option(
         False, "--json", help="Emit machine-readable JSON to stdout (suppresses rich output)."
     ),
@@ -1112,6 +1362,10 @@ def cmd_lock_benchmark(
             basin_id=basin_id,
             outlet_gis_id=outlet_gis_id,
             sim_source_file=sim_source_file,
+            virtual_outlet_policy=(
+                "all_terminal_sum" if virtual_all_terminal_outlet else "none"
+            ),
+            virtual_outlet_authority=virtual_outlet_authority,
         )
     except SwatBuilderError as exc:
         if json_output:
@@ -1356,6 +1610,141 @@ def cmd_realism_audit(
         for p in a.pathologies:
             rprint(f"    [yellow]![/yellow] {p}")
     rprint(f"\n[green]report[/green] → {out_dir}")
+
+
+@workflow_app.command("negotiate")
+def cmd_workflow_negotiate(
+    task: str = typer.Option(..., "--task", help="Natural-language workflow request."),
+    out_dir: str = typer.Option(
+        "demo_runs/contracts/latest",
+        "--out-dir",
+        help="Directory to write workflow_contract.json and WORKFLOW_CONTRACT.md.",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Emit contract JSON."),
+) -> None:
+    """Negotiate a typed workflow contract from a task description."""
+    from pathlib import Path as _P
+
+    from .workflows.contracts import negotiate_workflow, write_contract
+
+    contract = negotiate_workflow(task)
+    contract_json, contract_md = write_contract(contract, _P(out_dir).expanduser().resolve())
+    payload = {
+        "status": contract.status,
+        "workflow_contract_json": str(contract_json),
+        "workflow_contract_md": str(contract_md),
+        "usgs_id": contract.usgs_id,
+        "start": contract.start,
+        "end": contract.end,
+        "claim_tier": contract.claim_tier,
+        "contract_status": contract.contract_status,
+        "accepted_by": contract.accepted_by,
+        "needs_input": contract.needs_input,
+        "policy_issues": contract.policy_issues,
+    }
+    if json_output:
+        print(json.dumps(payload, indent=2))
+        return
+    rprint(f"[bold]workflow negotiate[/bold] -> {contract.status}")
+    rprint(f"  contract_json={contract_json}")
+    rprint(f"  contract_md={contract_md}")
+
+
+@workflow_app.command("run")
+def cmd_workflow_run(
+    usgs_id: str = typer.Option(..., "--usgs-id", help="USGS streamgage ID."),
+    model_family: str = typer.Option(
+        "full",
+        "--model-family",
+        help="SWAT+ model family: full or lte.",
+    ),
+    start: str = typer.Option("2000-01-01", "--start", help="Simulation start date."),
+    end: str = typer.Option("2019-12-31", "--end", help="Simulation end date."),
+    out_dir: str = typer.Option("demo_runs/workflow/latest", "--out-dir"),
+    warmup_years: int = typer.Option(3, "--warmup-years"),
+    calibrate: bool = typer.Option(True, "--calibrate/--no-calibrate"),
+    claim_tier: str = typer.Option("diagnostic", "--claim-tier"),
+    contract: str = typer.Option(None, "--contract", help="Path to workflow_contract.json."),
+    contract_status: str | None = typer.Option(
+        None,
+        "--contract-status",
+        help="Runtime contract status override, e.g. accepted or executed.",
+    ),
+    accepted_by: str | None = typer.Option(
+        None,
+        "--accepted-by",
+        help="Who accepted the contract: user, policy, or agent.",
+    ),
+    virtual_all_terminal_outlet: bool = typer.Option(
+        False,
+        "--virtual-all-terminal-outlet",
+        help="Relock the workflow benchmark as an explicit all-terminal virtual outlet experiment.",
+    ),
+    virtual_outlet_authority: str | None = typer.Option(
+        None,
+        "--virtual-outlet-authority",
+        help="Required authority/justification when --virtual-all-terminal-outlet is used.",
+    ),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Run the canonical agent-governed USGS workflow."""
+    from pathlib import Path as _P
+
+    from .workflows.usgs_e2e import RunUSGSWorkflowRequest, run_usgs_workflow
+
+    family = model_family.strip().lower()
+    if family not in {"full", "lte"}:
+        rprint("[red]error:[/red] --model-family must be one of: full, lte")
+        raise typer.Exit(2)
+
+    contract_path = None
+    if contract:
+        p = _P(contract).expanduser().resolve()
+        if p.exists():
+            contract_path = str(p)
+            raw = json.loads(p.read_text(encoding="utf-8"))
+            contract_status = contract_status or raw.get("contract_status")
+            accepted_by = accepted_by or raw.get("accepted_by")
+            claim_tier = str(raw.get("claim_tier") or claim_tier)
+
+    req = RunUSGSWorkflowRequest(
+        usgs_id=usgs_id,
+        out_dir=_P(out_dir).expanduser().resolve(),
+        model_family=family,
+        start=start,
+        end=end,
+        warmup_years=warmup_years,
+        claim_tier=claim_tier,
+        contract_status=contract_status,
+        accepted_by=accepted_by,
+        contract_path=contract_path,
+        calibrate=calibrate,
+        virtual_all_terminal_outlet=virtual_all_terminal_outlet,
+        virtual_outlet_authority=virtual_outlet_authority,
+    )
+    if json_output:
+        with _quiet_json_workflow_streams():
+            res = run_usgs_workflow(req)
+    else:
+        res = run_usgs_workflow(req)
+    payload = {
+        "success": res.success,
+        "run_id": res.run_id,
+        "artifact_dir": res.artifact_dir,
+        "evidence_summary_path": res.evidence_summary_path,
+        "blocker_class": res.blocker_class,
+        "values": dict(res.values),
+    }
+    if json_output:
+        shutdown_stream_logs = _prepare_json_shutdown_stream_logs(res.artifact_dir)
+        payload["values"]["json_shutdown_stream_logs"] = shutdown_stream_logs
+        print(json.dumps(payload, indent=2))
+        sys.stdout.flush()
+        sys.stderr.flush()
+        _redirect_json_shutdown_streams(shutdown_stream_logs, redirect_fds=True)
+        return
+    rprint(f"[bold]workflow run[/bold] success={res.success} run_id={res.run_id}")
+    rprint(f"  evidence={res.evidence_summary_path}")
 
 
 if __name__ == "__main__":

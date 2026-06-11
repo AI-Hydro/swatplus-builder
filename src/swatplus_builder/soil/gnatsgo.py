@@ -573,15 +573,7 @@ def _build_profile_from_muaggatt(
     dp_tot_mm = dp_tot_cm * 10.0
 
     # Fixed layer strategy (consistency > "precision").
-    breaks_mm: list[float] = []
-    for b in _AGG_LAYER_BREAKS_MM:
-        if b < dp_tot_mm:
-            breaks_mm.append(float(b))
-    breaks_mm.append(float(dp_tot_mm))
-    # Ensure at least 2 layers.
-    if len(breaks_mm) < _AGG_MIN_LAYERS:
-        first = min(_AGG_LAYER_BREAKS_MM[0], dp_tot_mm)
-        breaks_mm = [float(first), float(dp_tot_mm)]
+    breaks_mm = _aggregate_layer_breaks(float(dp_tot_mm))
 
     # Cumulative AWS (cm water) to standard depths (cm soil).
     aws_25 = _num(row.get("aws025wta"), default=None) if row is not None else None
@@ -714,6 +706,28 @@ def _num(value: Any, *, default: float | None) -> float | None:
 def _ksat_mmph_for_hydgrp(hydgrp: str) -> float:
     # Very rough representative conductivity by HSG (A fast → D slow).
     return {"A": 50.0, "B": 20.0, "C": 8.0, "D": 2.0}.get(hydgrp.upper(), 2.0)
+
+
+def _aggregate_layer_breaks(dp_tot_mm: float) -> list[float]:
+    """Return strictly increasing aggregate soil-layer bottom depths."""
+    breaks: list[float] = []
+    for b in _AGG_LAYER_BREAKS_MM:
+        if b < dp_tot_mm:
+            breaks.append(float(b))
+    breaks.append(float(dp_tot_mm))
+
+    if len(breaks) < _AGG_MIN_LAYERS and dp_tot_mm > 1.0:
+        midpoint = max(1.0, dp_tot_mm / 2.0)
+        if midpoint < dp_tot_mm:
+            breaks.insert(0, float(midpoint))
+
+    strict: list[float] = []
+    last = 0.0
+    for depth in breaks:
+        if depth > last:
+            strict.append(float(depth))
+            last = float(depth)
+    return strict
 
 
 # ---------------------------------------------------------------------------

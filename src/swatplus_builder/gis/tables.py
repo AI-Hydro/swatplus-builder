@@ -493,18 +493,22 @@ def _build_routing_rows(
         )
         lsu_to_ch[sub_id] = ch_id
 
-    # --- LSU → CH (tot, 100%) ---
+    # --- LSU -> CH (sur + lat, 100% each) ---
     # The SWAT+ Editor's import_gis.insert_connections() queries gis_routing
     # for sourcecat='LSU' to populate rout_unit_con_out.  Without these rows
     # rout_unit.con gets out_tot=0 for every RTU, so no water ever enters
     # the stream network and the engine segfaults on travel-time calculation.
+    # Use explicit surface/lateral hydrograph routes. A single total-flow route
+    # plus explicit sur/lat routes double-counts water in sdc/chandeg full-mode
+    # runs, which is visible as surq_cha+latq_cha ~= 2 * wateryld.
     for lsu_id, ch_id in sorted(lsu_to_ch.items()):
-        routing.append(
-            RoutingRow(
-                sourceid=lsu_id, sourcecat="LSU", hyd_typ="tot",
-                sinkid=ch_id, sinkcat="CH", percent=100.0,
+        for hyd_typ in ("sur", "lat"):
+            routing.append(
+                RoutingRow(
+                    sourceid=lsu_id, sourcecat="LSU", hyd_typ=hyd_typ,
+                    sinkid=ch_id, sinkcat="CH", percent=100.0,
+                )
             )
-        )
 
     # --- CH → CH (tot, 100%) or CH → X for terminal ---
     for ch in channels:

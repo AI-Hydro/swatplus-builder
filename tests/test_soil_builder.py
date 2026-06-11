@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import patch
-from swatplus_builder.soil.builder import fetch_soil_profiles_result
+from swatplus_builder.soil.builder import fetch_soil_profiles_result, normalize_profile
 from swatplus_builder.soil.models import SoilConfig, SoilProfile
 from swatplus_builder.soil.params import horizon_from_chorizon
 
@@ -26,6 +26,50 @@ def test_every_mukey_gets_profile(dummy_settings):
             assert p.source == "synthetic_default"
         assert res.soil_report["coverage_pct"] == 1.0
         assert res.soil_report["aggregated"]["default_fallback"] == 2
+
+def test_normalize_profile_drops_duplicate_depths_and_renumbers():
+    profile = SoilProfile(
+        name="gnatsgo_658396",
+        hyd_grp="D",
+        description="shallow aggregate with duplicate zero-thickness layer",
+        source="pc_muaggatt",
+        layers=[dummy_layer(1, 30.0), dummy_layer(2, 30.0), dummy_layer(3, 100.0)],
+    )
+
+    normalized = normalize_profile(profile)
+
+    assert [layer.layer_num for layer in normalized.layers] == [1, 2]
+    assert [layer.dp for layer in normalized.layers] == [300.0, 1000.0]
+
+def test_fetch_soil_profiles_normalizes_duplicate_pc_layers_before_write(dummy_settings, tmp_path):
+    """A duplicate aggregate bottom depth must not force synthetic fallback."""
+    import sqlite3
+
+    from swatplus_builder.soil.writer import write_soils
+
+    with patch("swatplus_builder.soil.builder.fetch_aggregated_profiles") as mock_pc:
+        mock_pc.return_value = {
+            658396: SoilProfile(
+                name="gnatsgo_658396",
+                hyd_grp="D",
+                description="pc aggregate shallow profile",
+                source="pc_muaggatt",
+                layers=[dummy_layer(1, 30.0), dummy_layer(2, 30.0)],
+            )
+        }
+
+        res = fetch_soil_profiles_result(
+            [658396],
+            config=SoilConfig(use_sda=False),
+            settings=dummy_settings,
+        )
+
+    db = tmp_path / "project.sqlite"
+    sqlite3.connect(str(db)).close()
+    write_res = write_soils(res.profiles, db)
+
+    assert [layer.dp for layer in res.profiles[0].layers] == [300.0]
+    assert write_res.profiles_written == 1
 
 def test_sda_partial_enrichment(dummy_settings):
     """Test merging: SDA enriches some, Tier 1 left for the rest."""

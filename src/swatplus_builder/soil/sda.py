@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import json
 import logging
+import hashlib
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List
 
 import requests
+from shapely.geometry.base import BaseGeometry
 
+from swatplus_builder.errors import SwatBuilderExternalError
 from swatplus_builder.soil.models import SoilProfile, SoilConfig
 from swatplus_builder.soil.params import horizon_from_chorizon, collapse_dual_hyd_group
 
@@ -21,6 +24,102 @@ def _num(val: str | None, default: float) -> float:
         return float(val) if val is not None and val != '' else default
     except (ValueError, TypeError):
         return default
+
+def fetch_sda_mukeys_for_geometry(
+    geometry: BaseGeometry,
+    *,
+    cache_dir: Path | None = None,
+    timeout_s: float = 60.0,
+) -> list[int]:
+    """Fetch intersecting mukeys from USDA SDA for a WGS84 geometry.
+
+    This is a degraded fallback for the spatial soil-overlay stage when the
+    Planetary Computer gNATSGO raster service is unavailable. It can recover
+    real SDA horizon profiles for a representative mukey, but it does not
+    preserve rasterized soil heterogeneity and therefore cannot support a
+    research-grade soil provenance claim by itself.
+    """
+    if geometry.is_empty:
+        return []
+
+    wkt = geometry.simplify(0.0001, preserve_topology=True).wkt
+    cache_path = None
+    cache_key = hashlib.sha256(wkt.encode("utf-8")).hexdigest()
+    if cache_dir is not None:
+        cache_path = Path(cache_dir) / "sda_spatial_mukeys.json"
+        cached = _read_spatial_cache(cache_path)
+        if cache_key in cached:
+            return [int(v) for v in cached[cache_key]]
+
+    safe_wkt = wkt.replace("'", "''")
+    query = f"""
+    SELECT DISTINCT mukey
+    FROM SDA_Get_Mukey_from_intersection_with_WktWgs84('{safe_wkt}')
+    WHERE mukey IS NOT NULL
+    ORDER BY mukey
+    """
+
+    try:
+        resp = requests.post(
+            "https://sdmdataaccess.nrcs.usda.gov/Tabular/post.rest",
+            data={"query": query, "format": "JSON"},
+            timeout=float(timeout_s),
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+    except Exception as exc:
+        raise SwatBuilderExternalError(
+            f"SDA spatial mukey query failed: {exc}",
+            geometry_hash=cache_key,
+        ) from exc
+
+    rows = payload.get("Table", [])
+    mukeys: list[int] = []
+    for row in rows:
+        if not row:
+            continue
+        try:
+            mukeys.append(int(row[0]))
+        except (TypeError, ValueError):
+            continue
+    mukeys = sorted(set(mukeys))
+
+    if cache_path is not None:
+        cached = _read_spatial_cache(cache_path)
+        cached[cache_key] = mukeys
+        _write_spatial_cache(cache_path, cached)
+
+    return mukeys
+
+
+def _read_spatial_cache(path: Path) -> dict[str, list[int]]:
+    if not path.exists():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(raw, dict) or raw.get("_version") != CACHE_VERSION:
+        return {}
+    data = raw.get("data", {})
+    if not isinstance(data, dict):
+        return {}
+    return {
+        str(key): [int(v) for v in value]
+        for key, value in data.items()
+        if isinstance(value, list)
+    }
+
+
+def _write_spatial_cache(path: Path, data: dict[str, list[int]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "_version": CACHE_VERSION,
+        "_updated": datetime.now(timezone.utc).isoformat(),
+        "data": data,
+    }
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
 
 def fetch_sda_horizons(mukeys: List[int], config: SoilConfig, cache_dir: Path | None = None) -> dict[int, SoilProfile]:
     """Fetch rigorous soil horizons via USDA Soil Data Access API."""

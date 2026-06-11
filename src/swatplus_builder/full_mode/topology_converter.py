@@ -15,6 +15,8 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
+from .routing_fixes import _normalized_rout_unit_con_parts
+
 logger = logging.getLogger(__name__)
 
 
@@ -40,6 +42,7 @@ def convert_topology(
 
     # Idempotency: if already converted, return early
     if (tio / "chandeg.con").exists() and not (tio / "channel.con").exists():
+        _convert_rout_unit_con(tio)
         logger.info("Topology already converted — skipping: %s", tio)
         return tio
 
@@ -147,7 +150,7 @@ def _convert_channel_con_to_chandeg(tio: Path) -> None:
 
 
 def _convert_rout_unit_con(tio: Path) -> None:
-    """Replace cha→sdc in rout_unit.con obj_typ column."""
+    """Replace cha->sdc and avoid double-counted routing-unit water routes."""
     src = _require(tio, "rout_unit.con")
     lines = src.read_text().split("\n")
     if len(lines) < 3:
@@ -165,6 +168,7 @@ def _convert_rout_unit_con(tio: Path) -> None:
                 for i in range(13, len(parts)):
                     if parts[i] == "cha":
                         parts[i] = "sdc"
+                parts = _normalized_rout_unit_con_parts(parts)
             new_lines.append(" ".join(parts))
         else:
             new_lines.append(ln)

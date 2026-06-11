@@ -78,6 +78,10 @@ docs/TROUBLESHOOTING_AND_WORKFLOW.md
 PROGRESS.md
 DECISIONS.md
 ROADMAP.md
+!PROJECT.md
+!PROGRESS.md
+!DECISIONS.md
+!ROADMAP.md
 SKILL.md
 BACKLOG.md
 PHASE_*.md
@@ -113,7 +117,12 @@ tests/_artifacts/
 # Build artifacts and test data
 multibasin_test/
 demo_runs/
-docs/
+docs/*
+!docs/
+!docs/AGENT_WORKFLOW.md
+!docs/CALIBRATION_PARAMETER_REGISTRY.md
+!docs/PIPELINE_LEARNING_LOG.md
+!docs/PIPELINE_RESEARCH_GRADE_AUDIT.md
 Research_article/
 SWATplus_original_docs/
 .codebuddy/

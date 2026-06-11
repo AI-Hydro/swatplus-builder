@@ -5,12 +5,12 @@ build-backend = "hatchling.build"
 [project]
 name = "swatplus-builder"
 version = "0.4.0"
-description = "Headless, agent-friendly generator for SWAT+ project inputs (SQLite + TxtInOut) — no QGIS required."
+description = "Build and calibrate SWAT+ hydrologic models from a USGS gauge ID — with evidence-backed, claim-governed results."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10,<3.14"
 authors = [{ name = "Mohammad Galib" }]
-keywords = ["swat+", "swatplus", "hydrology", "gis", "headless", "agent", "mcp", "hru", "watershed"]
+keywords = ["swat+", "swatplus", "hydrology", "gis", "calibration", "watershed", "hru", "mcp", "claim-governance"]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Intended Audience :: Science/Research",

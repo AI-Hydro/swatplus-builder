@@ -3,7 +3,17 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from swatplus_builder.calibration.sensitivity_screen import screen_from_sensitivity_json, write_screen_artifacts
+from swatplus_builder.calibration.sensitivity_screen import (
+    screen_from_parameter_list,
+    screen_from_sensitivity_json,
+    write_screen_artifacts,
+)
+from swatplus_builder.params.governance import (
+    FULL_MODE_CORE_PARAMETERS,
+    FULL_MODE_EXTENDED_PARAMETERS,
+    full_mode_extended_screen_rows,
+    full_mode_screen_rows,
+)
 
 
 def test_screen_from_json_classifies_activity(tmp_path: Path):
@@ -35,3 +45,31 @@ def test_write_screen_artifacts(tmp_path: Path):
     j, m = write_screen_artifacts(r, tmp_path / "out")
     assert j.exists()
     assert m.exists()
+
+
+def test_screen_from_parameter_list_uses_full_mode_governance_defaults() -> None:
+    result = screen_from_parameter_list(list(FULL_MODE_CORE_PARAMETERS), basin_id="governed")
+    expected = {row["parameter"]: row["activity_class"] for row in full_mode_screen_rows()}
+    actual = {row.parameter: row.activity_class for row in result.parameters}
+
+    assert actual == expected
+    assert actual["CN2"] == "active"
+    assert actual["GW_DELAY"] == "dead"
+    assert result.parameters[0].evidence["claim_tier_allowance"]
+    assert "governance defaults" in result.warnings[0]
+
+
+def test_extended_process_controls_have_governed_screen_rows() -> None:
+    result = screen_from_parameter_list(list(FULL_MODE_EXTENDED_PARAMETERS), basin_id="process")
+    expected = {row["parameter"]: row["activity_class"] for row in full_mode_extended_screen_rows()}
+    actual = {row.parameter: row.activity_class for row in result.parameters}
+
+    assert actual == expected
+    assert actual == {
+        "SFTMP": "weak",
+        "SMTMP": "weak",
+        "LAT_TTIME": "not_tested",
+        "CN3_SWF": "not_tested",
+        "CH_N2": "not_tested",
+        "CH_K2": "not_tested",
+    }

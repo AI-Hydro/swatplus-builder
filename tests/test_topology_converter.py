@@ -120,6 +120,10 @@ class TestTopologyConverter:
         ruc = (tio / "rout_unit.con").read_text()
         assert " cha " not in ruc
         assert " sdc " in ruc
+        assert " tot " not in ruc
+        assert " sur " in ruc
+        assert " lat " in ruc
+        assert " 2 sdc 1 sur 1.00000 sdc 1 lat 1.00000" in ruc
 
     def test_generates_chandeg_con(self, tmp_path):
         tio = _make_full_tio(tmp_path)

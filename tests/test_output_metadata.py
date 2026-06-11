@@ -22,6 +22,8 @@ def test_write_and_read_metadata_roundtrip(tmp_path: Path) -> None:
         chandeg_con_sha256="b" * 64,
         routing_mode="standard",
         soil_mode="fallback",
+        soil_provenance_mode="diagnostic_partial_gnatsgo_constant",
+        boundary_provenance={"source": "nldi_authoritative"},
         pct_fallback_soils=0.25,
         engine_version="/tmp/swatplus_exe",
         builder_git_sha="abc123",
@@ -36,7 +38,10 @@ def test_write_and_read_metadata_roundtrip(tmp_path: Path) -> None:
     assert loaded.usgs_id == "01547700"
     assert loaded.outlet_autodetected is True
     assert loaded.outlet_policy == "strict_pinned_from_auto"
+    assert loaded.soil_provenance_mode == "diagnostic_partial_gnatsgo_constant"
+    assert loaded.boundary_provenance == {"source": "nldi_authoritative"}
     assert loaded.pct_fallback_soils == 0.25
     data = json.loads(out.read_text(encoding="utf-8"))
     assert data["selected_outlet_gis_id"] == 7
     assert data["outlet_provenance_sha256"] == "f" * 64
+    assert data["soil_provenance_mode"] == "diagnostic_partial_gnatsgo_constant"

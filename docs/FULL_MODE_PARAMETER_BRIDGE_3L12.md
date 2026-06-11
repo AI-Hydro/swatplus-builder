@@ -1,7 +1,17 @@
 # Full-Mode Parameter Bridge — Phase 3L.12
 
 **Date:** 2026-05-11
-**Verdict:** `all_parameters_ineffective_full` — engine produces identical channel output regardless of parameter changes
+**Historical verdict:** `all_parameters_ineffective_full` — engine produced identical channel output regardless of the six parameters tested in this 2026-05-11 probe.
+
+**Superseded current state (2026-05-17):** this file is retained as a
+historical sensitivity note, not the current bridge inventory. Current
+governance lives in `docs/CALIBRATION_PARAMETER_REGISTRY.md` and
+`src/swatplus_builder/params/governance.py`. The bridge now covers the required
+full-mode core plus governed extended controls, including `LAT_TTIME`,
+`CN3_SWF`, snow thresholds, and the channel-routing attenuation controls
+`CH_N2 -> hyd-sed-lte.cha:mann` and `CH_K2 -> hyd-sed-lte.cha:k`. These
+extended controls remain diagnostic until retained by basin-specific locked
+sensitivity screening and verified through locked reruns.
 
 ## Implemented
 
@@ -21,7 +31,11 @@ Each writer verified to correctly modify the target file on disk.
 | ALPHA_BF | 0.001 | 1.0 | No | `ineffective_full` |
 | ESCO | 0.01 | 1.0 | No | `ineffective_full` |
 | EPCO | 0.01 | 1.0 | No | `ineffective_full` |
-| PET_CO | 0.1 | 1.5 | No | `ineffective_full` |
+| PET_CO | 0.8 | 1.2 | No | `ineffective_full` |
+
+Note: this historical probe originally used a wider PET_CO stress range. The
+current governed range is `0.8-1.2`, matching SWAT+ `hydrology.hyd`
+documentation for `pet_co`.
 
 All 6 parameters produce hash-identical `channel_sd_day.txt` output across
 LOW/HIGH extremes. The engine IS regenerating output (verified by deletion +

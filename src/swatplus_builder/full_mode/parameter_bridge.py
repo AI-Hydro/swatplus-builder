@@ -123,17 +123,26 @@ def _rejoin_with_widths(
 
 
 def _apply_cn2(tio: Path, value: float) -> None:
-    """Raise/lower CN2 for forest landuse in cntable.lum.
+    """Raise/lower CN2 for curve-number sources in full-mode TxtInOut.
 
-    Strategy: shift cn_a, cn_b, cn_c, cn_d for forest cover types (wood_f and
-    any wood_*) by the delta needed to bring cn_b to ``value``. Preserves the
-    A/B/C/D hydrologic-group differential structure.
+    Strategy:
+    - Shift cn_a, cn_b, cn_c, cn_d for referenced landuse curve-number rows
+      by the delta needed to bring cn_b to ``value``. Preserves the A/B/C/D
+      hydrologic-group differential structure.
+    - Always include forest cover types (wood_f and any wood_*) for backward
+      compatibility with the original narrow bridge.
+    - If urban land uses are present, also set ``urban.urb:urb_cn`` for urban
+      rows referenced by ``landuse.lum`` for provenance consistency. In
+      generated full-mode TxtInOut, runtime HRU CN comes from
+      ``landuse.lum:cn2`` -> ``cntable.lum``; the urban row in cntable is the
+      active runoff lever.
 
-    Range gate: [30, 95]. Values outside raise.
+    Range gate: [35, 98]. Values outside raise.
     """
-    if not (30.0 <= value <= 95.0):
-        raise ParameterBridgeError(f"CN2 out of range [30,95]: {value}")
+    if not (35.0 <= value <= 98.0):
+        raise ParameterBridgeError(f"CN2 out of range [35,98]: {value}")
     path = _require(tio, "cntable.lum")
+    referenced_cn2 = _referenced_column_names(tio / "landuse.lum", "cn2")
     lines = path.read_text().split("\n")
     if len(lines) < 3:
         raise ParameterBridgeError("cntable.lum too short")
@@ -145,6 +154,10 @@ def _apply_cn2(tio: Path, value: float) -> None:
             continue
         toks = ln.split()
         if len(toks) < 5:
+            out.append(ln)
+            continue
+        row_name = toks[0]
+        if not _is_cn2_target_row(row_name, referenced_cn2):
             out.append(ln)
             continue
         try:
@@ -172,6 +185,58 @@ def _apply_cn2(tio: Path, value: float) -> None:
     if changed == 0:
         logger.warning("cntable.lum had no wood_* rows — CN2 had no effect")
     path.write_text("\n".join(out))
+    _apply_cn2_to_referenced_urban_rows(tio, value)
+
+
+def _is_cn2_target_row(row_name: str, referenced_cn2: set[str] | None) -> bool:
+    lower = row_name.lower()
+    if lower.startswith("wood_"):
+        return True
+    return referenced_cn2 is not None and row_name in referenced_cn2
+
+
+def _apply_cn2_to_referenced_urban_rows(tio: Path, value: float) -> None:
+    urban_path = tio / "urban.urb"
+    if not urban_path.exists():
+        return
+
+    referenced = _referenced_column_names(tio / "landuse.lum", "urban")
+    if referenced is None:
+        logger.warning("landuse.lum missing or unreadable; applying CN2 to all urban.urb rows")
+    changed = _rewrite_column_for_rows(
+        urban_path,
+        "urb_cn",
+        f"{value:.5f}",
+        width=14,
+        where=None if referenced is None else lambda toks: toks and toks[0] in referenced,
+    )
+    if changed == 0:
+        logger.warning("urban.urb had no referenced urban rows — CN2 urban extension had no effect")
+
+
+def _referenced_column_names(path: Path, column: str) -> set[str] | None:
+    if not path.exists():
+        return None
+    lines = path.read_text().splitlines()
+    if len(lines) < 3:
+        return None
+    header = lines[1].split()
+    try:
+        col_idx = header.index(column)
+    except ValueError:
+        return None
+
+    names: set[str] = set()
+    for ln in lines[2:]:
+        if not ln.strip():
+            continue
+        toks = ln.split()
+        if len(toks) <= col_idx:
+            continue
+        value = toks[col_idx]
+        if value.lower() != "null":
+            names.add(value)
+    return names
 
 
 def _apply_esco(tio: Path, value: float) -> None:
@@ -209,13 +274,13 @@ def _apply_rchg_dp(tio: Path, value: float) -> None:
 def _apply_pet_co(tio: Path, value: float) -> None:
     """Set PET correction factor for all HRUs in hydrology.hyd.
 
-    Dominant ET lever: default pet_co=1.0 produces ET/P=73% (unrealistic).
-    Range [0.1, 1.5]; values 0.3–0.6 typically bring ET/P to 30–50%.
-    Engine-verified active: PET_CO is the strongest single lever for
-    closing simulated vs observed volume gap (Phase 3L.12 sweep finding).
+    SWAT+ documents ``pet_co`` as a linear PET adjustment with a total range
+    of [0.8, 1.2]. Keep the direct TxtInOut writer inside that range; larger
+    ET corrections need a researched process diagnosis rather than
+    out-of-range parameter edits.
     """
-    if not (0.1 <= value <= 1.5):
-        raise ParameterBridgeError(f"PET_CO out of range [0.1,1.5]: {value}")
+    if not (0.8 <= value <= 1.2):
+        raise ParameterBridgeError(f"PET_CO out of range [0.8,1.2]: {value}")
     path = _require(tio, "hydrology.hyd")
     _rewrite_column_for_rows(path, "pet_co", f"{value:.5f}", width=14)
 
@@ -264,17 +329,85 @@ def _apply_latq_co(tio: Path, value: float) -> None:
     _rewrite_column_for_rows(path, "latq_co", f"{value:.5f}", width=14)
 
 
+def _apply_lat_ttime(tio: Path, value: float) -> None:
+    """Set lateral flow travel time for all HRUs in hydrology.hyd.
+
+    SWAT+ documents ``lat_ttime`` as the lateral-flow lag time in days. A
+    value of 0.0 delegates travel-time calculation to the model; positive
+    values directly control the daily fraction released from lateral-flow
+    storage through ``1 - exp(-1 / lat_ttime)``.
+    """
+    if not (0.0 <= value <= 120.0):
+        raise ParameterBridgeError(f"LAT_TTIME out of range [0.0,120.0]: {value}")
+    path = _require(tio, "hydrology.hyd")
+    _rewrite_column_for_rows(path, "lat_ttime", f"{value:.5f}", width=14)
+
+
+def _apply_cn3_swf(tio: Path, value: float) -> None:
+    """Set SWAT+ surface-runoff soft-calibration factor for all HRUs.
+
+    SWAT+ soft water-balance calibration uses ``hydrology.hyd:cn3_swf`` as
+    the surface-runoff process control with total limits [0, 1].
+    """
+    if not (0.0 <= value <= 1.0):
+        raise ParameterBridgeError(f"CN3_SWF out of range [0.0,1.0]: {value}")
+    path = _require(tio, "hydrology.hyd")
+    _rewrite_column_for_rows(path, "cn3_swf", f"{value:.5f}", width=14)
+
+
 def _apply_surlag(tio: Path, value: float) -> None:
     """Set surface runoff lag coefficient in parameters.bsn.
 
     Controls how quickly surface runoff reaches the channel.
     SWAT+ full mode uses column ``surq_lag`` (not ``surlag`` as in SWAT2012).
-    Default 4.0; range [0.5, 24.0]. Lower → faster peak response, higher peaks.
+    Default 4.0; documented range [1.0, 24.0]. Lower → faster peak response, higher peaks.
     """
-    if not (0.5 <= value <= 24.0):
-        raise ParameterBridgeError(f"SURLAG out of range [0.5,24.0]: {value}")
+    if not (1.0 <= value <= 24.0):
+        raise ParameterBridgeError(f"SURLAG out of range [1.0,24.0]: {value}")
     path = _require(tio, "parameters.bsn")
     _rewrite_column_for_rows(path, "surq_lag", f"{value:.5f}", width=14)
+
+
+def _apply_ch_n2(tio: Path, value: float) -> None:
+    """Set channel Manning roughness for all full-mode LTE channel records."""
+    if not (0.014 <= value <= 0.15):
+        raise ParameterBridgeError(f"CH_N2 out of range [0.014,0.15]: {value}")
+    path = _require(tio, "hyd-sed-lte.cha")
+    _rewrite_column_for_rows(path, "mann", f"{value:.5f}", width=14)
+
+
+def _apply_ch_k2(tio: Path, value: float) -> None:
+    """Set effective channel alluvium hydraulic conductivity for LTE channels."""
+    if not (0.0 <= value <= 500.0):
+        raise ParameterBridgeError(f"CH_K2 out of range [0,500]: {value}")
+    path = _require(tio, "hyd-sed-lte.cha")
+    _rewrite_column_for_rows(path, "k", f"{value:.5f}", width=14)
+
+
+def _apply_sftmp(tio: Path, value: float) -> None:
+    """Set snowfall temperature threshold in snow.sno.
+
+    SWAT+ full mode stores the SWAT2012/SWAT-CUP SFTMP concept as
+    ``snow.sno:fall_tmp``. Lower values make precipitation stay rain at colder
+    temperatures; higher values classify more near-freezing precipitation as
+    snow.
+    """
+    if not (-5.0 <= value <= 5.0):
+        raise ParameterBridgeError(f"SFTMP out of range [-5,5]: {value}")
+    path = _require(tio, "snow.sno")
+    _rewrite_column_for_rows(path, "fall_tmp", f"{value:.5f}", width=14)
+
+
+def _apply_smtmp(tio: Path, value: float) -> None:
+    """Set snowmelt base temperature in snow.sno.
+
+    SWAT+ full mode stores the SWAT2012/SWAT-CUP SMTMP concept as
+    ``snow.sno:melt_tmp``.
+    """
+    if not (-5.0 <= value <= 5.0):
+        raise ParameterBridgeError(f"SMTMP out of range [-5,5]: {value}")
+    path = _require(tio, "snow.sno")
+    _rewrite_column_for_rows(path, "melt_tmp", f"{value:.5f}", width=14)
 
 
 WRITERS: Mapping[str, Callable[[Path, float], None]] = {
@@ -284,10 +417,16 @@ WRITERS: Mapping[str, Callable[[Path, float], None]] = {
     "PET_CO": _apply_pet_co,
     "PERCO": _apply_perco,
     "LATQ_CO": _apply_latq_co,
+    "LAT_TTIME": _apply_lat_ttime,
+    "CN3_SWF": _apply_cn3_swf,
     "SURLAG": _apply_surlag,
+    "CH_N2": _apply_ch_n2,
+    "CH_K2": _apply_ch_k2,
     "ALPHA_BF": _apply_alpha_bf,
     "RCHG_DP": _apply_rchg_dp,
     "GW_DELAY": _apply_gw_delay,  # raises — full mode uses aquifer.con
+    "SFTMP": _apply_sftmp,
+    "SMTMP": _apply_smtmp,
 }
 
 
@@ -303,7 +442,13 @@ FULL_MODE_PARAMETER_ACTIVITY: Mapping[str, str] = {
     "ALPHA_BF": "not_tested", # untested with engine probes
     "RCHG_DP": "not_tested",
     "SURLAG": "not_tested",
+    "CH_N2": "not_tested",   # channel Manning roughness; requires basin screen
+    "CH_K2": "not_tested",   # channel bed conductivity; requires basin screen
     "GW_DELAY": "dead",    # column does not exist in full-mode aquifer.aqu
+    "SFTMP": "weak",        # governed snow.sno writer; requires basin snow screen
+    "SMTMP": "weak",        # governed snow.sno writer; requires basin snow screen
+    "LAT_TTIME": "not_tested", # lateral-flow recession lag; requires basin screen
+    "CN3_SWF": "not_tested",   # SWAT+ soft surface-runoff control; requires basin screen
 }
 
 

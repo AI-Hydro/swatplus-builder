@@ -14,11 +14,20 @@ from swatplus_builder.calibration.locked_benchmark import (
     CalibrationEvidence,
     ReadinessRow,
     VerificationResult,
+    _diagnostic_calibration_phases,
     _resolve_lock,
+    _phase_candidate_points,
+    _score_candidate,
     _write_readiness_markdown,
     build_readiness_table,
+    calibrate_against_lock,
     lock_benchmark,
+    screen_parameters_against_lock,
+    verify_calibration,
+    _volume_gate_passed,
 )
+from swatplus_builder.calibration.real_engine import params_hash
+from swatplus_builder.errors import SwatBuilderInputError, SwatBuilderPipelineError
 
 
 # ---------------------------------------------------------------------------
@@ -156,6 +165,800 @@ def test_lock_benchmark_missing_sim_file_raises(tmp_path, obs_series):
             basin_id="usgs_fail",
             outlet_gis_id=1,
         )
+
+
+def test_lock_benchmark_can_lock_authorized_all_terminal_virtual_outlet(tmp_path: Path) -> None:
+    txtinout = tmp_path / "TxtInOut"
+    txtinout.mkdir()
+    (txtinout / "channel_sd_day.txt").write_text(
+        "\n".join(
+            [
+                "channel_sd_day",
+                "jday mon day yr unit gis_id name flo_out",
+                "n/a n/a n/a n/a n/a n/a n/a m3/s",
+                "1 1 1 2015 7 7 cha07 1.0",
+                "1 1 1 2015 8 8 cha08 2.0",
+                "2 1 2 2015 7 7 cha07 2.0",
+                "2 1 2 2015 8 8 cha08 3.0",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (txtinout / "chandeg.con").write_text(
+        "\n".join(
+            [
+                "chandeg.con",
+                "id name gis_id area lat lon elev lcha wst cst ovfl rule out_tot obj_typ obj_id hyd_typ frac",
+                "7 cha0007 7 0 0 0 0 7 s 0 0 0 0 out 1 tot 1.0",
+                "8 cha0008 8 0 0 0 0 8 s 0 0 0 0 out 2 tot 1.0",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    obs = pd.Series([3.0, 5.0], index=pd.to_datetime(["2015-01-01", "2015-01-02"]), name="obs")
+
+    lock = lock_benchmark(
+        txtinout_dir=txtinout,
+        obs_series=obs,
+        out_dir=tmp_path / "lock_out",
+        basin_id="usgs_virtual",
+        outlet_gis_id=7,
+        sim_source_file="channel_sd_day.txt",
+        virtual_outlet_policy="all_terminal_sum",
+        virtual_outlet_authority=(
+            "official_usgs_site_area_matches_all_terminal_no_overlap_candidate"
+        ),
+    )
+
+    assert lock.outlet_policy == "all_terminal_sum"
+    assert lock.outlet_scope == "virtual_all_terminal"
+    assert lock.selected_outlet_gis_ids == [7, 8]
+    assert lock.virtual_outlet_claim_authority is True
+    assert lock.baseline_nse == pytest.approx(1.0)
+    provenance = json.loads((Path(lock.benchmark_dir) / "outlet_provenance.json").read_text())
+    assert provenance["outlet_scope"] == "virtual_all_terminal"
+    assert provenance["virtual_outlet_policy"] == "all_terminal_sum"
+    assert provenance["virtual_outlet_claim_authority"] is True
+
+
+def test_lock_benchmark_requires_authority_for_virtual_outlet(tmp_path: Path) -> None:
+    txtinout = tmp_path / "TxtInOut"
+    txtinout.mkdir()
+    _make_fake_sim_file(txtinout)
+    _make_chandeg_con(txtinout)
+    obs = pd.Series([1.0], index=pd.to_datetime(["2010-01-01"]), name="obs")
+
+    with pytest.raises(SwatBuilderInputError, match="Virtual all-terminal outlet locks require"):
+        lock_benchmark(
+            txtinout_dir=txtinout,
+            obs_series=obs,
+            out_dir=tmp_path / "lock_out",
+            basin_id="usgs_virtual_missing_authority",
+            outlet_gis_id=1,
+            sim_source_file="channel_sd_day.txt",
+            virtual_outlet_policy="all_terminal_sum",
+        )
+
+
+def test_calibrate_against_lock_scores_virtual_outlet_lock_with_same_scope(
+    monkeypatch, tmp_path: Path
+) -> None:
+    benchmark_dir = tmp_path / "benchmark"
+    benchmark_dir.mkdir()
+    pd.DataFrame(
+        {"obs": [1.0, 2.0], "sim": [1.0, 2.0]},
+        index=pd.date_range("2010-01-01", periods=2, freq="D"),
+    ).to_csv(benchmark_dir / "alignment.csv")
+    lock = BenchmarkLock(
+        basin_id="usgs_virtual",
+        locked_at_utc="2026-05-22T00:00:00+00:00",
+        alignment_sha256="alignment",
+        metrics_sha256="metrics",
+        outlet_gis_id=1,
+        outlet_policy="all_terminal_sum",
+        outlet_scope="virtual_all_terminal",
+        selected_outlet_gis_ids=[1, 2],
+        virtual_outlet_authority="official_area_match",
+        virtual_outlet_claim_authority=True,
+        sim_source_file="channel_sd_day.txt",
+        baseline_nse=1.0,
+        baseline_kge=1.0,
+        benchmark_dir=str(benchmark_dir),
+    )
+    txt = tmp_path / "TxtInOut"
+    txt.mkdir()
+    seen: dict[str, object] = {}
+
+    def fake_make_real_objective(**kwargs):
+        seen.update(kwargs)
+
+        def objective(params: dict[str, float]) -> dict[str, float]:
+            cn2 = float(params.get("CN2", 75.0))
+            return {
+                "nse": 0.1 + (cn2 / 1000.0),
+                "kge": 0.2 + (cn2 / 1000.0),
+                "pbias": 10.0,
+            }
+
+        return objective
+
+    monkeypatch.setattr("swatplus_builder.calibration.real_engine.make_real_objective", fake_make_real_objective)
+
+    evidence = calibrate_against_lock(
+        lock,
+        txt,
+        tmp_path / "cal",
+        parameters=["CN2"],
+        n_evaluations=3,
+        calibration_phases=[
+            {"phase": "volume", "parameters": ["CN2"], "budget": 3},
+        ],
+    )
+
+    assert seen["objective_outlet_policy"] == "all_terminal_sum"
+    assert seen["outlet_gis_id"] == 1
+    assert Path(evidence.best_solution_json).is_file()
+
+
+def test_verify_calibration_scores_virtual_outlet_lock_with_same_scope(
+    monkeypatch, tmp_path: Path
+) -> None:
+    benchmark_dir = tmp_path / "benchmark"
+    benchmark_dir.mkdir()
+    pd.DataFrame(
+        {"obs": [1.0, 2.0], "sim": [0.9, 2.1]},
+        index=pd.date_range("2010-01-01", periods=2, freq="D"),
+    ).to_csv(benchmark_dir / "alignment.csv")
+    lock = BenchmarkLock(
+        basin_id="usgs_virtual",
+        locked_at_utc="2026-05-22T00:00:00+00:00",
+        alignment_sha256="alignment",
+        metrics_sha256="metrics",
+        outlet_gis_id=1,
+        outlet_policy="all_terminal_sum",
+        outlet_scope="virtual_all_terminal",
+        selected_outlet_gis_ids=[1, 2],
+        virtual_outlet_authority="official_area_match",
+        virtual_outlet_claim_authority=True,
+        sim_source_file="channel_sd_day.txt",
+        baseline_nse=0.0,
+        baseline_kge=0.0,
+        benchmark_dir=str(benchmark_dir),
+    )
+    best_solution = tmp_path / "best_solution.json"
+    best_solution.write_text(
+        json.dumps({"parameters": {"CN2": 80.0}}) + "\n",
+        encoding="utf-8",
+    )
+    txt = tmp_path / "TxtInOut"
+    txt.mkdir()
+    seen: dict[str, object] = {}
+
+    def fake_make_real_objective(**kwargs):
+        seen.update(kwargs)
+
+        def objective(params: dict[str, float]) -> dict[str, float]:
+            return {"nse": 0.2, "kge": 0.3, "pbias": 5.0}
+
+        return objective
+
+    monkeypatch.setattr("swatplus_builder.calibration.real_engine.make_real_objective", fake_make_real_objective)
+
+    result = verify_calibration(lock, best_solution, txt, tmp_path / "verify")
+
+    assert seen["objective_outlet_policy"] == "all_terminal_sum"
+    assert result.improved is True
+    assert Path(result.verification_summary_path).is_file()
+
+
+def test_volume_gate_requires_finite_pbias_within_threshold() -> None:
+    assert _volume_gate_passed({"pbias": 0.0, "nse": 0.5})
+    assert _volume_gate_passed({"pbias": -30.0, "nse": 0.5})
+    assert not _volume_gate_passed({"pbias": 30.1, "nse": 0.9})
+    assert not _volume_gate_passed({"nse": 0.9})
+
+
+def test_calibrate_against_lock_writes_staged_protocol(monkeypatch, tmp_path: Path) -> None:
+    benchmark_dir = tmp_path / "benchmark"
+    benchmark_dir.mkdir()
+    pd.DataFrame(
+        {"obs": [1.0, 2.0, 3.0], "sim": [1.1, 1.9, 3.2]},
+        index=pd.date_range("2010-01-01", periods=3, freq="D"),
+    ).to_csv(benchmark_dir / "alignment.csv")
+    lock = BenchmarkLock(
+        basin_id="usgs_stage_test",
+        locked_at_utc="2026-05-13T00:00:00+00:00",
+        alignment_sha256="alignment",
+        metrics_sha256="metrics",
+        outlet_gis_id=1,
+        sim_source_file="channel_sd_day.txt",
+        baseline_nse=0.0,
+        baseline_kge=0.0,
+        benchmark_dir=str(benchmark_dir),
+    )
+    txt = tmp_path / "TxtInOut"
+    txt.mkdir()
+
+    calls: list[dict[str, float]] = []
+
+    def fake_make_real_objective(**kwargs):
+        def objective(params: dict[str, float]) -> dict[str, float]:
+            calls.append(dict(params))
+            pbias = 20.0 - (float(params.get("CN2", 75.0)) - 75.0) / 10.0
+            nse = 0.1 + float(params.get("LATQ_CO", 0.01)) / 10.0
+            kge = 0.2 + float(params.get("PERCO", 0.5)) / 10.0
+            return {
+                "nse": nse,
+                "kge": kge,
+                "pbias": pbias,
+                "selected_terminal_fraction_of_all_terminal_flow": 0.42,
+                "all_terminal_nse": nse + 0.1,
+                "all_terminal_kge": kge + 0.1,
+                "all_terminal_pbias": pbias + 1.0,
+                "all_terminal_volume_gate_passes_diagnostic": 1.0,
+            }
+
+        return objective
+
+    monkeypatch.setattr("swatplus_builder.calibration.real_engine.make_real_objective", fake_make_real_objective)
+
+    evidence = calibrate_against_lock(
+        lock,
+        txt,
+        tmp_path / "cal",
+        parameters=["CN2", "PERCO", "LATQ_CO", "ESCO"],
+        n_evaluations=12,
+        calibration_phases=[
+            {"phase": "volume", "parameters": ["CN2", "PERCO"], "budget": 4},
+            {"phase": "baseflow_subsurface", "parameters": ["LATQ_CO"], "budget": 3},
+            {"phase": "peaks_timing", "parameters": ["SURLAG"], "budget": 1},
+            {"phase": "kge_nse_finetune", "parameters": ["CN2", "PERCO", "LATQ_CO", "ESCO"], "budget": 4},
+        ],
+    )
+
+    assert calls
+    assert calls[0] == {}
+    history = pd.read_csv(evidence.history_csv)
+    assert "metric_all_terminal_nse" in history.columns
+    assert "metric_all_terminal_pbias" in history.columns
+    assert "metric_selected_terminal_fraction_of_all_terminal_flow" in history.columns
+    assert history["metric_selected_terminal_fraction_of_all_terminal_flow"].dropna().iloc[0] == pytest.approx(0.42)
+    assert list(history["phase"].drop_duplicates()) == [
+        "volume",
+        "baseflow_subsurface",
+        "peaks_timing",
+        "kge_nse_finetune",
+    ]
+    assert set(history.loc[history["phase"] == "volume", "phase_parameters"]) == {"CN2,PERCO"}
+    assert set(history.loc[history["phase"] == "baseflow_subsurface", "phase_parameters"]) == {"LATQ_CO"}
+    assert set(history.loc[history["phase"] == "peaks_timing", "status"]) == {"skipped_no_eligible_parameters"}
+    best = json.loads(Path(evidence.best_solution_json).read_text(encoding="utf-8"))
+    assert best["selection_policy"] == "staged_volume_baseflow_peaks_then_nse_kge"
+    assert [p["phase"] for p in best["calibration_protocol"]] == [
+        "volume",
+        "baseflow_subsurface",
+        "peaks_timing",
+        "kge_nse_finetune",
+    ]
+    assert "calibration process gates" in best["kge_nse_finetune_gate"]
+    assert "calibration process gates pass" in best["calibration_protocol"][-1]["gate"]
+
+
+def test_phase_candidate_points_keep_dense_probe_for_each_parameter() -> None:
+    points = _phase_candidate_points(
+        current_params={},
+        phase_parameters=["CN2", "PERCO", "PET_CO", "ESCO"],
+        param_bounds={
+            "CN2": (35.0, 98.0),
+            "PERCO": (0.01, 1.0),
+            "PET_CO": (0.8, 1.2),
+            "ESCO": (0.01, 1.0),
+        },
+        rng=MagicMock(),
+        n_evaluations=7,
+    )
+
+    assert len(points) == 28
+    assert {"ESCO": 0.01} in points
+    assert {"ESCO": 0.505} in points
+    assert {"ESCO": 1.0} in points
+    assert any(set(point) == {"CN2", "PERCO", "PET_CO", "ESCO"} for point in points)
+
+
+def test_default_diagnostic_phases_include_soft_surface_runoff_lat_ttime_channel_and_snow_controls() -> None:
+    phases = _diagnostic_calibration_phases(
+        [
+            "CN2",
+            "CN3_SWF",
+            "PERCO",
+            "LATQ_CO",
+            "PET_CO",
+            "ESCO",
+            "EPCO",
+            "LAT_TTIME",
+            "SURLAG",
+            "CH_N2",
+            "CH_K2",
+            "SFTMP",
+            "SMTMP",
+        ],
+        None,
+        n_evaluations=20,
+    )
+
+    volume = next(row for row in phases if row["phase"] == "volume")
+    baseflow = next(row for row in phases if row["phase"] == "baseflow_subsurface")
+    peaks = next(row for row in phases if row["phase"] == "peaks_timing")
+    assert volume["parameters"] == ["PET_CO", "ESCO", "EPCO", "CN3_SWF", "CN2", "LATQ_CO", "PERCO"]
+    assert baseflow["parameters"] == ["LAT_TTIME", "LATQ_CO", "PERCO"]
+    assert peaks["parameters"] == ["SURLAG", "CH_N2", "CH_K2", "SFTMP", "SMTMP"]
+
+
+def test_score_candidate_rank_nse_kge_prioritizes_skill_after_volume_gate() -> None:
+    high_skill = {"nse": -0.0443, "kge": 0.0910, "pbias": -6.17}
+    closer_volume_lower_skill = {"nse": -0.0873, "kge": 0.1776, "pbias": 2.26}
+
+    assert _score_candidate(
+        high_skill,
+        objective="maintain_volume_gate_then_rank_nse_kge",
+    ) > _score_candidate(
+        closer_volume_lower_skill,
+        objective="maintain_volume_gate_then_rank_nse_kge",
+    )
+
+
+def test_score_candidate_rank_nse_kge_prefers_kge_when_nse_is_positive() -> None:
+    better_kge = {"nse": 0.0438, "kge": -0.0256, "pbias": -24.41}
+    slightly_better_nse_worse_kge = {"nse": 0.0532, "kge": -0.0815, "pbias": -29.55}
+
+    assert _score_candidate(
+        better_kge,
+        objective="maintain_volume_gate_then_rank_nse_kge",
+    ) > _score_candidate(
+        slightly_better_nse_worse_kge,
+        objective="maintain_volume_gate_then_rank_nse_kge",
+    )
+
+
+def test_score_candidate_volume_phase_preserves_skill_inside_preferred_volume_gate() -> None:
+    better_skill_preferred_volume = {"nse": 0.1985, "kge": 0.3278, "pbias": -13.48}
+    near_zero_pbias_low_skill = {"nse": 0.1043, "kge": 0.0437, "pbias": -4.24}
+
+    assert _score_candidate(
+        better_skill_preferred_volume,
+        objective="minimize_abs_pbias_then_kge_nse",
+    ) > _score_candidate(
+        near_zero_pbias_low_skill,
+        objective="minimize_abs_pbias_then_kge_nse",
+    )
+
+
+def test_score_candidate_volume_phase_prefers_preferred_volume_tier() -> None:
+    preferred_volume_modest_skill = {"nse": 0.05, "kge": 0.10, "pbias": 14.9}
+    minimum_volume_better_skill = {"nse": 0.25, "kge": 0.35, "pbias": 25.0}
+
+    assert _score_candidate(
+        preferred_volume_modest_skill,
+        objective="minimize_abs_pbias_then_kge_nse",
+    ) > _score_candidate(
+        minimum_volume_better_skill,
+        objective="minimize_abs_pbias_then_kge_nse",
+    )
+
+
+def test_score_candidate_rank_nse_kge_requires_physical_gate_when_available() -> None:
+    high_skill_physical_failure = {
+        "nse": 0.50,
+        "kge": 0.75,
+        "pbias": 1.0,
+        "physical_gate_passed": 0.0,
+    }
+    lower_skill_physical_pass = {
+        "nse": 0.10,
+        "kge": 0.45,
+        "pbias": 5.0,
+        "physical_gate_passed": 1.0,
+    }
+
+    assert _score_candidate(
+        high_skill_physical_failure,
+        objective="maintain_volume_gate_then_rank_nse_kge",
+    ) == float("-inf")
+    assert _score_candidate(
+        lower_skill_physical_pass,
+        objective="maintain_volume_gate_then_rank_nse_kge",
+    ) > float("-inf")
+
+
+def test_score_candidate_rank_nse_kge_uses_process_gate_before_skill_gate() -> None:
+    skill_limited_process_valid = {
+        "nse": -0.05,
+        "kge": 0.20,
+        "pbias": 5.0,
+        "physical_gate_passed": 0.0,
+        "calibration_process_gate_passed": 1.0,
+    }
+    process_failure = {
+        "nse": 0.50,
+        "kge": 0.75,
+        "pbias": 5.0,
+        "physical_gate_passed": 0.0,
+        "calibration_process_gate_passed": 0.0,
+    }
+
+    assert _score_candidate(
+        skill_limited_process_valid,
+        objective="maintain_volume_gate_then_rank_nse_kge",
+    ) > float("-inf")
+    assert _score_candidate(
+        process_failure,
+        objective="maintain_volume_gate_then_rank_nse_kge",
+    ) == float("-inf")
+
+
+def test_calibrate_against_lock_writes_history_before_phase_blocker(monkeypatch, tmp_path: Path) -> None:
+    benchmark_dir = tmp_path / "benchmark"
+    benchmark_dir.mkdir()
+    pd.DataFrame(
+        {"obs": [1.0, 2.0, 3.0], "sim": [1.1, 1.9, 3.2]},
+        index=pd.date_range("2010-01-01", periods=3, freq="D"),
+    ).to_csv(benchmark_dir / "alignment.csv")
+    lock = BenchmarkLock(
+        basin_id="usgs_stage_fail",
+        locked_at_utc="2026-05-13T00:00:00+00:00",
+        alignment_sha256="alignment",
+        metrics_sha256="metrics",
+        outlet_gis_id=1,
+        sim_source_file="channel_sd_day.txt",
+        baseline_nse=0.0,
+        baseline_kge=0.0,
+        benchmark_dir=str(benchmark_dir),
+    )
+    txt = tmp_path / "TxtInOut"
+    txt.mkdir()
+
+    def fake_make_real_objective(**kwargs):
+        work_root = Path(kwargs["work_root"])
+
+        def objective(params: dict[str, float]) -> dict[str, float]:
+            trace = work_root / f"{params_hash(params)}_objective_trace.json"
+            trace.parent.mkdir(parents=True, exist_ok=True)
+            trace.write_text(
+                json.dumps(
+                    {
+                        "params": params,
+                        "metrics": {"nse": 0.5, "kge": 0.5, "pbias": 80.0, "physical_gate_passed": 0.0},
+                        "candidate_physical_gate": {
+                            "pass": False,
+                            "condition_codes": ["VOLUME_BIAS"],
+                            "dominant_blocker": "VOLUME_BIAS",
+                            "calibration_process_gate_pass": False,
+                            "calibration_process_condition_codes": ["VOLUME_BIAS"],
+                        },
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            return {
+                "nse": 0.5,
+                "kge": 0.5,
+                "pbias": 80.0,
+                "physical_gate_passed": 0.0,
+                "calibration_process_gate_passed": 0.0,
+            }
+
+        return objective
+
+    monkeypatch.setattr("swatplus_builder.calibration.real_engine.make_real_objective", fake_make_real_objective)
+
+    with pytest.raises(SwatBuilderPipelineError) as exc:
+        calibrate_against_lock(
+            lock,
+            txt,
+            tmp_path / "cal",
+            parameters=["CN2"],
+            n_evaluations=3,
+            calibration_phases=[{"phase": "volume", "parameters": ["CN2"], "budget": 3}],
+        )
+
+    history_csv = Path(exc.value.context["history_csv"])
+    assert history_csv.exists()
+    assert (
+        exc.value.context["promotion_gate"]
+        == "abs(pbias) <= 30 and candidate calibration process gates pass"
+    )
+    history = pd.read_csv(history_csv)
+    assert len(history) == 9
+    assert pd.isna(history.iloc[0]["param_CN2"])
+    assert set(history["volume_gate_passed"]) == {False}
+    assert set(history["calibration_process_gate_passed"]) == {False}
+    assert set(history["calibration_process_condition_codes"]) == {"VOLUME_BIAS"}
+    assert set(history["physical_gate_condition_codes"]) == {"VOLUME_BIAS"}
+    assert set(history["physical_gate_dominant_blocker"]) == {"VOLUME_BIAS"}
+
+
+def test_rank_nse_kge_phase_blocker_reports_process_gate(monkeypatch, tmp_path: Path) -> None:
+    benchmark_dir = tmp_path / "benchmark"
+    benchmark_dir.mkdir()
+    pd.DataFrame(
+        {"obs": [1.0, 2.0, 3.0], "sim": [1.1, 1.9, 3.2]},
+        index=pd.date_range("2010-01-01", periods=3, freq="D"),
+    ).to_csv(benchmark_dir / "alignment.csv")
+    lock = BenchmarkLock(
+        basin_id="usgs_rank_fail",
+        locked_at_utc="2026-05-13T00:00:00+00:00",
+        alignment_sha256="alignment",
+        metrics_sha256="metrics",
+        outlet_gis_id=1,
+        sim_source_file="channel_sd_day.txt",
+        baseline_nse=0.0,
+        baseline_kge=0.0,
+        benchmark_dir=str(benchmark_dir),
+    )
+    txt = tmp_path / "TxtInOut"
+    txt.mkdir()
+
+    def fake_make_real_objective(**kwargs):
+        work_root = Path(kwargs["work_root"])
+
+        def objective(params: dict[str, float]) -> dict[str, float]:
+            trace = work_root / f"{params_hash(params)}_objective_trace.json"
+            trace.parent.mkdir(parents=True, exist_ok=True)
+            trace.write_text(
+                json.dumps(
+                    {
+                        "params": params,
+                        "metrics": {
+                            "nse": 0.4,
+                            "kge": 0.5,
+                            "pbias": 5.0,
+                            "physical_gate_passed": 0.0,
+                            "calibration_process_gate_passed": 0.0,
+                        },
+                        "candidate_physical_gate": {
+                            "pass": False,
+                            "condition_codes": ["ET_DOMINATED"],
+                            "dominant_blocker": "ET_DOMINATED",
+                            "calibration_process_gate_pass": False,
+                            "calibration_process_condition_codes": ["ET_DOMINATED"],
+                        },
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            return {
+                "nse": 0.4,
+                "kge": 0.5,
+                "pbias": 5.0,
+                "physical_gate_passed": 0.0,
+                "calibration_process_gate_passed": 0.0,
+            }
+
+        return objective
+
+    monkeypatch.setattr("swatplus_builder.calibration.real_engine.make_real_objective", fake_make_real_objective)
+
+    with pytest.raises(SwatBuilderPipelineError) as exc:
+        calibrate_against_lock(
+            lock,
+            txt,
+            tmp_path / "cal",
+            parameters=["CN2"],
+            n_evaluations=3,
+            calibration_phases=[
+                {
+                    "phase": "kge_nse_finetune",
+                    "parameters": ["CN2"],
+                    "budget": 3,
+                    "objective": "maintain_volume_gate_then_rank_nse_kge",
+                }
+            ],
+        )
+
+    assert (
+        exc.value.context["promotion_gate"]
+        == "abs(pbias) <= 30 and candidate calibration process gates pass"
+    )
+
+
+def test_kge_nse_phase_requires_prior_process_gate_when_available(monkeypatch, tmp_path: Path) -> None:
+    benchmark_dir = tmp_path / "benchmark"
+    benchmark_dir.mkdir()
+    pd.DataFrame(
+        {"obs": [1.0, 2.0, 3.0], "sim": [1.1, 1.9, 3.2]},
+        index=pd.date_range("2010-01-01", periods=3, freq="D"),
+    ).to_csv(benchmark_dir / "alignment.csv")
+    lock = BenchmarkLock(
+        basin_id="usgs_rank_entry_fail",
+        locked_at_utc="2026-05-13T00:00:00+00:00",
+        alignment_sha256="alignment",
+        metrics_sha256="metrics",
+        outlet_gis_id=1,
+        sim_source_file="channel_sd_day.txt",
+        baseline_nse=0.0,
+        baseline_kge=0.0,
+        benchmark_dir=str(benchmark_dir),
+    )
+    txt = tmp_path / "TxtInOut"
+    txt.mkdir()
+
+    def fake_make_real_objective(**kwargs):
+        work_root = Path(kwargs["work_root"])
+
+        def objective(params: dict[str, float]) -> dict[str, float]:
+            trace = work_root / f"{params_hash(params)}_objective_trace.json"
+            trace.parent.mkdir(parents=True, exist_ok=True)
+            trace.write_text(
+                json.dumps(
+                    {
+                        "params": params,
+                        "metrics": {
+                            "nse": 0.4,
+                            "kge": 0.5,
+                            "pbias": 5.0,
+                            "physical_gate_passed": 0.0,
+                            "calibration_process_gate_passed": 0.0,
+                        },
+                        "candidate_physical_gate": {
+                            "pass": False,
+                            "condition_codes": ["ET_DOMINATED"],
+                            "dominant_blocker": "ET_DOMINATED",
+                            "calibration_process_gate_pass": False,
+                            "calibration_process_condition_codes": ["ET_DOMINATED"],
+                        },
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            return {
+                "nse": 0.4,
+                "kge": 0.5,
+                "pbias": 5.0,
+                "physical_gate_passed": 0.0,
+                "calibration_process_gate_passed": 0.0,
+            }
+
+        return objective
+
+    monkeypatch.setattr("swatplus_builder.calibration.real_engine.make_real_objective", fake_make_real_objective)
+
+    with pytest.raises(SwatBuilderPipelineError) as exc:
+        calibrate_against_lock(
+            lock,
+            txt,
+            tmp_path / "cal",
+            parameters=["CN2"],
+            n_evaluations=3,
+            calibration_phases=[
+                {
+                    "phase": "volume",
+                    "parameters": ["CN2"],
+                    "budget": 3,
+                    "objective": "minimize_abs_pbias_then_kge_nse",
+                },
+                {
+                    "phase": "kge_nse_finetune",
+                    "parameters": ["CN2"],
+                    "budget": 3,
+                    "objective": "maintain_volume_gate_then_rank_nse_kge",
+                },
+            ],
+        )
+
+    assert (
+        exc.value.context["promotion_gate"]
+        == "prior abs(pbias) <= 30 candidate must pass calibration process gates before KGE/NSE finetune"
+    )
+    history = pd.read_csv(exc.value.context["history_csv"])
+    final_phase = history.loc[history["phase"] == "kge_nse_finetune"]
+    assert list(final_phase["status"]) == ["blocked_preceding_process_gate"]
+    assert set(history.loc[history["phase"] == "volume", "status"]) == {"evaluated"}
+    assert set(history.loc[history["phase"] == "volume", "volume_gate_passed"]) == {True}
+    assert set(history.loc[history["phase"] == "volume", "calibration_process_gate_passed"]) == {False}
+
+
+def test_verify_calibration_records_kge_only_improvement(monkeypatch, tmp_path: Path) -> None:
+    benchmark_dir = tmp_path / "benchmark"
+    benchmark_dir.mkdir()
+    pd.DataFrame(
+        {"obs": [1.0, 2.0, 3.0], "sim": [1.1, 1.9, 3.2]},
+        index=pd.date_range("2010-01-01", periods=3, freq="D"),
+    ).to_csv(benchmark_dir / "alignment.csv")
+    lock = BenchmarkLock(
+        basin_id="usgs_kge_improve",
+        locked_at_utc="2026-05-13T00:00:00+00:00",
+        alignment_sha256="alignment",
+        metrics_sha256="metrics",
+        outlet_gis_id=1,
+        sim_source_file="channel_sd_day.txt",
+        baseline_nse=0.25,
+        baseline_kge=0.10,
+        benchmark_dir=str(benchmark_dir),
+    )
+    txt = tmp_path / "TxtInOut"
+    txt.mkdir()
+    best_json = tmp_path / "best_solution.json"
+    best_json.write_text(
+        json.dumps({"parameters": {"CN2": 70.0}, "metrics": {"nse": 0.20, "kge": 0.45, "pbias": 5.0}}),
+        encoding="utf-8",
+    )
+
+    captured_kwargs: dict[str, object] = {}
+
+    def fake_make_real_objective(**kwargs):
+        captured_kwargs.update(kwargs)
+        return lambda params: {"nse": 0.20, "kge": 0.45, "pbias": 5.0}
+
+    monkeypatch.setattr("swatplus_builder.calibration.real_engine.make_real_objective", fake_make_real_objective)
+
+    result = verify_calibration(lock, best_json, txt, tmp_path / "cal", parameter_mode="full")
+
+    assert result.improved is True
+    assert result.delta_nse < 0.0
+    assert result.delta_kge > 0.0
+    assert result.improvement_basis == "kge"
+    assert result.fresh_outputs is True
+    assert result.fresh_output_policy == "force_fresh_real_engine_objective"
+    assert captured_kwargs["keep_workdirs"] is True
+    assert captured_kwargs["force_fresh"] is True
+    persisted = json.loads(Path(result.verification_summary_path).read_text(encoding="utf-8"))
+    assert persisted["improvement_basis"] == "kge"
+    assert persisted["fresh_outputs"] is True
+
+
+def test_screen_parameters_against_lock_writes_basin_specific_artifact(monkeypatch, tmp_path: Path) -> None:
+    benchmark_dir = tmp_path / "benchmark"
+    benchmark_dir.mkdir()
+    pd.DataFrame(
+        {"obs": [1.0, 2.0, 3.0], "sim": [1.1, 1.9, 3.2]},
+        index=pd.date_range("2010-01-01", periods=3, freq="D"),
+    ).to_csv(benchmark_dir / "alignment.csv")
+    lock = BenchmarkLock(
+        basin_id="usgs_sens",
+        locked_at_utc="2026-05-13T00:00:00+00:00",
+        alignment_sha256="alignment",
+        metrics_sha256="metrics",
+        outlet_gis_id=1,
+        sim_source_file="channel_sd_day.txt",
+        baseline_nse=0.10,
+        baseline_kge=0.10,
+        benchmark_dir=str(benchmark_dir),
+    )
+    txt = tmp_path / "TxtInOut"
+    txt.mkdir()
+
+    calls: list[dict[str, float]] = []
+
+    def fake_make_real_objective(**kwargs):
+        def objective(params: dict[str, float]) -> dict[str, float]:
+            calls.append(dict(params))
+            cn2 = float(params.get("CN2", 75.0))
+            return {"nse": 0.10 + (cn2 - 75.0) / 100.0, "kge": 0.20, "pbias": 5.0}
+
+        return objective
+
+    monkeypatch.setattr("swatplus_builder.calibration.real_engine.make_real_objective", fake_make_real_objective)
+
+    evidence = screen_parameters_against_lock(
+        lock,
+        txt,
+        tmp_path / "cal",
+        parameters=["CN2"],
+        parameter_mode="full",
+    )
+
+    assert calls
+    assert evidence.basis == "basin_specific"
+    assert evidence.parameters[0]["activity_class"] == "active"
+    payload = json.loads(Path(evidence.json_path).read_text(encoding="utf-8"))
+    assert payload["basis"] == "basin_specific"
+    assert payload["parameters"][0]["evidence"]["tested"] is True
+    assert Path(evidence.markdown_path).exists()
 
 
 # ---------------------------------------------------------------------------

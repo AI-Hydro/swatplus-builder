@@ -121,9 +121,10 @@ _LU_NODATA_SENTINELS: frozenset[int] = frozenset({0, 2_147_483_647, 255})
 def create_hrus(
     watershed: WatershedResult,
     landuse_raster: Path | str,
-    soil_raster: Path | str,
+    soil_raster: Path | str | None,
     slope_raster: Path | str | None = None,
     *,
+    constant_soil_mukey: int | None = None,
     slope_bands: list[float] | tuple[float, ...] | None = None,
     landuse_lookup: dict[int, str] | None = None,
     dominant_only: bool = True,
@@ -140,6 +141,9 @@ def create_hrus(
         watershed: Output of :func:`gis.delineation.delineate`.
         landuse_raster: Integer GeoTIFF; values encode landuse classes.
         soil_raster: Integer mukey GeoTIFF (gNATSGO).
+            May be ``None`` only when ``constant_soil_mukey`` is supplied.
+        constant_soil_mukey: Explicit representative mukey to apply to every
+            valid landuse/slope pixel when a spatial soil raster is unavailable.
         slope_raster: Optional slope percent GeoTIFF. If ``None``,
             computed from ``watershed.dem_conditioned``.
         slope_bands: Slope break points in percent. Defaults to
@@ -185,7 +189,13 @@ def create_hrus(
 
     # --- 1. Validate paths + prepare output dir ---
     lu_path = _require_file(Path(landuse_raster), "landuse_raster")
-    soil_path = _require_file(Path(soil_raster), "soil_raster")
+    soil_path = _require_file(Path(soil_raster), "soil_raster") if soil_raster is not None else None
+    if soil_path is None and constant_soil_mukey is None:
+        raise SwatBuilderInputError(
+            "soil_raster is required unless constant_soil_mukey is supplied.",
+            soil_raster=None,
+            constant_soil_mukey=None,
+        )
     dem_path = _require_file(Path(watershed.dem_conditioned), "dem_conditioned")
     subs_path = _require_file(Path(watershed.subbasins_vector), "subbasins_vector")
     cha_path = _require_file(Path(watershed.channels_vector), "channels_vector")
@@ -209,7 +219,12 @@ def create_hrus(
 
     # --- 3. Load + align the three overlay rasters ---
     lu_arr = _align_raster_to_ref(lu_path, ref_profile)
-    soil_arr = _align_raster_to_ref(soil_path, ref_profile)
+    if soil_path is not None:
+        soil_arr = _align_raster_to_ref(soil_path, ref_profile)
+        soil_source_mode = "raster"
+    else:
+        soil_arr = np.full(ref_shape, int(constant_soil_mukey), dtype=np.int64)
+        soil_source_mode = "constant"
 
     # Slope: read-and-align or derive from DEM.
     if slope_raster is not None:
@@ -247,6 +262,8 @@ def create_hrus(
     # --- 7. Iterate subbasins → LSUs → HRUs ---
     lsu_rows: list[LsuRow] = []
     hru_rows: list[HruRow] = []
+    all_touched_fallback_subbasins: list[int] = []
+    missing_hru_subbasins: list[int] = []
     # Per-pixel HRU id output raster (int32, nodata=0 so positive ids are always HRU).
     hru_map = np.zeros(ref_shape, dtype=np.int32)
     next_hru_id = 1
@@ -254,9 +271,35 @@ def create_hrus(
     for sub_row in subs_gdf.itertuples():
         sub_id = int(sub_row.sub_id)
         sub_mask = sub_arr == sub_id
+        fallback_mask = rasterio.features.geometry_mask(
+            [sub_row.geometry],
+            out_shape=ref_shape,
+            transform=ref_transform,
+            invert=True,
+            all_touched=True,
+        )
         if not sub_mask.any():
-            log.warning("subbasin %s has zero raster pixels after rasterization; skipping", sub_id)
-            continue
+            if fallback_mask.any() and _has_valid_overlay_pixels(fallback_mask, lu_arr, soil_arr, slope_cls_arr):
+                sub_mask = fallback_mask
+                all_touched_fallback_subbasins.append(sub_id)
+                log.warning(
+                    "subbasin %s had zero center pixels after rasterization; using all_touched fallback",
+                    sub_id,
+                )
+            else:
+                log.warning("subbasin %s has zero raster pixels after rasterization; skipping", sub_id)
+                missing_hru_subbasins.append(sub_id)
+                continue
+        elif not _has_valid_overlay_pixels(sub_mask, lu_arr, soil_arr, slope_cls_arr):
+            if fallback_mask.any() and _has_valid_overlay_pixels(fallback_mask, lu_arr, soil_arr, slope_cls_arr):
+                sub_mask = fallback_mask
+                all_touched_fallback_subbasins.append(sub_id)
+                log.warning(
+                    "subbasin %s had no valid center-pixel overlay; using all_touched fallback",
+                    sub_id,
+                )
+            else:
+                missing_hru_subbasins.append(sub_id)
 
         sub_area_ha = float(sub_mask.sum()) * pixel_area_ha
 
@@ -306,6 +349,8 @@ def create_hrus(
         )
         if not valid.any():
             log.warning("subbasin %s has no valid overlay pixels; LSU has no HRUs", sub_id)
+            if sub_id not in missing_hru_subbasins:
+                missing_hru_subbasins.append(sub_id)
             continue
 
         triples = list(
@@ -405,7 +450,8 @@ def create_hrus(
             "HRU overlay produced zero HRUs — check that landuse / soil / "
             "slope rasters cover the watershed and share its CRS.",
             landuse_raster=str(lu_path),
-            soil_raster=str(soil_path),
+            soil_raster=str(soil_path) if soil_path is not None else None,
+            constant_soil_mukey=constant_soil_mukey,
             n_subbasins=int(len(subs_gdf)),
         )
 
@@ -448,6 +494,12 @@ def create_hrus(
             "dominant_only": bool(dominant_only),
             "slope_bands": list(bands),
             "slope_labels": list(slope_labels),
+            "soil_source_mode": soil_source_mode,
+            "constant_soil_mukey": constant_soil_mukey,
+            "overlay_all_touched_fallback_subbasins": all_touched_fallback_subbasins,
+            "overlay_missing_hru_subbasins": missing_hru_subbasins,
+            "overlay_all_touched_fallback_count": len(all_touched_fallback_subbasins),
+            "overlay_missing_hru_subbasin_count": len(missing_hru_subbasins),
         },
     }
     catalog_path.write_text(json.dumps(catalog, indent=2))
@@ -462,8 +514,12 @@ def create_hrus(
         hru_raster=hru_raster_path,
         catalog_path=catalog_path,
         stats={
+            "n_subbasins": float(len(subs_gdf)),
             "n_lsus": float(len(lsu_rows)),
             "n_hrus": float(len(hru_rows)),
+            "hru_coverage_ratio": float(len(hru_rows) / max(len(subs_gdf), 1)),
+            "overlay_all_touched_fallback_count": float(len(all_touched_fallback_subbasins)),
+            "overlay_missing_hru_subbasin_count": float(len(missing_hru_subbasins)),
             "total_lsu_area_ha": round(sum(r.area for r in lsu_rows), 3),
             "total_hru_area_ha": round(sum(r.arslp for r in hru_rows), 3),
         },
@@ -611,6 +667,26 @@ def _classify_slope(
     return classes
 
 
+def _has_valid_overlay_pixels(
+    mask: np.ndarray,
+    lu_arr: np.ndarray,
+    soil_arr: np.ndarray,
+    slope_cls_arr: np.ndarray,
+) -> bool:
+    """Return true when a candidate LSU mask contains usable HRU overlay cells."""
+    if not mask.any():
+        return False
+    lu_flat = lu_arr[mask]
+    soil_flat = soil_arr[mask]
+    slope_flat = slope_cls_arr[mask]
+    valid = (
+        np.isin(lu_flat, list(_LU_NODATA_SENTINELS), invert=True)
+        & np.isin(soil_flat, list(_MUKEY_NODATA_SENTINELS), invert=True)
+        & (slope_flat > 0)
+    )
+    return bool(valid.any())
+
+
 def _pixel_centroid_xy(
     mask: np.ndarray, transform: rasterio.Affine
 ) -> tuple[float, float]:
@@ -743,7 +819,7 @@ def _write_lsu_vector(
             }
         )
         geoms.append(geom)
-    gdf = gpd.GeoDataFrame(records, geometry=geoms, crs=crs)
+    gdf = _fiona_safe_gdf(gpd.GeoDataFrame(records, geometry=geoms, crs=crs))
     gdf.to_file(path, driver="GPKG")
 
 
@@ -781,9 +857,7 @@ def _write_hru_vector(
                 continue
             records.append(_hru_to_record(hru))
             geoms.append(geom)
-        gpd.GeoDataFrame(records, geometry=geoms, crs=crs).to_file(
-            path, driver="GPKG"
-        )
+        _fiona_safe_gdf(gpd.GeoDataFrame(records, geometry=geoms, crs=crs)).to_file(path, driver="GPKG")
         return
 
     # Full-overlay: vectorize per-hru pixels.
@@ -800,7 +874,7 @@ def _write_hru_vector(
             continue
         records.append(_hru_to_record(hru))
         geoms.append(unary_union(polys))
-    gpd.GeoDataFrame(records, geometry=geoms, crs=crs).to_file(path, driver="GPKG")
+    _fiona_safe_gdf(gpd.GeoDataFrame(records, geometry=geoms, crs=crs)).to_file(path, driver="GPKG")
 
 
 def _hru_to_record(hru: HruRow) -> dict[str, Any]:
@@ -821,3 +895,16 @@ def _hru_to_record(hru: HruRow) -> dict[str, Any]:
         "lon": hru.lon,
         "elev_m": hru.elev,
     }
+
+
+def _fiona_safe_gdf(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    import pandas as pd
+
+    out = gdf.copy()
+    geometry_name = out.geometry.name if out.geometry is not None else None
+    for column in out.columns:
+        if column == geometry_name:
+            continue
+        if pd.api.types.is_extension_array_dtype(out[column].dtype):
+            out[column] = out[column].astype("object").where(out[column].notna(), None)
+    return out
