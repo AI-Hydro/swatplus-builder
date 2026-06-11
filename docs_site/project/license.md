@@ -16,8 +16,8 @@ the repository.
 !!! note "GPL posture"
     pySWATPlus is GPL-3.0 and is an *optional* dependency, used only for the
     non-authoritative bridge path. The core build and the authoritative
-    real-engine calibration path do not require it. See `DECISIONS.md` in the
-    repository for the full licensing rationale.
+    real-engine calibration path do not require it, so an MIT-licensed
+    deployment never has to pull in GPL code.
 
 ## Reference data
 

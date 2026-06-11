@@ -74,13 +74,6 @@ end means the search cannot be rewarded for non-reproducible ones. Together
 they make the reported number both *physically screened* and *independently
 reproduced*.
 
-## Where this lives in the code
-
-`src/swatplus_builder/calibration/locked_benchmark.py` —
-`lock_benchmark`, `calibrate_against_lock`, `verify_calibration`,
-`build_readiness_table`. The real-engine DDS path is in
-`calibration/real_engine.py` and `calibration/diagnostic_calibrator.py`.
-
 ## Read next
 
 - [Calibration (guide)](../guide/calibration.md) — running it end to end

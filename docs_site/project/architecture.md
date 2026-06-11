@@ -48,12 +48,11 @@ API, a governed end-to-end workflow, a vendored SWAT+ editor, and a test suite.
 
 ## Governance lives in the workflow layer
 
-Claim logic — gate evaluation, tier emission, allowed/blocked claim lists — is
-implemented in `workflows/usgs_e2e.py` (`_claim_lists`,
-`_effective_claim_tier`). The SWAT+ gates are *implementations* registered
-against the governance pattern; the longer-term direction (see
+Claim logic — check evaluation, tier emission, and the allowed/blocked claim
+lists — lives in the `workflows` package. The SWAT+ checks are *implementations*
+registered against a general governance pattern; the longer-term direction (see
 [Six invariants](../concepts/invariants.md)) is to separate a hydrology-free
-governance core from these SWAT+ gate implementations.
+governance core from these SWAT+ check implementations.
 
 ## What this package does **not** do
 

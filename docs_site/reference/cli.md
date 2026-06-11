@@ -56,20 +56,6 @@ Key `workflow run` options: `--usgs-id` (required), `--model-family` (required:
 |---|---|
 | `swat mcp` | launch the stdio MCP server (see [Agents](../agents/mcp-server.md)) |
 
-## Not yet implemented
-
-!!! warning "Placeholder subcommands"
-    These commands are registered but currently exit with "Not implemented yet
-    (Phase 1)". Use `swat workflow run` for builds, or the
-    [Python build API](python-api.md).
-
-    | Command | Status |
-    |---|---|
-    | `swat watershed` | placeholder |
-    | `swat hrus` | placeholder |
-    | `swat project` | placeholder |
-    | `swat build` | placeholder |
-
 ## Exit-code contract
 
 See [Exit codes](exit-codes.md).

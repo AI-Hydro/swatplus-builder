@@ -1,7 +1,8 @@
 site_name: swatplus-builder
 site_description: >-
-  Headless, agent-native SWAT+ modeling with runtime claim governance — the
-  package, not the agent, holds scientific authority.
+  Build and calibrate SWAT+ models from a USGS gauge ID, with built-in
+  scientific claim governance — operable from Python, the command line, or an
+  AI agent.
 site_author: Mohammad Galib
 site_url: https://ai-hydro.github.io/swatplus-builder/
 
@@ -84,8 +85,8 @@ nav:
       - Bootstrap engine & data: getting-started/bootstrap.md
       - Quickstart: getting-started/quickstart.md
   - Concepts:
-      - Package as authority: concepts/overview.md
-      - Claim governance & tiers: concepts/claim-governance.md
+      - How claims are governed: concepts/overview.md
+      - Claim tiers & gates: concepts/claim-governance.md
       - Locked calibration protocol: concepts/locked-calibration.md
       - The evidence bundle: concepts/evidence-bundle.md
       - Six invariants: concepts/invariants.md
@@ -95,7 +96,7 @@ nav:
       - Calibration: guide/calibration.md
       - Reading the evidence: guide/reading-evidence.md
       - Soil fidelity: guide/soil-fidelity.md
-  - Agents (MCP):
+  - Working with agents:
       - MCP server: agents/mcp-server.md
       - Tool surface: agents/tool-surface.md
       - The agent contract: agents/agent-contract.md
@@ -105,7 +106,7 @@ nav:
       - Evidence schema: reference/evidence-schema.md
       - Exit codes: reference/exit-codes.md
   - Project:
-      - Honest status: project/status.md
+      - Project status: project/status.md
       - Architecture: project/architecture.md
       - Citing & references: project/citing.md
       - License & attribution: project/license.md

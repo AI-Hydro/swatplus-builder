@@ -64,13 +64,6 @@ For each run the package emits, per claim:
 This is why a *blocked claim is itself evidence*: the system documents what you
 may not say, in a form a reviewer or another agent can read mechanically.
 
-## Where this lives in the code
-
-The claim logic is implemented in
-`src/swatplus_builder/workflows/usgs_e2e.py` (`_claim_lists`,
-`_effective_claim_tier`), which registers the SWAT+ gate implementations and
-emits the tier vector into the evidence bundle.
-
 ## Read next
 
 - [Locked calibration protocol](locked-calibration.md) — the verification gate

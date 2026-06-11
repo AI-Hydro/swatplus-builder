@@ -50,14 +50,11 @@ These are the building blocks; the governed, end-to-end path is
 [`swat workflow run`](canonical-workflow.md), which wires them together and
 adds locking, calibration, verification, and the evidence bundle.
 
-## CLI build status
-
-!!! warning "Some standalone build subcommands are placeholders"
-    The granular CLI subcommands `swat watershed`, `swat hrus`, `swat project`,
-    and `swat build` are **not yet implemented** — they currently exit with a
-    "Not implemented yet (Phase 1)" message and a pointer to the roadmap. Use
-    `swat workflow run` for builds, or the Python API above. The implemented
-    CLI commands are listed in the [CLI reference](../reference/cli.md).
+!!! tip "Two ways to build"
+    For a governed, end-to-end build, use
+    [`swat workflow run`](canonical-workflow.md). For fine-grained control over
+    individual stages, use the Python API above. The full command surface is in
+    the [CLI reference](../reference/cli.md).
 
 ## Soil realism is always recorded
 

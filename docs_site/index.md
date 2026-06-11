@@ -1,52 +1,47 @@
 # swatplus-builder
 
-> **Headless, agent-native SWAT+ modeling — with runtime claim governance.**
-> The package, not the agent, holds scientific authority.
+> **Calibrated SWAT+ models from a single gauge ID — with evidence you can audit.**
 
-`swatplus-builder` turns a single USGS streamgage ID into a complete,
-calibrated SWAT+ model and a **machine-readable evidence bundle** that records
-exactly what may — and may *not* — be claimed about the result. It runs
-entirely in Python with **no QGIS**, and it is designed to be operated by an AI
-agent through a typed tool surface (MCP) as readily as from the command line.
+swatplus-builder builds and calibrates SWAT+ hydrologic models in Python,
+starting from one USGS streamgage ID. It can be driven by a person or by an AI
+agent — and either way, the **software, not the operator, decides what each
+result is allowed to claim**.
 
-The central idea is simple and unusual:
+!!! quote "The idea in one sentence"
+    A capable modeler — human or AI — already knows hydrology. What they lack is
+    an environment that will not let them claim more than the evidence supports.
+    swatplus-builder is that environment: it builds, evaluates, verifies,
+    blocks, and downgrades, and records every decision as machine-readable
+    evidence.
 
-!!! quote "Core principle"
-    A capable AI agent already knows hydrology. What it lacks is an
-    **environment whose actions are constrained by a verifiable scientific
-    contract**. In swatplus-builder the *package* builds, evaluates, verifies,
-    blocks, and downgrades; the *agent* only operates. Claim tiers come from
-    runtime gates and provenance — never from a metric, and never from the
-    agent's say-so.
-
-## What it does
+## What you can do with it
 
 <div class="grid cards" markdown>
 
--   :material-map-marker-radius: **Gauge → model, headless**
+-   :material-map-marker-radius: **Gauge → calibrated model**
 
     One USGS ID drives delineation, HRUs, gNATSGO soils, weather, and a valid
-    SWAT+ `TxtInOut` — WhiteboxTools + rasterio + geopandas, no QGIS.
+    SWAT+ model — start to finish in Python, with no desktop GIS (no QGIS).
 
--   :material-lock-check: **Locked calibration**
+-   :material-lock-check: **Calibration you can trust**
 
-    A `lock → calibrate → verify` protocol where final metrics come from an
-    **independent rerun** of the locked artifact, never from the optimizer.
+    A `lock → calibrate → verify` protocol where the reported numbers come from
+    an **independent rerun** of the calibrated model, never from the optimizer.
 
--   :material-shield-check: **Claim governance**
+-   :material-shield-check: **Claims you can audit**
 
-    Runtime gates (fresh engine, benchmark lock, outlet provenance, physical
-    sensibility, routing closure, soil fidelity, sensitivity) decide a claim
-    tier: `exploratory → diagnostic → research_grade → publication_grade`.
+    Runtime gates decide a result's tier —
+    `exploratory → diagnostic → research_grade → publication_grade`. A strong
+    metric never promotes itself past a failed gate.
 
--   :material-file-document-multiple: **Evidence bundle**
+-   :material-file-document-multiple: **A complete evidence bundle**
 
-    Every run writes `evidence_summary.json` with explicit **allowed and
-    blocked claims**, each carrying a typed reason and an artifact pointer.
+    Every run writes its results *and its refusals* — each allowed or blocked
+    claim carries a plain reason and a pointer to the evidence behind it.
 
 </div>
 
-## The one-command path
+## One command, end to end
 
 ```bash
 swat workflow run --usgs-id 02177000 --model-family full \
@@ -54,25 +49,25 @@ swat workflow run --usgs-id 02177000 --model-family full \
   --calibrate --claim-tier research_grade --json
 ```
 
-This builds the model, runs the engine, locks a benchmark, runs gated
-diagnostic calibration, independently verifies a locked rerun, and writes the
-evidence bundle. See [Quickstart](getting-started/quickstart.md).
+This builds the model, runs the engine, locks a baseline, calibrates, verifies a
+clean rerun, and writes the evidence bundle. Start with the
+[Quickstart](getting-started/quickstart.md).
 
-## Where to go next
+## Find your way
 
-| If you want to… | Read |
+| If you want to… | Go to |
 |---|---|
 | Install and run your first basin | [Getting Started](getting-started/installation.md) |
-| Understand *why* claims are governed | [Package as authority](concepts/overview.md) |
+| Understand *why* results are governed | [How claims are governed](concepts/overview.md) |
 | Understand the calibration protocol | [Locked calibration](concepts/locked-calibration.md) |
-| Operate the pipeline with an AI agent | [Agents (MCP)](agents/mcp-server.md) |
-| Look up a command or field | [Reference](reference/cli.md) |
-| Know what the system honestly claims today | [Honest status](project/status.md) |
+| Drive the pipeline with an AI agent | [Working with agents](agents/mcp-server.md) |
+| Look up a command, function, or field | [Reference](reference/cli.md) |
+| Know what the system claims today | [Project status](project/status.md) |
 
-!!! warning "Research software — read the honest status"
-    This is alpha research software. Under the current strict gates, the
-    canonical 11-basin objective report classifies **0 basins as
-    research-grade**, and gate weakening is not permitted. The contribution is
-    an *evidence-producing, claim-governed* workflow that makes both successes
-    and limitations inspectable — not a claim that automated SWAT+ calibration
-    is solved. See [Honest status](project/status.md).
+!!! warning "This is research software — read the status page"
+    Under its current strict gates, swatplus-builder grants **no basin a
+    research-grade claim** across the 11-basin test suite, and it does not relax
+    those gates to manufacture passes. That is the system working as intended:
+    its value is an *auditable* workflow that makes both successes and
+    limitations inspectable — not a claim that automated SWAT+ calibration is a
+    solved problem. See [Project status](project/status.md).

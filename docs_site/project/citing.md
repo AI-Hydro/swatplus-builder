@@ -5,8 +5,8 @@
 When you report a result produced with swatplus-builder, cite the repository
 **and** the run's provenance hash, so the claim is traceable to the exact run:
 
-> Galib, M. *swatplus-builder: headless, agent-native SWAT+ modeling with
-> runtime claim governance.* AI-Hydro.
+> Galib, M. *swatplus-builder: SWAT+ modeling from a gauge ID, with built-in
+> scientific claim governance.* AI-Hydro.
 > <https://github.com/AI-Hydro/swatplus-builder>
 
 Each run records its inputs and git SHA in `run_manifest.json` and provenance
@@ -30,9 +30,6 @@ metric you report — a metric without its run provenance is not reproducible.
 | [pyflwdir](https://github.com/Deltares/pyflwdir) | secondary delineation backend (`gis` extra) |
 | SWAT+ engine | external binary (`rev60+`), not bundled |
 | SWAT+ reference DBs | `datasets` / `soils` / `wgn` SQLite |
-
-A fuller reverse-engineering and reuse map is maintained in the repository at
-`docs/REFERENCES.md`.
 
 ## Data sources
 
