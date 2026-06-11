@@ -6,6 +6,23 @@
 
 The package deliberately **avoids QGIS, PyQGIS, and the QSWATPlus plugin**. GIS work is done with WhiteboxTools + rasterio + geopandas. The SQLite → `TxtInOut` translation uses the vendored [SWAT+ Editor Python API](https://github.com/swat-model/swatplus-editor).
 
+> **New here? Read [`QUICKSTART.md`](QUICKSTART.md).** It covers requirements,
+> install, engine/reference-DB bootstrap, the canonical one-command workflow,
+> and how to operate the pipeline through an AI agent (MCP).
+
+The canonical end-to-end path is a single command:
+
+```bash
+swat workflow run --usgs-id <id> --model-family full \
+  --start 2000-01-01 --end 2019-12-31 --warmup-years 3 \
+  --calibrate --claim-tier research_grade --json
+```
+
+It builds the model, runs the engine, locks a benchmark, runs gated diagnostic
+calibration, independently verifies a locked rerun, and writes a machine-readable
+**evidence bundle** with explicit allowed/blocked claims. The package — not the
+agent — decides what may be claimed.
+
 ---
 
 ## Status
@@ -26,10 +43,11 @@ The package deliberately **avoids QGIS, PyQGIS, and the QSWATPlus plugin**. GIS 
 
 See:
 
+- [`QUICKSTART.md`](QUICKSTART.md) — install, run, and operate via agents
 - [`ROADMAP.md`](ROADMAP.md) — phased plan with checkboxes
 - [`PROGRESS.md`](PROGRESS.md) — running progress journal
 - [`DECISIONS.md`](DECISIONS.md) — architecture decision records
-- [`SKILL.md`](SKILL.md) — agent skill contract (MCP tool catalog, parameter registry, workflows)
+- [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md) — implemented negotiate → run → evidence flow
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — system architecture
 
 ---
@@ -197,7 +215,7 @@ MCP client config (Claude Desktop / Cursor / any MCP host):
 }
 ```
 
-Tool tiers (see [`SKILL.md`](SKILL.md) for full catalog):
+Tool tiers:
 
 **Tier 1 — Basin workflow** (8 tools): `build_project`, `run_basin`, `calibrate`, `propose_parameters`, `compare_runs`, `query_artifacts`, `diagnose_failure`, `validate`
 
@@ -267,7 +285,13 @@ As of 2026-04-25, the locked real-engine calibration protocol has been run and i
 | `usgs_01547700` | 0.1256 | **0.2107** | +0.085 | 0.036 | **0.116** | +0.080 | PASS |
 | `usgs_03339000` | 0.0618 | **0.3192** | +0.257 | -0.097 | **0.187** | +0.284 | PASS |
 
-Both basins: independently verified (re-run of best solution, not calibration-loop metrics). Evidence bundle: `tests/_artifacts/phase3e_readiness/real_engine_bundle_20260425/`. Full closeout: [`PHASE_3E_CLOSEOUT.md`](PHASE_3E_CLOSEOUT.md).
+Both basins: independently verified (re-run of best solution, not calibration-loop metrics). Evidence bundle: `tests/_artifacts/phase3e_readiness/real_engine_bundle_20260425/`.
+
+> **Note:** the current canonical path is `swat workflow run` (see
+> [`QUICKSTART.md`](QUICKSTART.md)); the `lock-benchmark` / `locked-calibrate`
+> commands above remain valid lower-level primitives. For the current honest
+> validation status across the basin suite, see
+> [`docs/PIPELINE_RESEARCH_GRADE_AUDIT.md`](docs/PIPELINE_RESEARCH_GRADE_AUDIT.md).
 
 **Honest caveats:** NSE < 0.5 for both basins — improvement is real and verified but absolute skill is not yet benchmark-grade. Physical realism work (soil conductivity, routing) is needed before positive-skill claims. pySWATPlus bridge is non-authoritative until bridge stability is proven.
 

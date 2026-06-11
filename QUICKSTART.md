@@ -124,9 +124,7 @@ Then ask the agent in natural language, e.g.:
   Reporting a metric without disclosing a failed gate is overclaiming.
 
 See [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md) for the implemented
-`negotiate → run → evidence` flow and
-[`docs/SCIENTIFIC_CLAIM_GOVERNANCE.md`](docs/SCIENTIFIC_CLAIM_GOVERNANCE.md)
-for the claim model and gate-to-claim mapping.
+`negotiate → run → evidence` flow and the gate-to-claim mapping.
 
 ## 6. Honest status
 
