@@ -6,6 +6,10 @@
 
 The package deliberately **avoids QGIS, PyQGIS, and the QSWATPlus plugin**. GIS work is done with WhiteboxTools + rasterio + geopandas. The SQLite → `TxtInOut` translation uses the vendored [SWAT+ Editor Python API](https://github.com/swat-model/swatplus-editor).
 
+> **📚 Full documentation: <https://ai-hydro.github.io/swatplus-builder/>**
+> Concepts (claim governance, locked calibration, the evidence bundle), a user
+> guide, the agent/MCP surface, and a CLI/Python/schema reference.
+>
 > **New here? Read [`QUICKSTART.md`](QUICKSTART.md).** It covers requirements,
 > install, engine/reference-DB bootstrap, the canonical one-command workflow,
 > and how to operate the pipeline through an AI agent (MCP).
@@ -43,7 +47,9 @@ agent — decides what may be claimed.
 
 See:
 
+- **[Documentation site](https://ai-hydro.github.io/swatplus-builder/)** — concepts, user guide, agent/MCP, and full reference
 - [`QUICKSTART.md`](QUICKSTART.md) — install, run, and operate via agents
+- [Honest status](https://ai-hydro.github.io/swatplus-builder/project/status/) — what the system actually claims today (0/11 research-grade)
 - [`ROADMAP.md`](ROADMAP.md) — phased plan with checkboxes
 - [`PROGRESS.md`](PROGRESS.md) — running progress journal
 - [`DECISIONS.md`](DECISIONS.md) — architecture decision records

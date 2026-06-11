@@ -1,0 +1,6 @@
+# Documentation site (MkDocs Material). Install with:
+#   pip install -r requirements-docs.txt
+# Build locally:   mkdocs serve     (live preview at http://127.0.0.1:8000)
+# Strict build:    mkdocs build --strict
+mkdocs-material>=9.5
+pymdown-extensions>=10.7
