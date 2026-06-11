@@ -1,0 +1,112 @@
+site_name: swatplus-builder
+site_description: >-
+  Build and calibrate SWAT+ models from a USGS gauge ID, with built-in
+  scientific claim governance — operable from Python, the command line, or an
+  AI agent.
+site_author: Mohammad Galib
+site_url: https://ai-hydro.github.io/swatplus-builder/
+
+repo_name: AI-Hydro/swatplus-builder
+repo_url: https://github.com/AI-Hydro/swatplus-builder
+edit_uri: edit/main/docs_site/
+
+# Curated public documentation source. The internal docs/ tree (incident logs,
+# defect localization, PROGRESS journal) is intentionally NOT part of this site;
+# it remains browsable in the repository but is excluded from the nav.
+docs_dir: docs_site
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: blue grey
+      accent: blue
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: blue grey
+      accent: light blue
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - content.code.copy
+    - content.code.annotate
+    - search.suggest
+    - search.highlight
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - footnotes
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+plugins:
+  - search
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/AI-Hydro/swatplus-builder
+  status:
+    new: Recently added
+    deprecated: Deprecated
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: getting-started/installation.md
+      - Bootstrap engine & data: getting-started/bootstrap.md
+      - Quickstart: getting-started/quickstart.md
+  - Concepts:
+      - How claims are governed: concepts/overview.md
+      - Claim tiers & gates: concepts/claim-governance.md
+      - Locked calibration protocol: concepts/locked-calibration.md
+      - The evidence bundle: concepts/evidence-bundle.md
+      - Six invariants: concepts/invariants.md
+  - User Guide:
+      - The canonical workflow: guide/canonical-workflow.md
+      - Building a model: guide/building-models.md
+      - Calibration: guide/calibration.md
+      - Reading the evidence: guide/reading-evidence.md
+      - Soil fidelity: guide/soil-fidelity.md
+  - Working with agents:
+      - MCP server: agents/mcp-server.md
+      - Tool surface: agents/tool-surface.md
+      - The agent contract: agents/agent-contract.md
+  - Reference:
+      - CLI: reference/cli.md
+      - Python API: reference/python-api.md
+      - Evidence schema: reference/evidence-schema.md
+      - Exit codes: reference/exit-codes.md
+  - Project:
+      - Project status: project/status.md
+      - Architecture: project/architecture.md
+      - Citing & references: project/citing.md
+      - License & attribution: project/license.md
