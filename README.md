@@ -218,7 +218,8 @@ swat mcp
 
 ```bash
 pip install "swatplus-builder[mcp]"
-swat mcp   # stdio transport
+swat mcp-check           # pre-flight: exits 0 if all imports + tools OK
+swat mcp                 # start stdio MCP server
 ```
 
 MCP client config (Claude Desktop / Cursor / any MCP host):
@@ -237,6 +238,13 @@ MCP client config (Claude Desktop / Cursor / any MCP host):
   }
 }
 ```
+
+> **Mixed conda/venv?** If `swat mcp-check` fails with `ModuleNotFoundError: No module named 'mcp'`,
+> the `swat` entry point is running under the wrong Python. Pin the interpreter explicitly:
+> ```json
+> { "command": "/opt/miniconda3/bin/python", "args": ["-m", "swatplus_builder.mcp.server"], ... }
+> ```
+> Find the right path: `which python` inside the env where `pip install swatplus-builder[mcp]` succeeded.
 
 Tool tiers:
 
