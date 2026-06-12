@@ -123,6 +123,7 @@ docs/*
 !docs/CALIBRATION_PARAMETER_REGISTRY.md
 !docs/PIPELINE_LEARNING_LOG.md
 !docs/PIPELINE_RESEARCH_GRADE_AUDIT.md
+!docs/REPRODUCIBILITY.md
 Research_article/
 SWATplus_original_docs/
 .codebuddy/

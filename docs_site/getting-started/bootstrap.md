@@ -6,15 +6,41 @@ scripts fetch both.
 
 ## Reference databases
 
-```bash
-# Reference DBs → ~/.swatplus-builder/reference_dbs (tag v60.5.7)
-bash scripts/bootstrap_reference_dbs.sh
-```
+Three SQLite files are required:
 
-This downloads `swatplus_datasets.sqlite`, `swatplus_soils.sqlite`, and
-`swatplus_wgn.sqlite` from the `ai-hydro/swatplus-reference-data` mirror.
+| File | Purpose |
+|---|---|
+| `swatplus_datasets.sqlite` | Land-use, plant, fertiliser, pesticide parameter tables |
+| `swatplus_soils.sqlite` | STATSGO2 soil definitions |
+| `swatplus_wgn.sqlite` | Weather-generator stations (CFSR world coverage, table `wgn_cfsr_world`) |
 
-You can also point the toolchain at an existing copy:
+!!! warning "Auto-download is not implemented"
+    The reference databases are distributed by the SWAT+ team but are **not
+    bundled with this package** and are **not yet mirrored in a public
+    machine-readable location**.  `scripts/bootstrap_reference_dbs.sh` is a
+    check-and-report helper — it tells you which files are missing and how to
+    obtain them, but **it cannot download them for you**.  Run it to see your
+    current status:
+
+    ```bash
+    bash scripts/bootstrap_reference_dbs.sh
+    ```
+
+    Exit code 0 = all three present; exit code 1 = missing files (instructions
+    printed to stdout).
+
+### Obtaining the reference databases
+
+**Recommended — SWAT+ Editor desktop app:**
+
+1. Download SWAT+ Editor from [swat.tamu.edu/software/plus](https://swat.tamu.edu/software/plus/).
+2. Install it (macOS, Windows, or Linux).
+3. After installation the databases are at:
+   - **macOS/Linux:** `~/SWATPlus/Databases/*.sqlite`
+   - **Windows:** `%USERPROFILE%\SWATPlus\Databases\*.sqlite`
+4. Copy all three `.sqlite` files to `~/.swatplus_builder/reference_dbs/`.
+
+Or point the toolchain at an existing copy directly:
 
 ```bash
 swat init --ref-dir /path/to/reference_dbs --datasets-version 3.2.0
