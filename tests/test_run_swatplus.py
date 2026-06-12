@@ -45,6 +45,7 @@ def _write_shim(
     echo_threads_env: bool = False,
     emit_outputs: bool = True,
     revision: str | None = "61.0.2.61",
+    output_header_revision: str | None = None,
 ) -> Path:
     """Write an executable Python shim that pretends to be ``swatplus_exe``.
 
@@ -79,6 +80,14 @@ def _write_shim(
             (cwd / "basin_wb_aa.txt").write_text("title\\ncols\\nunits\\n1 2 3\\n")
             (cwd / "channel_sd_aa.txt").write_text("title\\ncols\\nunits\\n")
             (cwd / "hru_wb_aa.txt").write_text("title\\ncols\\nunits\\n")
+            # Stamp the engine revision into an output-file header like the real
+            # engine ("MODULAR Rev <year>.<rev>"). Controlled separately so tests
+            # can make the header and banner disagree.
+            if {output_header_revision!r} is not None:
+                (cwd / "channel_sd_day.txt").write_text(
+                    "basin   SWAT+ 2026-01-16   MODULAR Rev "
+                    + {output_header_revision!r} + "\\njday mon day\\nunits\\n"
+                )
         if {echo_threads_env!r}:
             print("THREADS_ECHO=" + os.environ.get("OMP_NUM_THREADS", "?"), file=sys.stderr)
         raise SystemExit({exit_code!r})
@@ -135,6 +144,49 @@ class TestEngineVersion:
         assert parse_engine_revision("no banner here") is None
         assert parse_engine_revision("") is None
         assert parse_engine_revision(None) is None
+
+    def test_parse_revision_from_output_header_strips_build_year(self):
+        from swatplus_builder.run.swatplus import parse_engine_revision
+
+        # Output-file header form carries a 4-digit build-year prefix; both the
+        # banner ("Revision 61.0.2.61") and header ("Rev 2026.61.0.2.61") must
+        # normalize to the same canonical revision.
+        header = "usgs_03351500   SWAT+ 2026-01-16   MODULAR Rev 2026.61.0.2.61"
+        assert parse_engine_revision(header) == "61.0.2.61"
+        assert parse_engine_revision("MODULAR Rev 2025.60.5.7") == "60.5.7"
+
+    def test_engine_revision_from_outputs_reads_persisted_header(self, tmp_path):
+        from swatplus_builder.run.swatplus import engine_revision_from_outputs
+
+        txt = tmp_path / "TxtInOut"
+        txt.mkdir()
+        # Only the header line matters; the engine stamps every output file.
+        (txt / "channel_sd_day.txt").write_text(
+            "basin SWAT+ 2026-01-16 MODULAR Rev 2026.61.0.2.61\njday\nunits\n"
+        )
+        assert engine_revision_from_outputs(txt) == "61.0.2.61"
+
+    def test_engine_revision_from_outputs_none_when_unstamped(self, tmp_path):
+        from swatplus_builder.run.swatplus import engine_revision_from_outputs
+
+        txt = tmp_path / "TxtInOut"
+        txt.mkdir()
+        (txt / "channel_sd_day.txt").write_text("no revision header here\n")
+        assert engine_revision_from_outputs(txt) is None
+        assert engine_revision_from_outputs(tmp_path / "absent") is None
+
+    def test_run_prefers_persisted_output_header_over_stdout_banner(self, txtinout, tmp_path):
+        from swatplus_builder.run.swatplus import run
+
+        # Header and banner deliberately disagree: the persisted artifact wins,
+        # because it is the auditable record of what actually produced outputs.
+        shim = _write_shim(
+            tmp_path / "swatplus_exe_shim",
+            revision="99.9.9.9",  # stdout banner (weaker source)
+            output_header_revision="2026.61.0.2.61",  # persisted header (authoritative)
+        )
+        result = run(txtinout, binary=shim, threads=1, timeout_s=30)
+        assert result.engine_version == "61.0.2.61"
 
     def test_verify_records_banner_over_disagreeing_assertion(self):
         from swatplus_builder.run.swatplus import verify_engine_version

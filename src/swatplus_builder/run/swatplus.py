@@ -59,6 +59,7 @@ from ..types import SwatPlusProject, SwatPlusRun
 
 __all__ = [
     "BINARY_CANDIDATES",
+    "engine_revision_from_outputs",
     "locate_binary",
     "parse_engine_revision",
     "run",
@@ -67,36 +68,80 @@ __all__ = [
     "verify_engine_version",
 ]
 
-# The SWAT+ engine prints a startup banner to stdout on every run, e.g.::
+# The SWAT+ engine records its revision in two places, both of which we parse so
+# the version in provenance is READ FROM THE ENGINE, never asserted by whoever
+# launched the run (a binary mislabeled ``swatplus_exe.6057`` that is actually
+# rev 61 cannot fool either source):
 #
-#              SWAT+
-#        Revision 61.0.2.61
-#   Soil & Water Assessment Tool
+#   1. The stdout startup banner::    "        Revision 61.0.2.61"
+#   2. Every output file's header::   "... MODULAR Rev 2026.61.0.2.61"
 #
-# We parse the revision from that banner so the engine version recorded in
-# provenance is READ FROM THE ENGINE, not asserted by whoever launched the run.
-# A mislabeled binary (e.g. a file named ``swatplus_exe.6057`` that is actually
-# rev 61) cannot fool this — the banner is authoritative.
-_REVISION_RE = re.compile(r"Revision\s+([0-9][0-9A-Za-z._-]*)", re.IGNORECASE)
+# Source 2 is the stronger one — it is PERSISTED in the artifact, so any past
+# run's engine version is auditable after the fact (this is how the historical
+# objective suite's engine was identified retroactively).
+_REVISION_RE = re.compile(r"Rev(?:ision)?\s+([0-9][0-9A-Za-z._-]*)", re.IGNORECASE)
+# A leading 4-digit build year (e.g. "2026.") appears in output headers but not
+# the banner; strip it so both sources yield the same canonical "61.0.2.61".
+_BUILD_YEAR_PREFIX_RE = re.compile(r"^(19|20)\d{2}\.")
+
+# Output files whose header carries the "MODULAR Rev <x>" stamp. First hit wins.
+_REVISION_HEADER_FILES: tuple[str, ...] = (
+    "channel_sd_day.txt",
+    "channel_sd_aa.txt",
+    "basin_wb_aa.txt",
+    "basin_wb_day.txt",
+)
 
 
-def parse_engine_revision(banner_text: str | None) -> str | None:
-    """Extract the SWAT+ engine revision from its startup banner text.
+def parse_engine_revision(text: str | None) -> str | None:
+    """Extract the SWAT+ engine revision from banner or output-header text.
+
+    Handles both the stdout banner form (``"Revision 61.0.2.61"``) and the
+    output-file header form (``"MODULAR Rev 2026.61.0.2.61"``), normalizing a
+    leading build-year prefix away so both yield ``"61.0.2.61"``.
 
     Args:
-        banner_text: Any text that may contain the engine banner — typically
-            ``proc.stdout`` from a run, or the head of it.
+        text: Any text that may contain the revision — engine ``proc.stdout``
+            or the header line of an output file.
 
     Returns:
-        The revision string (e.g. ``"61.0.2.61"``) or ``None`` if no
-        ``Revision <x>`` line is present.
+        The canonical revision string (e.g. ``"61.0.2.61"``) or ``None``.
     """
-    if not banner_text:
+    if not text:
         return None
-    match = _REVISION_RE.search(banner_text)
+    match = _REVISION_RE.search(text)
     if not match:
         return None
-    return match.group(1).strip()
+    revision = match.group(1).strip()
+    return _BUILD_YEAR_PREFIX_RE.sub("", revision)
+
+
+def engine_revision_from_outputs(txtinout: Path) -> str | None:
+    """Read the engine revision stamped into a run's output-file headers.
+
+    This is the authoritative, PERSISTED provenance source: SWAT+ writes
+    ``MODULAR Rev <x>`` into the header of every output file, so the version is
+    recoverable from the artifacts alone — even for a run completed long ago.
+
+    Args:
+        txtinout: Directory containing the engine's output files.
+
+    Returns:
+        The canonical revision, or ``None`` if no stamped header is found.
+    """
+    for name in _REVISION_HEADER_FILES:
+        path = txtinout / name
+        if not path.is_file():
+            continue
+        try:
+            with path.open("r", encoding="utf-8", errors="replace") as fh:
+                header = fh.readline()
+        except OSError:
+            continue
+        revision = parse_engine_revision(header)
+        if revision:
+            return revision
+    return None
 
 
 def verify_engine_version(
@@ -356,9 +401,13 @@ def run(
 
     stdout_tail = (proc.stdout or "")[-_STDOUT_TAIL_BYTES:]
     stderr_tail = (proc.stderr or "")[-_STDERR_TAIL_BYTES:]
-    # The revision banner prints at the START of stdout, so parse the head of
-    # the full capture (the tail may have truncated it on a long run).
-    engine_version = parse_engine_revision((proc.stdout or "")[:_STDOUT_TAIL_BYTES])
+    # Engine version, in order of authority: the revision stamped into the
+    # persisted output-file headers (recoverable from artifacts alone), then the
+    # stdout startup banner (the banner prints at the START of stdout, so parse
+    # the head — a long run may have truncated it out of the tail).
+    engine_version = engine_revision_from_outputs(txtinout) or parse_engine_revision(
+        (proc.stdout or "")[:_STDOUT_TAIL_BYTES]
+    )
     diagnostics_tail = _read_diagnostics_tail(txtinout)
     output_files = _enumerate_output_files(txtinout)
     paths = _collect_well_known_paths(txtinout, output_files)
