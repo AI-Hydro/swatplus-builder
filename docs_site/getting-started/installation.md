@@ -12,6 +12,22 @@
 - **Network access** for USGS NWIS discharge, gNATSGO soils, and weather
   forcing retrieval.
 
+## Install from PyPI
+
+```bash
+# Core only
+pip install swatplus-builder
+
+# With GIS stack (required for real watershed builds)
+pip install "swatplus-builder[gis]"
+
+# With HyRiver helpers (USGS gauges, NHDPlus, py3dep, GridMET)
+pip install "swatplus-builder[gis,hyriver]"
+
+# Full stack — GIS + weather + soils + MCP agent server
+pip install "swatplus-builder[gis,hyriver,gridmet,soils,mcp]"
+```
+
 ## Install from source
 
 ```bash

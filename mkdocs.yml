@@ -102,6 +102,7 @@ nav:
       - MCP server: agents/mcp-server.md
       - Tool surface: agents/tool-surface.md
       - The agent contract: agents/agent-contract.md
+      - Running with AI-Hydro: agents/ai-hydro.md
   - Reference:
       - CLI: reference/cli.md
       - Python API: reference/python-api.md
