@@ -17,7 +17,7 @@ This downloads `swatplus_datasets.sqlite`, `swatplus_soils.sqlite`, and
 You can also point the toolchain at an existing copy:
 
 ```bash
-swat init --ref-dir /path/to/reference_dbs --datasets-version v60.5.7
+swat init --ref-dir /path/to/reference_dbs --datasets-version 3.2.0
 ```
 
 ## SWAT+ engine binary
@@ -25,18 +25,30 @@ swat init --ref-dir /path/to/reference_dbs --datasets-version v60.5.7
 The SWAT+ engine binary is **not distributed with this package** — you acquire
 it separately from the SWAT+ team and point the toolchain at it.
 
-### Tested version
+### Supported version
 
-The entire swatplus-builder pipeline has been validated against:
+swatplus-builder targets the **SWAT+ v2023** input/output layout and has been
+validated across:
 
 ```
-SWAT+ v2023  —  rev 60.5.7
+SWAT+ v2023  —  rev 60.5.7  through  rev 61.0.2.61
 ```
 
-The topology converter and routing fixes in swatplus-builder target the
-`rte_cha=1` / `chandeg.con` layout required by rev 60.5.7 specifically.
-Other rev 60.x releases are likely compatible; earlier revisions may produce
-different output file layouts.
+The full-mode topology converter and routing fixes were first developed against
+**rev 60.5.7** (the `rte_cha=1` / `chandeg.con` connect-block layout), and the
+pipeline was subsequently confirmed working on the native **rev 61.0.2.61**
+engine. The binary shipped/used in the current builds is **rev 61.0.2.61**.
+
+!!! note "Engine version is recorded, not assumed"
+    Every run parses the engine's startup banner and records the verified
+    revision in its evidence bundle. If you assert a version that disagrees
+    with the binary, the workflow records the banner value and flags the
+    mismatch — so provenance always reflects the engine that actually ran.
+    (Note: the historical 11-basin objective suite predates this capture, so
+    its exact engine revision is not recorded in the report.)
+
+Earlier revisions than 60.5.7 may produce different output file layouts and are
+not supported.
 
 ### Where to get it
 
@@ -46,8 +58,9 @@ different output file layouts.
 | **SWAT+ GitBook docs** | [swatplus.gitbook.io/docs](https://swatplus.gitbook.io/docs) |
 | **Source / releases** | [github.com/swat-model](https://github.com/swat-model) |
 
-Download the Linux or macOS binary for rev 60.5.7 (or the latest rev 60.x),
-mark it executable, and place it on `PATH` as `swatplus`:
+Download the Linux or macOS binary for a supported revision (rev 60.5.7 –
+61.0.2.61; the latest v2023 release is recommended), mark it executable, and
+place it on `PATH` as `swatplus`:
 
 ```bash
 chmod +x swatplus_exe
