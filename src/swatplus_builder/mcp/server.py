@@ -1,8 +1,18 @@
-"""Phase 3D MCP server with a narrow typed 8-tool surface."""
+"""Typed MCP tool surface for swatplus-builder.
+
+Tier 0 exposes the canonical claim-governed workflow (`run_workflow` /
+`workflow_status`); Tier 1 covers basin-level operations; Tier 2 covers the
+locked-benchmark protocol. The tools expose operations, never the authority
+to override an evidence-backed claim decision.
+"""
 
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
+import time
 from datetime import date
 from pathlib import Path
 from typing import Literal
@@ -186,15 +196,240 @@ class ReadinessTableResponse(BaseModel):
     out_md: str | None = None
 
 
+class RunWorkflowRequest(BaseModel):
+    usgs_id: str = Field(..., description="USGS streamgage ID, e.g. '01547700'.")
+    start: str = Field("2000-01-01", description="Simulation start date (YYYY-MM-DD).")
+    end: str = Field("2019-12-31", description="Simulation end date (YYYY-MM-DD).")
+    model_family: Literal["full", "lte"] = Field("full", description="SWAT+ model family.")
+    warmup_years: int = Field(3, description="Warm-up years excluded from evaluation.")
+    calibrate: bool = Field(True, description="Run gated locked calibration after the base run.")
+    claim_tier: str = Field(
+        "diagnostic",
+        description=(
+            "Requested claim tier (exploratory | diagnostic | research_grade). "
+            "The package may downgrade it based on runtime gates; the agent cannot override."
+        ),
+    )
+    out_dir: str | None = Field(
+        None,
+        description="Output directory. Defaults to demo_runs/workflow/usgs_<id>_<timestamp> under the current directory.",
+    )
+
+
+class RunWorkflowResponse(BaseModel):
+    status: Literal["started"] = "started"
+    detail: str
+    out_dir: str
+    log_path: str
+    pid: int
+    equivalent_cli: str
+    next_step: str
+
+
+class WorkflowStatusRequest(BaseModel):
+    out_dir: str = Field(..., description="The out_dir returned by run_workflow.")
+    log_tail_lines: int = Field(25, description="How many trailing log lines to include.")
+
+
+class WorkflowStatusResponse(BaseModel):
+    status: Literal["running", "completed", "failed", "unknown"]
+    detail: str
+    success: bool | None = None
+    run_id: str | None = None
+    evidence_summary_path: str | None = None
+    artifact_dir: str | None = None
+    blocker_class: str | None = None
+    log_tail: str | None = None
+
+
+_LAUNCH_STATE_FILENAME = "workflow_launch.json"
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def _parse_final_json(log_text: str) -> dict | None:
+    """Extract the final JSON payload printed by `swat workflow run --json`.
+
+    The payload is the last top-level JSON object in the log; walk candidate
+    start lines backwards so leading engine/stream noise cannot break parsing.
+    """
+    lines = log_text.splitlines()
+    for i in range(len(lines) - 1, -1, -1):
+        if lines[i].strip() == "{":
+            candidate = "\n".join(lines[i:])
+            try:
+                payload = json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                return payload
+    return None
+
+
 def create_mcp_server() -> FastMCP:
-    """Create and register the Phase 3D MCP tool surface."""
+    """Create and register the swatplus-builder MCP tool surface."""
     mcp = FastMCP(name="swatplus-builder")
+
+    @mcp.tool(
+        name="run_workflow",
+        description=(
+            "START HERE for 'build/run/model gauge X'. Launches the canonical "
+            "claim-governed USGS workflow (build → run → lock benchmark → gated "
+            "calibration → independent verification → evidence bundle) for one "
+            "USGS gauge ID. Runs as a detached background process — returns "
+            "immediately; poll progress with workflow_status. A full run takes "
+            "tens of minutes. The package, not the agent, decides the final "
+            "claim tier; summarize results only from the evidence bundle."
+        ),
+    )
+    def run_workflow(req: RunWorkflowRequest) -> RunWorkflowResponse:
+        usgs_id = req.usgs_id.strip()
+        if not usgs_id.isdigit():
+            raise ValueError(f"usgs_id must be a numeric USGS gauge ID, got: {req.usgs_id!r}")
+
+        if req.out_dir is not None:
+            out_dir = Path(req.out_dir).expanduser().resolve()
+        else:
+            stamp = time.strftime("%Y%m%d_%H%M%S")
+            out_dir = (Path.cwd() / "demo_runs" / "workflow" / f"usgs_{usgs_id}_{stamp}").resolve()
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        argv = [
+            sys.executable,
+            "-m",
+            "swatplus_builder.cli",
+            "workflow",
+            "run",
+            "--usgs-id",
+            usgs_id,
+            "--model-family",
+            req.model_family,
+            "--start",
+            req.start,
+            "--end",
+            req.end,
+            "--warmup-years",
+            str(req.warmup_years),
+            "--out-dir",
+            str(out_dir),
+            "--calibrate" if req.calibrate else "--no-calibrate",
+            "--claim-tier",
+            req.claim_tier,
+            "--json",
+        ]
+
+        log_path = out_dir / "workflow_mcp.log"
+        with log_path.open("wb") as log_file:
+            proc = subprocess.Popen(
+                argv,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                cwd=str(out_dir),
+                start_new_session=True,
+            )
+
+        launch_state = {
+            "pid": proc.pid,
+            "argv": argv,
+            "log_path": str(log_path),
+            "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "usgs_id": usgs_id,
+        }
+        (out_dir / _LAUNCH_STATE_FILENAME).write_text(
+            json.dumps(launch_state, indent=2) + "\n", encoding="utf-8"
+        )
+
+        equivalent_cli = "swat workflow run " + " ".join(argv[4:])
+        return RunWorkflowResponse(
+            detail=(
+                f"Canonical workflow for USGS {usgs_id} started in the background "
+                f"(pid {proc.pid}). This is the governed end-to-end path; results "
+                "must be summarized from the evidence bundle only."
+            ),
+            out_dir=str(out_dir),
+            log_path=str(log_path),
+            pid=proc.pid,
+            equivalent_cli=equivalent_cli,
+            next_step=(
+                f"Poll workflow_status with out_dir='{out_dir}' (every ~60s). "
+                "When status is 'completed', read evidence_summary_path before "
+                "reporting any metric or claim."
+            ),
+        )
+
+    @mcp.tool(
+        name="workflow_status",
+        description=(
+            "Check the status of a run_workflow launch. Returns running | "
+            "completed | failed plus the evidence bundle pointers once finished. "
+            "Always read the evidence summary before reporting results."
+        ),
+    )
+    def workflow_status(req: WorkflowStatusRequest) -> WorkflowStatusResponse:
+        out_dir = Path(req.out_dir).expanduser().resolve()
+        state_path = out_dir / _LAUNCH_STATE_FILENAME
+        if not state_path.exists():
+            return WorkflowStatusResponse(
+                status="unknown",
+                detail=(
+                    f"No {_LAUNCH_STATE_FILENAME} found in {out_dir} — was this "
+                    "directory created by run_workflow?"
+                ),
+            )
+
+        launch = json.loads(state_path.read_text(encoding="utf-8"))
+        pid = int(launch.get("pid", -1))
+        log_path = Path(launch.get("log_path", out_dir / "workflow_mcp.log"))
+        log_text = log_path.read_text(encoding="utf-8", errors="replace") if log_path.exists() else ""
+        tail_lines = log_text.splitlines()[-max(1, req.log_tail_lines):]
+        log_tail = "\n".join(tail_lines) if tail_lines else None
+
+        if pid > 0 and _pid_alive(pid):
+            return WorkflowStatusResponse(
+                status="running",
+                detail=f"Workflow (pid {pid}) is still running. Poll again in ~60s.",
+                log_tail=log_tail,
+            )
+
+        payload = _parse_final_json(log_text)
+        if payload is not None:
+            return WorkflowStatusResponse(
+                status="completed",
+                detail=(
+                    "Workflow finished. Summarize only from the evidence bundle at "
+                    "evidence_summary_path — never from log text."
+                ),
+                success=bool(payload.get("success")),
+                run_id=payload.get("run_id"),
+                evidence_summary_path=payload.get("evidence_summary_path"),
+                artifact_dir=payload.get("artifact_dir"),
+                blocker_class=payload.get("blocker_class"),
+                log_tail=log_tail,
+            )
+
+        return WorkflowStatusResponse(
+            status="failed",
+            detail=(
+                f"Workflow process (pid {pid}) is no longer running and no final "
+                "JSON payload was found in the log. Inspect the log tail and "
+                f"full log at {log_path}."
+            ),
+            log_tail=log_tail,
+        )
 
     @mcp.tool(
         name="build_project",
         description=(
-            "Build a SWAT+ project from a basin spec. "
-            "Current status: placeholder while project build toolchain is promoted to MCP."
+            "Validate a basin spec JSON and write a build manifest. NOTE: this "
+            "does NOT produce a runnable SWAT+ project — for the end-to-end "
+            "governed build/run/calibrate pipeline from a USGS gauge ID, use "
+            "run_workflow instead."
         ),
     )
     def build_project(req: BuildProjectRequest) -> BuildProjectResponse:
@@ -217,15 +452,20 @@ def create_mcp_server() -> FastMCP:
         }
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         return BuildProjectResponse(
-            detail="Basin spec was validated and build manifest was written.",
+            detail=(
+                "Basin spec was validated and a build manifest was written. "
+                "No runnable SWAT+ project was built — use run_workflow for the "
+                "end-to-end governed pipeline."
+            ),
             manifest_path=str(manifest_path),
         )
 
     @mcp.tool(
         name="run_basin",
         description=(
-            "Run a basin configuration end-to-end. "
-            "Current status: placeholder while run orchestrator is promoted to MCP."
+            "Run a basin configuration through the lower-level (non-governed) "
+            "pipeline orchestrator. Produces no evidence bundle or claim tier — "
+            "prefer run_workflow for any result that will be reported."
         ),
     )
     def run_basin(req: RunBasinRequest) -> RunBasinResponse:
@@ -258,8 +498,9 @@ def create_mcp_server() -> FastMCP:
     @mcp.tool(
         name="calibrate",
         description=(
-            "Run calibration on a basin. "
-            "Current status: placeholder while MCP calibration execution wrapper is finalized."
+            "Run standalone pySWATPlus-bridge calibration on an existing TxtInOut "
+            "(non-authoritative path). For reportable calibrated metrics use "
+            "run_workflow, or the locked_calibrate protocol on a locked benchmark."
         ),
     )
     def calibrate(req: CalibrateRequest) -> CalibrateResponse:

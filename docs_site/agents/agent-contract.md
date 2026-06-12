@@ -49,5 +49,5 @@ to establish — which the final evidence bundle can then be checked against.
 ## Read next
 
 - [MCP server](mcp-server.md) — start and register the server
-- [Tool surface](tool-surface.md) — the 11 tools that form the boundary
+- [Tool surface](tool-surface.md) — the 13 tools that form the boundary
 - [Claim governance](../concepts/claim-governance.md) — how tiers are decided
