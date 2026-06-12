@@ -6,6 +6,8 @@ swatplus-builder is released under the **MIT License**. See
 [`LICENSE`](https://github.com/AI-Hydro/swatplus-builder/blob/main/LICENSE) in
 the repository.
 
+> Copyright &copy; 2026 Mohammad Galib
+
 ## Vendored and optional components
 
 | Component | License | Posture |
