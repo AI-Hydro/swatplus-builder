@@ -10,6 +10,8 @@ repo_name: AI-Hydro/swatplus-builder
 repo_url: https://github.com/AI-Hydro/swatplus-builder
 edit_uri: edit/main/docs_site/
 
+copyright: Copyright &copy; 2026 Mohammad Galib
+
 # Curated public documentation source. The internal docs/ tree (incident logs,
 # defect localization, PROGRESS journal) is intentionally NOT part of this site;
 # it remains browsable in the repository but is excluded from the nav.
