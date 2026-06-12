@@ -363,12 +363,12 @@ def cmd_health(
 
     # --- optional: MCP extras ---
     try:
-        import fastmcp  # noqa: F401
+        from mcp.server.fastmcp import FastMCP  # noqa: F401
         mcp_ok = True
-        mcp_detail = "fastmcp"
-    except ImportError:
+        mcp_detail = "mcp[fastmcp] available"
+    except ImportError as exc:
         mcp_ok = False
-        mcp_detail = "fastmcp not installed (pip install swatplus-builder[mcp])"
+        mcp_detail = f"mcp not installed ({exc.name}); run: pip install swatplus-builder[mcp]"
     _check("mcp_extras", critical=False, ok=mcp_ok, detail=mcp_detail)
 
     critical_fail = any(c["critical"] and not c["ok"] for c in checks)
@@ -1208,6 +1208,63 @@ def cmd_mcp() -> None:
     """Start the stdio MCP server (install [mcp] extra first)."""
     from .mcp.server import main
     main()
+
+
+@app.command("mcp-check")
+def cmd_mcp_check(
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON."),
+) -> None:
+    """Validate that the MCP server can be imported and all tools registered.
+
+    Exits 0 if all checks pass, 1 if any check fails. Useful as a pre-flight
+    before starting the server (e.g. called by the AI-Hydro extension).
+    """
+    results: list[dict[str, object]] = []
+
+    def _chk(name: str, ok: bool, detail: str) -> None:
+        results.append({"name": name, "ok": ok, "detail": detail})
+
+    # Check 1: mcp package importable
+    try:
+        from mcp.server.fastmcp import FastMCP  # noqa: F401
+        _chk("mcp_import", True, "mcp.server.fastmcp.FastMCP importable")
+    except ImportError as exc:
+        _chk("mcp_import", False, f"ImportError: {exc} — run: pip install swatplus-builder[mcp]")
+
+    # Check 2: server module importable
+    try:
+        from .mcp.server import create_mcp_server  # noqa: F401
+        _chk("server_module", True, "swatplus_builder.mcp.server importable")
+    except ImportError as exc:
+        _chk("server_module", False, f"ImportError: {exc}")
+
+    # Check 3: server instantiates and tools register
+    try:
+        import asyncio
+        from .mcp.server import create_mcp_server
+        srv = create_mcp_server()
+        tool_names = [t.name for t in asyncio.run(srv.list_tools())]
+        _chk(
+            "server_init",
+            True,
+            f"server created; {len(tool_names)} tool(s) registered: {', '.join(tool_names)}",
+        )
+    except Exception as exc:  # noqa: BLE001
+        _chk("server_init", False, f"{type(exc).__name__}: {exc}")
+
+    all_ok = all(r["ok"] for r in results)
+    exit_code = 0 if all_ok else 1
+
+    if json_output:
+        print(json.dumps({"ok": all_ok, "checks": results}, indent=2))
+    else:
+        for r in results:
+            icon = "✓" if r["ok"] else "✗"
+            color = "green" if r["ok"] else "red"
+            rprint(f"[{color}]{icon}[/{color}] {r['name']}: {r['detail']}")
+        rprint(f"\n{'[green]MCP server: ready[/green]' if all_ok else '[red]MCP server: NOT ready[/red]'}")
+
+    raise typer.Exit(exit_code)
 
 
 @app.command("diagnose")

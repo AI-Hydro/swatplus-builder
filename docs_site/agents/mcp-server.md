@@ -7,22 +7,25 @@ This is the design's intended mode: the agent operates, the package governs.
 ## Start the server
 
 ```bash
-pip install -e ".[mcp]"
+pip install "swatplus-builder[mcp]"
 swat mcp                 # stdio transport
 ```
 
-From a source tree without the entry point:
+Before starting, run a pre-flight check to confirm the server and all tools
+load correctly in your active Python environment:
 
 ```bash
-PYTHONPATH=src python -m swatplus_builder.cli mcp
+swat mcp-check           # exits 0 if ready, 1 if not
+swat mcp-check --json    # machine-readable output
 ```
 
-The server is built on `FastMCP` (`name="swatplus-builder"`) and communicates
-over stdio.
+This is especially useful when you have multiple Python environments (conda,
+venv, pyenv) — `mcp-check` tells you exactly which import is missing and in
+which environment, rather than failing silently when the server spawns.
 
 ## Register it with an agent client
 
-Claude Desktop / Claude Code (`claude_desktop_config.json`):
+Claude Desktop / Claude Code (`claude_desktop_config.json`) — **recommended** form:
 
 ```json
 {
@@ -39,19 +42,63 @@ Claude Desktop / Claude Code (`claude_desktop_config.json`):
 }
 ```
 
-If you run from a source checkout, use the module form instead:
+!!! tip "Mixed conda/venv environments"
+    If you get `ModuleNotFoundError: No module named 'mcp'` when the server
+    starts, the `swat` binary is resolving from a different Python than where
+    `mcp` is installed. Pin the exact Python interpreter instead:
+
+    ```json
+    {
+      "mcpServers": {
+        "swatplus-builder": {
+          "command": "/opt/miniconda3/bin/python",
+          "args": ["-m", "swatplus_builder.mcp.server"],
+          "env": {
+            "SWATPLUS_EXE": "/usr/local/bin/swatplus_exe",
+            "SWATPLUS_BUILDER_ARTIFACTS": "/data/artifacts"
+          }
+        }
+      }
+    }
+    ```
+
+    Find the right interpreter: `which python` inside the environment where
+    `pip install swatplus-builder[mcp]` succeeded. Confirm with:
+    `python -c "from mcp.server.fastmcp import FastMCP; print('ok')"`.
+
+If you run from a source checkout:
 
 ```json
 {
   "mcpServers": {
     "swatplus-builder": {
       "command": "python",
-      "args": ["-m", "swatplus_builder.cli", "mcp"],
-      "env": { "PYTHONPATH": "src" }
+      "args": ["-m", "swatplus_builder.mcp.server"],
+      "env": { "PYTHONPATH": "/path/to/swatplus-builder/src" }
     }
   }
 }
 ```
+
+## Tool input shape (`req` wrapper)
+
+Every swatplus-builder tool takes a single `req` object — not flat keyword
+arguments. This differs from tools that accept top-level parameters directly.
+Pass arguments nested under `"req"`:
+
+```json
+{
+  "req": {
+    "strategy": "random",
+    "parameters": ["CN2", "ALPHA_BF"],
+    "n_suggestions": 5
+  }
+}
+```
+
+The schema for each tool is defined by a named `*Request` Pydantic model
+(e.g. `ProposeParametersRequest`). See [Tool surface](tool-surface.md) for
+the full list of fields per tool.
 
 ## Teach the agent the system: `SKILL.md`
 
