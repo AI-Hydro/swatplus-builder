@@ -1,27 +1,43 @@
 {
-  "title": "swatplus-builder: Build and calibrate SWAT+ hydrologic models from a USGS gauge ID — with evidence-backed, claim-governed results",
-  "description": "swatplus-builder builds and calibrates SWAT+ hydrologic models in Python, starting from one USGS streamgage ID. It can be driven by a person or by an AI agent — and either way, the software, not the operator, decides what each result is allowed to claim, through runtime gates, provenance, locked reruns, and evidence-backed claim tiers. The whole pipeline runs with no desktop GIS (no QGIS). GIS work uses WhiteboxTools + rasterio + geopandas.",
+  "title": "swatplus-builder: Claim-governed SWAT+ hydrologic modeling from a USGS gauge ID",
+  "description": "<p>swatplus-builder builds and calibrates SWAT+ hydrologic models in Python, starting from a single USGS streamgage ID. A locked benchmark calibration protocol (lock → calibrate → independently verified rerun) ensures that reported metrics always come from a clean rerun, never the optimizer loop. Runtime gates assign each result a claim tier (exploratory → diagnostic → research_grade → publication_grade) and write a machine-readable evidence bundle — including typed, evidence-backed refusals — so both successes and limitations are inspectable.</p><p>The pipeline runs entirely in Python with no desktop GIS (no QGIS, PyQGIS, or QSWATPlus plugin). GIS operations use WhiteboxTools, rasterio, and geopandas. The package exposes an 11-tool MCP surface for AI agent operation and a full CLI (<code>swat workflow run</code>).</p><p>Key contribution: the software, not the operator, decides what each result is allowed to claim. A strong metric never promotes itself past a failed gate.</p>",
   "upload_type": "software",
   "license": "MIT",
+  "version": "0.4.0",
   "creators": [
     {
       "name": "Galib, Mohammad",
-      "affiliation": "Purdue University",
+      "affiliation": "Purdue University West Lafayette",
       "orcid": ""
+    },
+    {
+      "name": "Merwade, Venkatesh",
+      "affiliation": "Purdue University West Lafayette",
+      "orcid": "0000-0002-4572-8531"
+    }
+  ],
+  "contributors": [
+    {
+      "name": "Merwade, Venkatesh",
+      "affiliation": "Purdue University West Lafayette",
+      "orcid": "0000-0002-4572-8531",
+      "type": "Supervisor"
     }
   ],
   "keywords": [
     "SWAT+",
     "hydrology",
     "watershed modeling",
-    "calibration",
+    "streamflow calibration",
     "claim governance",
+    "scientific reproducibility",
     "GIS",
     "Python",
     "MCP",
     "AI agents",
-    "streamflow",
-    "USGS"
+    "USGS",
+    "evidence bundle",
+    "locked calibration"
   ],
   "related_identifiers": [
     {
@@ -33,6 +49,11 @@
       "scheme": "url",
       "identifier": "https://github.com/AI-Hydro/swatplus-builder",
       "relation": "isSupplementTo"
+    },
+    {
+      "scheme": "url",
+      "identifier": "https://pypi.org/project/swatplus-builder/",
+      "relation": "isIdenticalTo"
     }
   ],
   "language": "eng",

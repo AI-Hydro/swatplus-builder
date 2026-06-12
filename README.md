@@ -4,6 +4,11 @@
 [![Python](https://img.shields.io/pypi/pyversions/swatplus-builder)](https://pypi.org/project/swatplus-builder/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-ai--hydro.github.io-blue)](https://ai-hydro.github.io/swatplus-builder/)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20650908.svg)](https://doi.org/10.5281/zenodo.20650908)
+
+<p align="center">
+  <img src="assets/images/swatplus-builder-readme-thumbnail.png" alt="swatplus-builder: Claim-governed SWAT+ workflows with auditable evidence" width="100%">
+</p>
 
 > **Calibrated SWAT+ models from a single gauge ID — with evidence you can audit.**
 
@@ -320,6 +325,29 @@ Both basins: independently verified (re-run of best solution, not calibration-lo
 - **No QGIS.** If you need byte-for-byte QSWATPlus parity, use QSWATPlus. We aim for numerical agreement within a few percent.
 - **No pySWATPlus replacement.** pySWATPlus edits an existing `TxtInOut` and runs calibrations. swatplus-builder builds the `TxtInOut`. They are complementary.
 - **No SWAT+ engine bundled.** Bring your own `swatplus_exe` and mount it at runtime.
+
+---
+
+## Citation
+
+If you use swatplus-builder in your research, please cite:
+
+```bibtex
+@software{galib_swatplus_builder_2026,
+  author       = {Galib, Mohammad and Merwade, Venkatesh},
+  title        = {{swatplus-builder: Claim-governed SWAT+ hydrologic
+                   modeling from a USGS gauge ID}},
+  year         = {2026},
+  publisher    = {Zenodo},
+  version      = {0.4.0},
+  doi          = {10.5281/zenodo.20650908},
+  url          = {https://doi.org/10.5281/zenodo.20650908}
+}
+```
+
+When reporting a specific result, also cite the run's provenance hash from
+`evidence_summary.json` — a metric without its run provenance is not
+reproducible. See [Citing & references](https://ai-hydro.github.io/swatplus-builder/project/citing/).
 
 ---
 
