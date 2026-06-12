@@ -41,29 +41,90 @@ A real build needs two things not shipped with the Python package:
 - the **SWAT+ engine binary** (`SWATPLUS_EXE` or `swatplus` on `PATH`);
 - the **SWAT+ reference databases** (`datasets` / `soils` / `wgn` SQLite).
 
+### SWAT+ engine binary
+
+**Tested / required version: SWAT+ v2023 rev 60.5.7**
+
+The topology converter and routing pipeline target the `rte_cha=1` /
+`chandeg.con` layout specific to rev 60.5.7. Other rev 60.x releases are
+likely compatible; earlier revisions produce different output layouts and
+may break parsing.
+
+**Where to get it:**
+- Official download page: https://swat.tamu.edu/software/plus/
+- SWAT+ GitBook docs: https://swatplus.gitbook.io/docs
+- Source / releases: https://github.com/swat-model
+
+**After downloading:**
+```bash
+chmod +x swatplus_exe
+export SWATPLUS_EXE=/path/to/swatplus_exe   # or place as 'swatplus' on PATH
+```
+
+**Agent guidance:** if `swat health --json` shows `"swatplus_exe": false`,
+tell the user to download SWAT+ v2023 rev 60.5.7 from
+https://swat.tamu.edu/software/plus/ and set the `SWATPLUS_EXE` environment
+variable to its path.
+
+### Reference databases
+
+```bash
+bash scripts/bootstrap_reference_dbs.sh   # downloads to ~/.swatplus-builder/reference_dbs
+```
+
 Bootstrap both, then confirm with `swat health --json` (reports engine path,
 version, and reference-DB availability). A `degraded` result almost always
 means a missing engine or missing reference DBs.
 
 ## Tool catalog
 
-The MCP surface is intentionally narrow: exactly **11 typed tools** in two
+The MCP surface is intentionally narrow: exactly **13 typed tools** in three
 tiers. The tools expose operations (build, run, calibrate, verify, query) but
 not the authority to override an evidence-backed decision. What is not a tool
 is not an action the agent can take.
+
+### Tier 0 — Canonical governed workflow (2 tools) — START HERE
+
+When the user says "build/run/model gauge X", reach for `run_workflow` first.
+It is the only MCP path that produces a claim-governed evidence bundle.
+
+#### `run_workflow`
+- input: `RunWorkflowRequest(usgs_id: str, start='2000-01-01', end='2019-12-31',
+  model_family='full'|'lte', warmup_years=3, calibrate=True,
+  claim_tier='diagnostic', out_dir: str | None = None)`
+- output: `RunWorkflowResponse(status='started', detail, out_dir, log_path, pid,
+  equivalent_cli, next_step)`
+- Behavior: launches the canonical workflow (build → run → lock benchmark →
+  gated calibration → independent verification → evidence bundle) as a
+  **detached background process** and returns immediately. A full run takes
+  tens of minutes.
+- After launch: poll `workflow_status(out_dir=...)` roughly every 60 s. Do not
+  re-launch while a run is in progress.
+- The response includes `equivalent_cli` — record it for reproducibility.
+
+#### `workflow_status`
+- input: `WorkflowStatusRequest(out_dir: str, log_tail_lines=25)`
+- output: `WorkflowStatusResponse(status='running'|'completed'|'failed'|'unknown',
+  detail, success?, run_id?, evidence_summary_path?, artifact_dir?,
+  blocker_class?, log_tail?)`
+- On `completed`: read `evidence_summary_path` and summarize **only** from the
+  evidence bundle — allowed claims, blocked claims, and the effective tier.
+- On `failed`: inspect `log_tail`, then `diagnose_failure` with run artifacts.
 
 ### Tier 1 — Basin workflow (8 tools)
 
 #### `build_project`
 - input: `BuildProjectRequest(basin_spec_path: str, workdir: str | None = None)`
 - output: `BuildProjectResponse(status, detail, manifest_path)`
-- Use when a basin specification must be promoted to a runnable SWAT+ project.
+- Validates a basin spec JSON and writes a build manifest. **Does NOT build a
+  runnable SWAT+ project** — use `run_workflow` for the end-to-end pipeline.
 - Failure modes: invalid/missing `basin_spec_path`; non-object basin spec JSON.
 
 #### `run_basin`
 - input: `RunBasinRequest(basin_config_path: str)`
 - output: `RunBasinResponse(status, detail, run_summary_path)`
-- Use when a prepared basin configuration should be executed end-to-end.
+- Lower-level (non-governed) pipeline orchestrator — produces no evidence
+  bundle or claim tier. Prefer `run_workflow` for any reportable result.
 - Failure modes: missing/invalid `basin_config_path`; config missing `usgs_id`;
   orchestration runtime failure.
 
@@ -233,6 +294,14 @@ Interpretation guardrails:
   confirm correctness.
 
 ## Example workflows
+
+### Workflow 0 — Canonical: "model gauge X" end to end (DEFAULT)
+1. `run_workflow(usgs_id="01547700")` — launches the governed pipeline in the
+   background and returns `out_dir` + `equivalent_cli` immediately.
+2. `workflow_status(out_dir=...)` every ~60 s until `completed` or `failed`.
+3. On `completed`: read `evidence_summary_path`; report allowed claims, blocked
+   claims, and effective tier — never a bare metric.
+4. On `failed`: inspect `log_tail`, then `diagnose_failure` on the artifacts.
 
 ### Workflow A — Diagnose a poor run and propose focused next trials
 1. `query_artifacts` to locate the latest low-NSE run.

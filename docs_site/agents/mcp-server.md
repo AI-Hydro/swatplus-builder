@@ -104,7 +104,7 @@ the full list of fields per tool.
 
 The repository ships a [`SKILL.md`](https://github.com/AI-Hydro/swatplus-builder/blob/main/SKILL.md)
 at its root — a single, self-contained skill file that teaches an agent the
-whole system: when to use it, the 11-tool catalog with signatures, the
+whole system: when to use it, the 13-tool catalog with signatures, the
 parameter registry, diagnostic heuristics, basin taxonomy, the evaluation
 protocol, the locked-benchmark rules, and worked example workflows.
 
@@ -121,7 +121,33 @@ fastest way to bring a cold agent up to competence on the pipeline.
 
 The agent calls typed tools to do this; it does not get to decide the claim
 tier. See [The agent contract](agent-contract.md) for what the agent may and
-may not do, and [Tool surface](tool-surface.md) for the 11 tools.
+may not do, and [Tool surface](tool-surface.md) for the 13 tools.
+
+## SWAT+ engine binary (required for real runs)
+
+The MCP server starts without the engine binary (health returns `degraded`),
+but **no simulation, calibration, or locked-benchmark tool will succeed** until
+the engine is present.
+
+**Tested version:** `SWAT+ v2023 rev 60.5.7`
+
+| Resource | Link |
+|---|---|
+| Official download page | [swat.tamu.edu/software/plus](https://swat.tamu.edu/software/plus/) |
+| SWAT+ GitBook docs | [swatplus.gitbook.io/docs](https://swatplus.gitbook.io/docs) |
+| Source / releases | [github.com/swat-model](https://github.com/swat-model) |
+
+Once downloaded:
+
+```bash
+chmod +x swatplus_exe
+export SWATPLUS_EXE=/path/to/swatplus_exe   # or place as 'swatplus' on PATH
+swat health                                  # should show "swatplus_exe: ✓"
+```
+
+When the agent calls `swat health --json` and sees `"swatplus_exe": false`, it
+should tell the user to download rev 60.5.7 from the link above and set
+`SWATPLUS_EXE`.
 
 ## Containers
 
@@ -132,5 +158,5 @@ SWATPLUS_BIN_DIR=/path/to/swatplus_dir docker compose run --rm mcp
 ## Read next
 
 - [`SKILL.md`](https://github.com/AI-Hydro/swatplus-builder/blob/main/SKILL.md) — the agent skill file (tool catalog, heuristics, workflows)
-- [Tool surface](tool-surface.md) — the 11 MCP tools
+- [Tool surface](tool-surface.md) — the 13 MCP tools
 - [The agent contract](agent-contract.md) — operate vs. govern

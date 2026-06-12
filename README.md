@@ -48,7 +48,7 @@ agent — decides what may be claimed.
 
 ## Status
 
-**Alpha, v0.4.0** — locked-benchmark calibration, 11-tool agent (MCP) surface, container baseline.
+**Alpha, v0.4.0** — locked-benchmark calibration, 13-tool agent (MCP) surface, container baseline.
 
 - [x] Pure-Python GIS (WhiteboxTools, rasterio, geopandas)
 - [x] Automated SWAT+ project generation
@@ -58,7 +58,7 @@ agent — decides what may be claimed.
 - [x] NSE / KGE / BFI metrics (`evaluate_run` — authoritative)
 - [x] **Locked-benchmark calibration protocol** (lock → calibrate → verify)
 - [x] pySWATPlus bridge with fail-loud diagnostics artifact
-- [x] 11-tool MCP server (`swat mcp` / docker-compose mcp service)
+- [x] 13-tool MCP server (`swat mcp` / docker-compose mcp service), incl. background `run_workflow`
 - [x] Container baseline (Dockerfile + docker-compose)
 - [x] Publication-ready figures (7+ types)
 
@@ -214,7 +214,7 @@ swat mcp
 
 ---
 
-## MCP server — 11-tool surface
+## MCP server — 13-tool surface
 
 ```bash
 pip install "swatplus-builder[mcp]"
@@ -248,6 +248,8 @@ MCP client config (Claude Desktop / Cursor / any MCP host):
 
 Tool tiers:
 
+**Tier 0 — Canonical governed workflow** (2 tools): `run_workflow` (background build → run → lock → calibrate → verify → evidence bundle from one gauge ID), `workflow_status` (poll for completion + evidence pointers)
+
 **Tier 1 — Basin workflow** (8 tools): `build_project`, `run_basin`, `calibrate`, `propose_parameters`, `compare_runs`, `query_artifacts`, `diagnose_failure`, `validate`
 
 **Tier 2 — Benchmark / readiness** (3 tools): `lock_benchmark`, `locked_calibrate`, `readiness_table`
@@ -255,7 +257,7 @@ Tool tiers:
 ### Teaching an agent the system
 
 [`SKILL.md`](SKILL.md) at the repo root is a self-contained agent skill file —
-when to use the system, the 11-tool catalog with signatures, the parameter
+when to use the system, the 13-tool catalog with signatures, the parameter
 registry, diagnostic heuristics, basin taxonomy, the locked-benchmark rules,
 and worked workflows. For Claude Code (and any skill-aware agent), point the
 agent at `SKILL.md` to bring it up to competence before it touches a tool.

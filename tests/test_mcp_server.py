@@ -23,7 +23,9 @@ from swatplus_builder.mcp.server import (
     QueryArtifactsRequest,
     ReadinessTableRequest,
     RunBasinRequest,
+    RunWorkflowRequest,
     ValidateRequest,
+    WorkflowStatusRequest,
     create_mcp_server,
 )
 
@@ -33,9 +35,11 @@ def _tool_map() -> dict[str, object]:
     return {tool.name: tool for tool in mcp._tool_manager.list_tools()}
 
 
-def test_mcp_server_registers_exactly_eleven_tools() -> None:
+def test_mcp_server_registers_exactly_thirteen_tools() -> None:
     tools = _tool_map()
     assert set(tools) == {
+        "run_workflow",
+        "workflow_status",
         "build_project",
         "run_basin",
         "calibrate",
@@ -106,6 +110,65 @@ def test_build_run_calibrate_tools_execute_wrappers(monkeypatch, tmp_path: Path)
     assert Path(build_res.manifest_path).exists()
     assert Path(run_res.run_summary_path).exists()
     assert cal_res.calibration_hash == "abc123"
+
+
+def test_run_workflow_launches_detached_process_and_status_roundtrips(
+    monkeypatch, tmp_path: Path
+) -> None:
+    import json as _json
+
+    tools = _tool_map()
+
+    captured: dict[str, object] = {}
+
+    class _FakePopen:
+        pid = 99999999  # certain to not be a live pid when status is polled
+
+        def __init__(self, argv, **kwargs):
+            captured["argv"] = argv
+            captured["kwargs"] = kwargs
+
+    monkeypatch.setattr(mcp_server.subprocess, "Popen", _FakePopen)
+
+    out_dir = tmp_path / "wf"
+    res = tools["run_workflow"].fn(
+        req=RunWorkflowRequest(usgs_id="01547700", out_dir=str(out_dir))
+    )
+    assert res.status == "started"
+    assert res.pid == 99999999
+    assert "--usgs-id" in captured["argv"] and "01547700" in captured["argv"]
+    assert captured["kwargs"]["start_new_session"] is True
+    assert (out_dir / "workflow_launch.json").exists()
+    assert "swat workflow run" in res.equivalent_cli
+
+    # Dead pid + final JSON payload in the log → completed with evidence pointers.
+    payload = {
+        "success": True,
+        "run_id": "usgs_01547700_x",
+        "artifact_dir": str(out_dir / "artifacts"),
+        "evidence_summary_path": str(out_dir / "artifacts" / "evidence_summary.json"),
+        "blocker_class": None,
+        "values": {},
+    }
+    Path(res.log_path).write_text(
+        "engine noise line\n" + _json.dumps(payload, indent=2) + "\n", encoding="utf-8"
+    )
+    status = tools["workflow_status"].fn(req=WorkflowStatusRequest(out_dir=str(out_dir)))
+    assert status.status == "completed"
+    assert status.success is True
+    assert status.evidence_summary_path == payload["evidence_summary_path"]
+
+    # Dead pid + no JSON → failed with log tail.
+    Path(res.log_path).write_text("Traceback (most recent call last):\nboom\n", encoding="utf-8")
+    status2 = tools["workflow_status"].fn(req=WorkflowStatusRequest(out_dir=str(out_dir)))
+    assert status2.status == "failed"
+    assert "boom" in (status2.log_tail or "")
+
+    # Unknown directory → unknown.
+    status3 = tools["workflow_status"].fn(
+        req=WorkflowStatusRequest(out_dir=str(tmp_path / "nope"))
+    )
+    assert status3.status == "unknown"
 
 
 def test_propose_parameters_grid_hits_bounds_for_multi_count() -> None:

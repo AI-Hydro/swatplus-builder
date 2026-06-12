@@ -335,8 +335,22 @@ def cmd_health(
     exe_path = os.environ.get("SWATPLUS_EXE", "")
     from pathlib import Path as _P
     exe_ok = bool(exe_path) and _P(exe_path).is_file()
-    _check("swatplus_exe", critical=False, ok=exe_ok,
-           detail=exe_path if exe_path else "SWATPLUS_EXE not set")
+    if exe_ok:
+        import subprocess as _sp
+        try:
+            proc = _sp.run([exe_path, "--version"], capture_output=True, text=True, timeout=5)
+            ver_out = (proc.stdout + proc.stderr).strip().splitlines()
+            ver_line = next((l for l in ver_out if l.strip()), exe_path)
+            exe_detail = f"{exe_path}  [{ver_line.strip()}]"
+        except Exception:
+            exe_detail = exe_path
+    else:
+        exe_detail = (
+            "SWATPLUS_EXE not set — engine binary required for real runs. "
+            "Tested version: SWAT+ v2023 rev 60.5.7. "
+            "Download: https://swat.tamu.edu/software/plus/"
+        )
+    _check("swatplus_exe", critical=False, ok=exe_ok, detail=exe_detail)
 
     # --- optional: artifacts dir ---
     art_path = os.environ.get("SWATPLUS_BUILDER_ARTIFACTS", "")

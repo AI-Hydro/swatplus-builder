@@ -2,7 +2,7 @@
 
 [AI-Hydro](https://github.com/AI-Hydro/AI-Hydro) is a VS Code–integrated
 agentic hydrology platform. swatplus-builder integrates with AI-Hydro as both
-an **MCP server** (11 tools available to the agent) and a **registered skill**
+an **MCP server** (13 tools available to the agent) and a **registered skill**
 (the agent loads `SKILL.md` to understand the system before touching tools).
 
 ---
@@ -108,7 +108,7 @@ determines the task involves SWAT+ modeling.
 
 ## See also
 
-- [MCP server](mcp-server.md) — full 11-tool surface and config options
+- [MCP server](mcp-server.md) — full 13-tool surface and config options
 - [Tool surface](tool-surface.md) — per-tool signatures and parameter registry
 - [The agent contract](agent-contract.md) — what the agent may and may not do
 - [`SKILL.md`](https://github.com/AI-Hydro/swatplus-builder/blob/main/SKILL.md) — canonical agent skill file
