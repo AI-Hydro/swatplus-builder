@@ -123,6 +123,32 @@ The agent calls typed tools to do this; it does not get to decide the claim
 tier. See [The agent contract](agent-contract.md) for what the agent may and
 may not do, and [Tool surface](tool-surface.md) for the 11 tools.
 
+## SWAT+ engine binary (required for real runs)
+
+The MCP server starts without the engine binary (health returns `degraded`),
+but **no simulation, calibration, or locked-benchmark tool will succeed** until
+the engine is present.
+
+**Tested version:** `SWAT+ v2023 rev 60.5.7`
+
+| Resource | Link |
+|---|---|
+| Official download page | [swat.tamu.edu/software/plus](https://swat.tamu.edu/software/plus/) |
+| SWAT+ GitBook docs | [swatplus.gitbook.io/docs](https://swatplus.gitbook.io/docs) |
+| Source / releases | [github.com/swat-model](https://github.com/swat-model) |
+
+Once downloaded:
+
+```bash
+chmod +x swatplus_exe
+export SWATPLUS_EXE=/path/to/swatplus_exe   # or place as 'swatplus' on PATH
+swat health                                  # should show "swatplus_exe: ✓"
+```
+
+When the agent calls `swat health --json` and sees `"swatplus_exe": false`, it
+should tell the user to download rev 60.5.7 from the link above and set
+`SWATPLUS_EXE`.
+
 ## Containers
 
 ```bash

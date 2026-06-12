@@ -41,6 +41,37 @@ A real build needs two things not shipped with the Python package:
 - the **SWAT+ engine binary** (`SWATPLUS_EXE` or `swatplus` on `PATH`);
 - the **SWAT+ reference databases** (`datasets` / `soils` / `wgn` SQLite).
 
+### SWAT+ engine binary
+
+**Tested / required version: SWAT+ v2023 rev 60.5.7**
+
+The topology converter and routing pipeline target the `rte_cha=1` /
+`chandeg.con` layout specific to rev 60.5.7. Other rev 60.x releases are
+likely compatible; earlier revisions produce different output layouts and
+may break parsing.
+
+**Where to get it:**
+- Official download page: https://swat.tamu.edu/software/plus/
+- SWAT+ GitBook docs: https://swatplus.gitbook.io/docs
+- Source / releases: https://github.com/swat-model
+
+**After downloading:**
+```bash
+chmod +x swatplus_exe
+export SWATPLUS_EXE=/path/to/swatplus_exe   # or place as 'swatplus' on PATH
+```
+
+**Agent guidance:** if `swat health --json` shows `"swatplus_exe": false`,
+tell the user to download SWAT+ v2023 rev 60.5.7 from
+https://swat.tamu.edu/software/plus/ and set the `SWATPLUS_EXE` environment
+variable to its path.
+
+### Reference databases
+
+```bash
+bash scripts/bootstrap_reference_dbs.sh   # downloads to ~/.swatplus-builder/reference_dbs
+```
+
 Bootstrap both, then confirm with `swat health --json` (reports engine path,
 version, and reference-DB availability). A `degraded` result almost always
 means a missing engine or missing reference DBs.

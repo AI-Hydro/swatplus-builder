@@ -3,9 +3,10 @@
 ## Requirements
 
 - **Python ≥ 3.10**
-- **SWAT+ engine binary** (`rev60+`) on `PATH` as `swatplus`, or pointed to by
-  the `SWATPLUS_EXE` environment variable. The engine is **not** a pip
-  dependency — you bring your own and mount it at runtime.
+- **SWAT+ engine binary** — tested version: **SWAT+ v2023 rev 60.5.7**
+  ([download](https://swat.tamu.edu/software/plus/)).
+  Place on `PATH` as `swatplus`, or point `SWATPLUS_EXE` at the full path.
+  The engine is **not** a pip dependency — you supply it and mount it at runtime.
 - **SWAT+ reference databases** (`swatplus_datasets.sqlite`,
   `swatplus_soils.sqlite`, `swatplus_wgn.sqlite`).
 - **OS:** macOS or Linux. On Windows, place `swatplus.exe` on `PATH`.

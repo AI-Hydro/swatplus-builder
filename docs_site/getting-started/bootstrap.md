@@ -22,17 +22,46 @@ swat init --ref-dir /path/to/reference_dbs --datasets-version v60.5.7
 
 ## SWAT+ engine binary
 
-```bash
-# Downloads the per-platform engine (see the script header for details)
-bash scripts/bootstrap_swatplus_binary.sh
+The SWAT+ engine binary is **not distributed with this package** — you acquire
+it separately from the SWAT+ team and point the toolchain at it.
+
+### Tested version
+
+The entire swatplus-builder pipeline has been validated against:
+
+```
+SWAT+ v2023  —  rev 60.5.7
 ```
 
-Or supply your own and expose it:
+The topology converter and routing fixes in swatplus-builder target the
+`rte_cha=1` / `chandeg.con` layout required by rev 60.5.7 specifically.
+Other rev 60.x releases are likely compatible; earlier revisions may produce
+different output file layouts.
+
+### Where to get it
+
+| Platform | Source |
+|---|---|
+| **Official download page** | [swat.tamu.edu/software/plus](https://swat.tamu.edu/software/plus/) |
+| **SWAT+ GitBook docs** | [swatplus.gitbook.io/docs](https://swatplus.gitbook.io/docs) |
+| **Source / releases** | [github.com/swat-model](https://github.com/swat-model) |
+
+Download the Linux or macOS binary for rev 60.5.7 (or the latest rev 60.x),
+mark it executable, and place it on `PATH` as `swatplus`:
 
 ```bash
-export SWATPLUS_EXE=/path/to/swatplus_exe       # explicit path, or
-export PATH="/path/to/swatplus_dir:$PATH"       # 'swatplus' on PATH
+chmod +x swatplus_exe
+sudo mv swatplus_exe /usr/local/bin/swatplus
 ```
+
+Or leave it anywhere and set the env var:
+
+```bash
+export SWATPLUS_EXE=/path/to/swatplus_exe
+```
+
+> **Windows:** place `swatplus.exe` on `PATH` or set `SWATPLUS_EXE` to the
+> full path including the `.exe` extension.
 
 ## Confirm everything is wired up
 
