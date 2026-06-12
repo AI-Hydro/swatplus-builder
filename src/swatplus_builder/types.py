@@ -89,6 +89,13 @@ class SwatPlusRun(BaseModel):
         "``TxtInOut/`` directory.",
     )
     binary: Path = Field(..., description="Absolute path to the SWAT+ engine that was executed.")
+    engine_version: str | None = Field(
+        default=None,
+        description="Engine revision parsed from the binary's own startup banner "
+        "(e.g. '61.0.2.61'). This is the VERIFIED version that produced these "
+        "outputs — read from the engine itself, never operator-asserted. ``None`` "
+        "only if the banner could not be parsed.",
+    )
     txtinout_dir: Path = Field(..., description="CWD the engine ran in.")
     command: list[str] = Field(
         default_factory=list,

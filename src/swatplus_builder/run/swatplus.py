@@ -44,6 +44,7 @@ Typical agent flow
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -59,10 +60,95 @@ from ..types import SwatPlusProject, SwatPlusRun
 __all__ = [
     "BINARY_CANDIDATES",
     "locate_binary",
+    "parse_engine_revision",
     "run",
     "run_project",
     "run_solver_subprocess",
+    "verify_engine_version",
 ]
+
+# The SWAT+ engine prints a startup banner to stdout on every run, e.g.::
+#
+#              SWAT+
+#        Revision 61.0.2.61
+#   Soil & Water Assessment Tool
+#
+# We parse the revision from that banner so the engine version recorded in
+# provenance is READ FROM THE ENGINE, not asserted by whoever launched the run.
+# A mislabeled binary (e.g. a file named ``swatplus_exe.6057`` that is actually
+# rev 61) cannot fool this — the banner is authoritative.
+_REVISION_RE = re.compile(r"Revision\s+([0-9][0-9A-Za-z._-]*)", re.IGNORECASE)
+
+
+def parse_engine_revision(banner_text: str | None) -> str | None:
+    """Extract the SWAT+ engine revision from its startup banner text.
+
+    Args:
+        banner_text: Any text that may contain the engine banner — typically
+            ``proc.stdout`` from a run, or the head of it.
+
+    Returns:
+        The revision string (e.g. ``"61.0.2.61"``) or ``None`` if no
+        ``Revision <x>`` line is present.
+    """
+    if not banner_text:
+        return None
+    match = _REVISION_RE.search(banner_text)
+    if not match:
+        return None
+    return match.group(1).strip()
+
+
+def verify_engine_version(
+    asserted: str | None,
+    observed: str | None,
+) -> dict[str, object]:
+    """Compare an operator-asserted engine version against the observed banner.
+
+    The observed (banner-parsed) version is authoritative. This returns a typed
+    verdict the workflow/CLI can record in provenance and warn on — closing the
+    gap where ``--engine-version`` was trusted blindly and could silently
+    disagree with the binary that actually ran.
+
+    Args:
+        asserted: The version a caller claimed (e.g. CLI ``--engine-version``).
+            ``"unknown"``/empty is treated as "no assertion".
+        observed: The version parsed from the engine banner (authoritative).
+
+    Returns:
+        ``{"engine_version": <authoritative or asserted>, "verified": bool,
+        "mismatch": bool, "reason": str}``.
+    """
+    asserted_norm = (asserted or "").strip()
+    if asserted_norm.lower() in {"", "unknown"}:
+        asserted_norm = ""
+
+    if observed:
+        if asserted_norm and asserted_norm != observed:
+            return {
+                "engine_version": observed,
+                "verified": True,
+                "mismatch": True,
+                "reason": (
+                    f"asserted engine_version={asserted_norm!r} disagrees with the "
+                    f"engine banner revision {observed!r}; recording the verified "
+                    f"banner value"
+                ),
+            }
+        return {
+            "engine_version": observed,
+            "verified": True,
+            "mismatch": False,
+            "reason": f"engine_version verified from banner: {observed}",
+        }
+
+    # No observed banner — fall back to the assertion, but flag it unverified.
+    return {
+        "engine_version": asserted_norm or "unknown",
+        "verified": False,
+        "mismatch": False,
+        "reason": "engine banner revision not observed; engine_version is unverified",
+    }
 
 BINARY_CANDIDATES: tuple[str, ...] = (
     # Order matters: first hit wins. Conventional names before SWAT+-Editor-
@@ -270,6 +356,9 @@ def run(
 
     stdout_tail = (proc.stdout or "")[-_STDOUT_TAIL_BYTES:]
     stderr_tail = (proc.stderr or "")[-_STDERR_TAIL_BYTES:]
+    # The revision banner prints at the START of stdout, so parse the head of
+    # the full capture (the tail may have truncated it on a long run).
+    engine_version = parse_engine_revision((proc.stdout or "")[:_STDOUT_TAIL_BYTES])
     diagnostics_tail = _read_diagnostics_tail(txtinout)
     output_files = _enumerate_output_files(txtinout)
     paths = _collect_well_known_paths(txtinout, output_files)
@@ -302,6 +391,7 @@ def run(
     return SwatPlusRun(
         project=project,
         binary=exe,
+        engine_version=engine_version,
         txtinout_dir=txtinout,
         command=cmd,
         exit_code=proc.returncode,
