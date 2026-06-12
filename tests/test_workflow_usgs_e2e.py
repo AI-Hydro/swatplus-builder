@@ -749,6 +749,97 @@ def test_virtual_scope_pass_can_support_research_tier_despite_selected_scope_blo
     assert tier == "research_grade"
 
 
+def _research_grade_single_channel_values(tmp_path: Path, **overrides) -> dict[str, object]:
+    """A clean single-channel basin that SHOULD earn a research_grade claim.
+
+    This is the A2 positive-control fixture: every gate is satisfied along the
+    canonical single-outlet path (no virtual all-terminal aggregation, no
+    terminal-scope blocker). Until now the gate stack was only ever tested in
+    the failing direction (and the one passing _effective_claim_tier test went
+    through the virtual-scope path), so a real should-pass basin had no
+    regression anchor — gate rigor was indistinguishable from a gate that can
+    never pass. This fixture proves the stack CAN return research_grade.
+    """
+    txt = tmp_path / "TxtInOut"
+    txt.mkdir()
+    (txt / "channel_sd_day.txt").write_text("nonempty\n", encoding="utf-8")
+    lock = tmp_path / "benchmark_lock.json"
+    lock.write_text("{}\n", encoding="utf-8")
+    outlet = tmp_path / "outlet_provenance.json"
+    outlet.write_text("{}\n", encoding="utf-8")
+    values = _core_sensitivity_values(
+        fresh_engine_run=True,
+        engine_returncode=0,
+        txtinout_dir=str(txt),
+        sim_source_file="channel_sd_day.txt",
+        benchmark_lock_path=str(lock),
+        outlet_provenance_path=str(outlet),
+        selected_outlet_gis_id=1,
+        # single natural outlet — virtual all-terminal scope is NOT engaged
+        metrics={"nse": 0.62, "kge": 0.71, "pbias": 4.2},
+        calibration_success=True,
+        calibration_locked_verification_succeeded=True,
+        calibration_delta_metrics={"nse": 0.30, "kge": 0.45},
+        soil_mode="high_fidelity",
+        soil_provenance_mode="gnatsgo_raster",
+        pct_fallback_soils=0.0,
+    )
+    values.update(overrides)
+    return values
+
+
+def test_effective_claim_tier_research_grade_on_clean_single_channel_basin(
+    tmp_path: Path,
+) -> None:
+    values = _research_grade_single_channel_values(tmp_path)
+
+    tier = _effective_claim_tier(
+        allowed_tier="research_grade",
+        blocker=None,
+        calibration_success=True,
+        values=values,
+        physical_gates={"status": "passed"},
+        routing_gates=_passed_routing_gate(),
+    )
+
+    assert tier == "research_grade"
+
+
+def test_claim_lists_clean_single_channel_basin_blocks_no_research_grade_claims(
+    tmp_path: Path,
+) -> None:
+    values = _research_grade_single_channel_values(tmp_path)
+
+    allowed, blocked = _claim_lists(
+        requested_tier="research_grade",
+        allowed_tier="research_grade",
+        blocker=None,
+        calibration_success=True,
+        policy_notes=[],
+        values=values,
+        physical_gates={"status": "passed"},
+        routing_gates=_passed_routing_gate(),
+    )
+
+    # The positive control's defining property: nothing at research_grade is blocked.
+    research_grade_blocked = [c for c in blocked if c.get("tier") == "research_grade"]
+    assert research_grade_blocked == [], (
+        "clean single-channel basin should block no research_grade claims, "
+        f"but got: {research_grade_blocked}"
+    )
+
+    # And the research_grade evidence claims are affirmatively allowed.
+    allowed_claims = {c["claim"] for c in allowed}
+    for required in (
+        "outlet_provenance_verified",
+        "research_metric_thresholds_passed",
+        "calibration_improvement_verified",
+        "basin_specific_sensitivity_screen_passed",
+        "soil_fidelity_gate_passed",
+    ):
+        assert required in allowed_claims, f"expected {required} in allowed claims"
+
+
 def test_virtual_relock_observed_loader_preserves_time_shifted_obs(tmp_path: Path) -> None:
     obs_csv = tmp_path / "obs_q.csv"
     obs_csv.write_text(
