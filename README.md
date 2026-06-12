@@ -244,6 +244,14 @@ Tool tiers:
 
 **Tier 2 — Benchmark / readiness** (3 tools): `lock_benchmark`, `locked_calibrate`, `readiness_table`
 
+### Teaching an agent the system
+
+[`SKILL.md`](SKILL.md) at the repo root is a self-contained agent skill file —
+when to use the system, the 11-tool catalog with signatures, the parameter
+registry, diagnostic heuristics, basin taxonomy, the locked-benchmark rules,
+and worked workflows. For Claude Code (and any skill-aware agent), point the
+agent at `SKILL.md` to bring it up to competence before it touches a tool.
+
 ---
 
 ## Soil fidelity flags
