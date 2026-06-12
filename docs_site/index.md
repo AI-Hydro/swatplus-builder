@@ -6,7 +6,7 @@
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20650908.svg)](https://doi.org/10.5281/zenodo.20650908)
 
 <p align="center">
-  <img src="../assets/images/swatplus-builder-readme-thumbnail.png" alt="swatplus-builder: Claim-governed SWAT+ workflows with auditable evidence" width="100%">
+  <img src="assets/images/swatplus-builder-readme-thumbnail.png" alt="swatplus-builder: Claim-governed SWAT+ workflows with auditable evidence" width="100%">
 </p>
 
 > **Calibrated SWAT+ models from a single gauge ID — with evidence you can audit.**
