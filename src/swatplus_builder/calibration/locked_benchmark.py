@@ -75,6 +75,13 @@ class CalibrationEvidence(BaseModel):
     summary_md: str
     best_solution_json: str
     outdir: str
+    # Split-sample (Klemeš) validation fields — populated only when
+    # validation_period was passed to calibrate_against_lock.
+    validation_period: tuple[str, str] | None = None
+    validation_nse: float | None = None
+    validation_kge: float | None = None
+    validation_pbias: float | None = None
+    validation_transfer_passed: bool | None = None
 
 
 class LockedSensitivityEvidence(BaseModel):
@@ -323,6 +330,7 @@ def calibrate_against_lock(
     calibration_phases: list[dict[str, Any]] | None = None,
     search_method: str = "dds",
     dds_r: float = 0.2,
+    validation_period: tuple[str, str] | None = None,
 ) -> CalibrationEvidence:
     """Run real-engine DDS calibration against a locked benchmark.
 
@@ -360,12 +368,36 @@ def calibrate_against_lock(
     )
 
     obs_series = load_observed_from_alignment_csv(alignment_csv)
+
+    # Split-sample (Klemeš): if a validation_period is specified, withhold those
+    # dates from the calibration objective so the optimizer never sees them.
+    obs_train = obs_series
+    obs_val: pd.Series | None = None
+    if validation_period is not None:
+        val_start = pd.Timestamp(validation_period[0])
+        val_end = pd.Timestamp(validation_period[1])
+        mask_val = (obs_series.index >= val_start) & (obs_series.index <= val_end)
+        obs_val = obs_series[mask_val]
+        obs_train = obs_series[~mask_val]
+        if len(obs_val) < 30:
+            raise SwatBuilderInputError(
+                "validation_period has fewer than 30 observed days after slicing; "
+                "choose a longer held-out window.",
+                path=str(alignment_csv),
+            )
+        if len(obs_train) < 30:
+            raise SwatBuilderInputError(
+                "Training period has fewer than 30 observed days after excluding "
+                "validation_period; choose a shorter held-out window.",
+                path=str(alignment_csv),
+            )
+
     cal_dir = out / "calibration_reports_locked"
     cal_dir.mkdir(parents=True, exist_ok=True)
 
     objective = make_real_objective(
         base_txtinout=base_txtinout,
-        observed_series=obs_series,
+        observed_series=obs_train,
         work_root=cal_dir / "objective_runs",
         outlet_gis_id=lock.outlet_gis_id,
         binary=binary,
@@ -639,49 +671,86 @@ def calibrate_against_lock(
     if phase_failure is not None:
         raise phase_failure
 
+    # --- Split-sample transfer evaluation (Klemeš 1986) -------------------
+    # Run best_params against the held-out validation period.  A fresh engine
+    # eval is needed because calibration ran with keep_workdirs=False (no cache).
+    val_evidence: dict[str, float] = {}
+    if obs_val is not None and len(obs_val) >= 30:
+        try:
+            val_objective = make_real_objective(
+                base_txtinout=base_txtinout,
+                observed_series=obs_val,
+                work_root=cal_dir / "validation_eval",
+                outlet_gis_id=lock.outlet_gis_id,
+                binary=binary,
+                timeout_s=timeout_s,
+                objective_sim_file=lock.sim_source_file,
+                strict_objective_file=True,
+                allow_outlet_autodetect=False,
+                objective_outlet_policy=_objective_outlet_policy_for_lock(lock),
+                parameter_mode=parameter_mode,
+                keep_workdirs=True,
+            )
+            val_evidence = val_objective(best_params)
+        except Exception as _e:  # noqa: BLE001
+            val_evidence = {
+                "nse": float("nan"),
+                "kge": float("nan"),
+                "pbias": float("nan"),
+                "error": str(_e),
+            }
+
     best_nse_val = float(best_metrics.get("nse", float("nan")))
     best_kge_val = float(best_metrics.get("kge", float("nan")))
 
     # Write best solution JSON.
     best_json = cal_dir / "best_solution.json"
-    best_json.write_text(
-        json.dumps(
-            {
-                "parameters": best_params,
-                "metrics": best_metrics,
-                "benchmark_baseline_nse": lock.baseline_nse,
-                "benchmark_baseline_kge": lock.baseline_kge,
-                "selection_policy": "staged_volume_baseflow_peaks_then_nse_kge",
-                "volume_gate": "abs(pbias) <= 30",
-                "kge_nse_finetune_gate": (
-                    "candidate calibration process gates must pass when available; "
-                    "skill-only claim gates remain final locked-rerun gates"
-                ),
-                "calibration_protocol": active_phases,
-            },
-            indent=2,
-        ) + "\n",
-        encoding="utf-8",
-    )
+    best_solution_payload: dict[str, Any] = {
+        "parameters": best_params,
+        "metrics": best_metrics,
+        "benchmark_baseline_nse": lock.baseline_nse,
+        "benchmark_baseline_kge": lock.baseline_kge,
+        "selection_policy": "staged_volume_baseflow_peaks_then_nse_kge",
+        "volume_gate": "abs(pbias) <= 30",
+        "kge_nse_finetune_gate": (
+            "candidate calibration process gates must pass when available; "
+            "skill-only claim gates remain final locked-rerun gates"
+        ),
+        "calibration_protocol": active_phases,
+    }
+    if validation_period is not None:
+        best_solution_payload["validation_period"] = list(validation_period)
+        best_solution_payload["validation_metrics"] = val_evidence
+        best_solution_payload["validation_transfer_passed"] = _volume_gate_passed(val_evidence)
+    best_json.write_text(json.dumps(best_solution_payload, indent=2) + "\n", encoding="utf-8")
 
     # Write summary markdown.
+    summary_lines = [
+        "# Locked-Benchmark Calibration Summary",
+        "",
+        f"- Basin: `{lock.basin_id}`",
+        f"- Benchmark NSE/KGE: `{lock.baseline_nse:.6f}` / `{lock.baseline_kge:.6f}`",
+        f"- Best calibrated NSE/KGE: `{best_nse_val:.6f}` / `{best_kge_val:.6f}`",
+        f"- Delta NSE/KGE: `{best_nse_val - lock.baseline_nse:+.6f}` / `{best_kge_val - lock.baseline_kge:+.6f}`",
+        f"- Evaluations: `{len(evaluations)}`",
+        f"- Parameters: `{', '.join(parameters)}`",
+        "- Selection policy: `staged_volume_baseflow_peaks_then_nse_kge`",
+    ]
+    if validation_period is not None:
+        val_nse = val_evidence.get("nse", float("nan"))
+        val_kge = val_evidence.get("kge", float("nan"))
+        val_pbias = val_evidence.get("pbias", float("nan"))
+        val_pass = _volume_gate_passed(val_evidence)
+        summary_lines += [
+            "",
+            "## Split-Sample Validation (Klemeš 1986)",
+            f"- Validation period: `{validation_period[0]}` – `{validation_period[1]}`",
+            f"- Validation NSE/KGE: `{val_nse:.6f}` / `{val_kge:.6f}`",
+            f"- Validation PBIAS: `{val_pbias:.2f}%`",
+            f"- Transfer passed (volume gate): `{'YES' if val_pass else 'NO'}`",
+        ]
     summary_md = cal_dir / "summary.md"
-    summary_md.write_text(
-        "\n".join(
-            [
-                "# Locked-Benchmark Calibration Summary",
-                "",
-                f"- Basin: `{lock.basin_id}`",
-                f"- Benchmark NSE/KGE: `{lock.baseline_nse:.6f}` / `{lock.baseline_kge:.6f}`",
-                f"- Best calibrated NSE/KGE: `{best_nse_val:.6f}` / `{best_kge_val:.6f}`",
-                f"- Delta NSE/KGE: `{best_nse_val - lock.baseline_nse:+.6f}` / `{best_kge_val - lock.baseline_kge:+.6f}`",
-                f"- Evaluations: `{len(evaluations)}`",
-                f"- Parameters: `{', '.join(parameters)}`",
-                "- Selection policy: `staged_volume_baseflow_peaks_then_nse_kge`",
-            ]
-        ) + "\n",
-        encoding="utf-8",
-    )
+    summary_md.write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
 
     return CalibrationEvidence(
         basin_id=lock.basin_id,
@@ -693,6 +762,11 @@ def calibrate_against_lock(
         summary_md=str(summary_md),
         best_solution_json=str(best_json),
         outdir=str(cal_dir),
+        validation_period=validation_period,
+        validation_nse=float(val_evidence["nse"]) if val_evidence else None,
+        validation_kge=float(val_evidence.get("kge", float("nan"))) if val_evidence else None,
+        validation_pbias=float(val_evidence.get("pbias", float("nan"))) if val_evidence else None,
+        validation_transfer_passed=_volume_gate_passed(val_evidence) if val_evidence else None,
     )
 
 

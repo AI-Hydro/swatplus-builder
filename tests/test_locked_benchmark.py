@@ -1117,4 +1117,121 @@ def test_write_readiness_markdown_structure(tmp_path):
     assert "usgs_X" in content
     assert "PASS" in content
     assert "PENDING" in content
-    assert "Baseline NSE" in content
+
+
+# ---------------------------------------------------------------------------
+# Split-sample (Klemeš) validation
+# ---------------------------------------------------------------------------
+
+
+def _make_lock_and_alignment(tmp_path: Path, n_days: int = 120) -> tuple:
+    """Create a benchmark lock with a synthetic n_days alignment CSV."""
+    benchmark_dir = tmp_path / "benchmark"
+    benchmark_dir.mkdir()
+    dates = pd.date_range("2010-01-01", periods=n_days, freq="D")
+    pd.DataFrame(
+        {"obs": [float(i % 5 + 1) for i in range(n_days)], "sim": [float(i % 5 + 1.1) for i in range(n_days)]},
+        index=dates,
+    ).to_csv(benchmark_dir / "alignment.csv")
+    lock = BenchmarkLock(
+        basin_id="usgs_split_test",
+        locked_at_utc="2026-05-13T00:00:00+00:00",
+        alignment_sha256="x",
+        metrics_sha256="y",
+        outlet_gis_id=1,
+        sim_source_file="channel_sd_day.txt",
+        baseline_nse=0.0,
+        baseline_kge=0.0,
+        benchmark_dir=str(benchmark_dir),
+    )
+    return lock, benchmark_dir
+
+
+def test_split_sample_validation_fields_populated(monkeypatch, tmp_path: Path) -> None:
+    """When validation_period is given, CalibrationEvidence carries validation metrics."""
+    lock, _ = _make_lock_and_alignment(tmp_path, n_days=120)
+    txt = tmp_path / "TxtInOut"
+    txt.mkdir()
+
+    call_log: list[dict] = []
+
+    def fake_make_real_objective(**kwargs):
+        obs = kwargs["observed_series"]
+        call_log.append({"n_obs": len(obs), "work_root": str(kwargs["work_root"])})
+
+        def objective(params: dict[str, float]) -> dict[str, float]:
+            # Always returns a feasible + passing result
+            trace = Path(kwargs["work_root"]) / f"{params_hash(params)}_objective_trace.json"
+            trace.parent.mkdir(parents=True, exist_ok=True)
+            result = {"nse": 0.6, "kge": 0.55, "pbias": 12.0}
+            trace.write_text(json.dumps({"params": params, "metrics": result, "candidate_physical_gate": {
+                "pass": True, "condition_codes": [], "dominant_blocker": None,
+                "calibration_process_gate_pass": True, "calibration_process_condition_codes": [],
+            }}) + "\n", encoding="utf-8")
+            return result
+
+        return objective
+
+    monkeypatch.setattr("swatplus_builder.calibration.real_engine.make_real_objective", fake_make_real_objective)
+
+    evidence = calibrate_against_lock(
+        lock,
+        txt,
+        tmp_path / "cal",
+        parameters=["CN2"],
+        n_evaluations=5,
+        calibration_phases=[{"phase": "volume", "parameters": ["CN2"], "budget": 5}],
+        # validation = last 30 days of 120-day alignment (2010-04-01..04-30) → training = first 90 days
+        validation_period=("2010-04-01", "2010-04-30"),
+    )
+
+    # make_real_objective should have been called twice: once for calibration, once for validation
+    assert len(call_log) == 2
+    # Validation obs should be shorter than training obs (30 vs 90)
+    assert call_log[1]["n_obs"] < call_log[0]["n_obs"]
+    # "validation_eval" must appear in the second call's work_root
+    assert "validation_eval" in call_log[1]["work_root"]
+
+    assert evidence.validation_period == ("2010-04-01", "2010-04-30")
+    assert evidence.validation_nse is not None
+    assert evidence.validation_kge is not None
+    assert evidence.validation_pbias is not None
+    # Our fake objective always returns pbias=12.0, so volume gate passes
+    assert evidence.validation_transfer_passed is True
+
+    # Validation fields must also be present in best_solution.json
+    best = json.loads(Path(evidence.best_solution_json).read_text(encoding="utf-8"))
+    assert "validation_period" in best
+    assert best["validation_transfer_passed"] is True
+
+    # Summary markdown must mention the Klemeš section
+    summary = Path(evidence.summary_md).read_text(encoding="utf-8")
+    assert "Klemeš" in summary
+    assert "Transfer passed" in summary
+
+    assert evidence.validation_period == ("2010-04-01", "2010-04-30")
+
+
+def test_split_sample_raises_on_too_short_validation_period(monkeypatch, tmp_path: Path) -> None:
+    """A validation_period with <30 observed days raises SwatBuilderInputError."""
+    lock, _ = _make_lock_and_alignment(tmp_path, n_days=120)
+    txt = tmp_path / "TxtInOut"
+    txt.mkdir()
+
+    def fake_make_real_objective(**kwargs):
+        def objective(params):
+            return {"nse": 0.6, "kge": 0.55, "pbias": 12.0}
+        return objective
+
+    monkeypatch.setattr("swatplus_builder.calibration.real_engine.make_real_objective", fake_make_real_objective)
+
+    with pytest.raises(SwatBuilderInputError, match="fewer than 30 observed days"):
+        calibrate_against_lock(
+            lock,
+            txt,
+            tmp_path / "cal",
+            parameters=["CN2"],
+            n_evaluations=5,
+            calibration_phases=[{"phase": "volume", "parameters": ["CN2"], "budget": 5}],
+            validation_period=("2010-03-01", "2010-03-05"),  # only 5 days
+        )
