@@ -948,6 +948,156 @@ def _diagnostic_calibration_phases(
     return normalized
 
 
+def _reflect_at_bounds(value: float, lo: float, hi: float) -> float:
+    """Fold ``value`` back into ``[lo, hi]`` using DDS boundary reflection.
+
+    Tolson & Shoemaker (2007): when a perturbed value falls outside the
+    feasible range it is reflected back across the violated bound; if the
+    reflection overshoots the opposite bound the value is set to that bound.
+    """
+    if hi <= lo:
+        return lo
+    if value < lo:
+        reflected = lo + (lo - value)
+        return hi if reflected > hi else reflected
+    if value > hi:
+        reflected = hi - (value - hi)
+        return lo if reflected < lo else reflected
+    return value
+
+
+def _dds_propose(
+    best_params: dict[str, float],
+    *,
+    phase_parameters: list[str],
+    param_bounds: dict[str, tuple[float, float]],
+    iteration: int,
+    n_iterations: int,
+    rng: Any,
+    r: float = 0.2,
+) -> dict[str, float]:
+    """Propose one Dynamically Dimensioned Search candidate.
+
+    Implements the neighbourhood operator of Tolson & Shoemaker (2007):
+
+    * Each decision variable is selected for perturbation with probability
+      ``P(i) = 1 - ln(i)/ln(m)`` which decays as the search progresses, so
+      early iterations perturb many dimensions (exploration) and late
+      iterations perturb few (exploitation). At least one variable is always
+      perturbed.
+    * Each selected variable receives a reflected Gaussian step with standard
+      deviation ``r * (hi - lo)``.
+
+    The candidate is built by copying ``best_params`` (so non-phase parameters
+    carried forward from earlier phases are preserved) and perturbing only the
+    selected phase parameters.
+    """
+    import math
+
+    m = max(int(n_iterations), 1)
+    i = max(int(iteration), 1)
+    if m > 1:
+        p_include = 1.0 - (math.log(i) / math.log(m))
+    else:
+        p_include = 1.0
+    p_include = min(1.0, max(0.0, p_include))
+
+    selected = [j for j in phase_parameters if rng.random() < p_include]
+    if not selected and phase_parameters:
+        selected = [rng.choice(phase_parameters)]
+
+    candidate = dict(best_params)
+    for name in selected:
+        lo, hi = param_bounds[name]
+        current = best_params.get(name, (lo + hi) / 2.0)
+        step = r * (hi - lo) * rng.gauss(0.0, 1.0)
+        candidate[name] = _reflect_at_bounds(current + step, lo, hi)
+    return candidate
+
+
+def _dds_search(
+    *,
+    evaluate: Any,
+    score_fn: Any,
+    feasible_fn: Any,
+    phase_parameters: list[str],
+    param_bounds: dict[str, tuple[float, float]],
+    start_params: dict[str, float],
+    budget: int,
+    rng: Any,
+    r: float = 0.2,
+) -> tuple[dict[str, float] | None, dict[str, float], float]:
+    """Run DDS over ``phase_parameters``, seeded from ``start_params``.
+
+    ``evaluate(point) -> metrics`` runs (and records) one real-engine
+    evaluation. ``score_fn(metrics) -> float`` ranks candidates;
+    ``feasible_fn(metrics) -> bool`` is the volume gate.
+
+    The DDS walk perturbs from the best point by a *walk score* that ranks any
+    feasible candidate above any infeasible one, while still preferring lower
+    ``|pbias|`` among infeasible candidates so the search gravitates toward the
+    feasible region before optimising skill within it. Only feasible candidates
+    (volume gate passed) are eligible to be returned — this preserves the
+    volume-gate-first governance of the staged search.
+
+    Returns ``(best_feasible_params, best_feasible_metrics, best_feasible_score)``
+    or ``(None, {}, -inf)`` when no feasible candidate is found.
+    """
+    import math
+
+    def _walk_score(metrics: dict[str, Any]) -> float:
+        base = score_fn(metrics)
+        if feasible_fn(metrics):
+            return base if math.isfinite(base) else -1e9
+        pbias = metrics.get("pbias")
+        if isinstance(pbias, (int, float)) and math.isfinite(float(pbias)):
+            return -abs(float(pbias)) / 30.0 - 1000.0
+        return -1e6 - 1000.0
+
+    best_feasible_params: dict[str, float] | None = None
+    best_feasible_metrics: dict[str, float] = {}
+    best_feasible_score = float("-inf")
+
+    # Seed evaluation: the carried-forward baseline (no perturbation).
+    seed_metrics = evaluate(dict(start_params))
+    walk_best_point = dict(start_params)
+    walk_best_score = _walk_score(seed_metrics)
+    if feasible_fn(seed_metrics):
+        s = score_fn(seed_metrics)
+        if math.isfinite(s):
+            best_feasible_params = dict(start_params)
+            best_feasible_metrics = {
+                k: float(v) for k, v in seed_metrics.items() if isinstance(v, (int, float))
+            }
+            best_feasible_score = s
+
+    for i in range(1, max(int(budget), 1) + 1):
+        candidate = _dds_propose(
+            walk_best_point,
+            phase_parameters=phase_parameters,
+            param_bounds=param_bounds,
+            iteration=i,
+            n_iterations=budget,
+            rng=rng,
+            r=r,
+        )
+        metrics = evaluate(candidate)
+        ws = _walk_score(metrics)
+        if ws > walk_best_score:
+            walk_best_score = ws
+            walk_best_point = dict(candidate)
+        if feasible_fn(metrics):
+            s = score_fn(metrics)
+            if math.isfinite(s) and s > best_feasible_score:
+                best_feasible_score = s
+                best_feasible_metrics = {
+                    k: float(v) for k, v in metrics.items() if isinstance(v, (int, float))
+                }
+                best_feasible_params = dict(candidate)
+
+    return best_feasible_params, best_feasible_metrics, best_feasible_score
+
+
 def _phase_candidate_points(
     *,
     current_params: dict[str, float],
