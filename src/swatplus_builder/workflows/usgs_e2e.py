@@ -1661,6 +1661,14 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
     path = out / "evidence_summary.json"
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     evidence_md_path.write_text(_render_evidence_summary_md(payload), encoding="utf-8")
+
+    # Write schema-versioned evidence bundle alongside the legacy format.
+    try:
+        from ..evidence import write_evidence_v1
+        write_evidence_v1(payload, out)
+    except Exception:
+        pass  # never let v1 write failure abort the run
+
     _event("workflow", "completed", success=bool(success), evidence_summary=str(path))
     manifest_payload = {
         "run_id": run_id,
