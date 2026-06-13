@@ -2,6 +2,42 @@
 
 All notable changes to swatplus-builder are documented here.
 
+## [0.5.0] — 2026-06-12
+
+### Added
+- **`run_workflow` + `workflow_status` MCP tools** (13-tool server): launch the
+  governed end-to-end pipeline as a detached background process — immune to MCP
+  client timeouts and conda/venv drift — and poll it for evidence-bundle
+  pointers. The `build_project` placeholder no longer fake-succeeds silently.
+- **Engine version provenance**: every run now reads the SWAT+ revision directly
+  from the engine — both the startup banner and the persisted output-file header
+  (`MODULAR Rev …`) — and records the verified value in the evidence bundle. If
+  an asserted version disagrees with the binary, the workflow records the
+  engine's value and flags the mismatch. Version is verified, never operator-asserted.
+- **A2 positive-control fixture test**: the claim-governance gate stack
+  (`_claim_lists` / `_effective_claim_tier`) is now tested in the *passing*
+  direction (synthetic research-grade single-channel basin), not only failing.
+- **Overclaiming pilot harness** (`scripts/overclaiming_pilot/`): runner, LLM
+  judge, and H1–H4 analysis scaffold for the pre-registered overclaiming experiment.
+- **`docs/REPRODUCIBILITY.md`**: documents the external reference-DB dependency
+  (esp. `swatplus_wgn.sqlite`) that is required but not bundled — a reproducibility
+  caveat for downstream results.
+
+### Fixed
+- **Daymet date-range defect**: pydaymet ≥ 0.19 could ignore `dates=()` and
+  return the full 1980-present archive. The adapter now clips every response to
+  the requested window and fills the Dec-31 rows Daymet omits in leap years;
+  validation reports "range ignored" vs "server clamped" as distinct failures.
+- **Reference-DB bootstrap honesty**: `scripts/bootstrap_reference_dbs.sh` no
+  longer claims to download from a non-existent mirror. It now checks which DBs
+  are present and exits non-zero with manual-install instructions if any are missing.
+- **MCP health check** improvements; added `mcp-check` command.
+
+### Changed
+- Engine version documentation corrected to the **validated range
+  60.5.7 – 61.0.2.61** (shipped builds use rev 61.0.2.61), replacing the
+  inaccurate single-version claim.
+
 ## [0.4.0] — 2026-06-11
 
 ### Added

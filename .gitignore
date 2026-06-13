@@ -145,3 +145,6 @@ examples/build_real_basin.py
 examples/real_basin_marsh_creek.py
 PROGRESS.md
 PLAYBOOK.md
+
+# stray reproduction virtualenv (session artifact)
+.venv-repro/

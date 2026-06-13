@@ -3,7 +3,7 @@
   "description": "<p>swatplus-builder builds and calibrates SWAT+ hydrologic models in Python, starting from a single USGS streamgage ID. A locked benchmark calibration protocol (lock → calibrate → independently verified rerun) ensures that reported metrics always come from a clean rerun, never the optimizer loop. Runtime gates assign each result a claim tier (exploratory → diagnostic → research_grade → publication_grade) and write a machine-readable evidence bundle — including typed, evidence-backed refusals — so both successes and limitations are inspectable.</p><p>The pipeline runs entirely in Python with no desktop GIS (no QGIS, PyQGIS, or QSWATPlus plugin). GIS operations use WhiteboxTools, rasterio, and geopandas. The package exposes an 11-tool MCP surface for AI agent operation and a full CLI (<code>swat workflow run</code>).</p><p>Key contribution: the software, not the operator, decides what each result is allowed to claim. A strong metric never promotes itself past a failed gate.</p>",
   "upload_type": "software",
   "license": "MIT",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "creators": [
     {
       "name": "Galib, Mohammad",

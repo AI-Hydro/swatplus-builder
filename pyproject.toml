@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "swatplus-builder"
-version = "0.4.0"
+version = "0.5.0"
 description = "Build and calibrate SWAT+ hydrologic models from a USGS gauge ID — with evidence-backed, claim-governed results."
 readme = "README.md"
 license = { text = "MIT" }
@@ -116,6 +116,21 @@ swat-mcp = "swatplus_builder.mcp.server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/swatplus_builder"]
+
+# Explicit sdist allowlist. Without this, hatchling sweeps the entire project
+# root (minus VCS-ignored paths) into the sdist — which previously pulled a
+# local .venv-repro/ virtualenv (~400 MB of .dylibs) into the tarball. Keep the
+# sdist to source + metadata only.
+[tool.hatch.build.targets.sdist]
+include = [
+  "/src/swatplus_builder",
+  "/tests",
+  "/README.md",
+  "/LICENSE",
+  "/CHANGELOG.md",
+  "/CITATION.cff",
+  "/pyproject.toml",
+]
 
 [tool.ruff]
 line-length = 100
