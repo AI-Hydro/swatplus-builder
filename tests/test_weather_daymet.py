@@ -177,3 +177,126 @@ def test_daymet_missing_expected_column_is_pipeline_error(monkeypatch, tmp_path)
             end="2015-01-05",
             cache_dir=tmp_path,
         )
+
+
+# ---------------------------------------------------------------------------
+# _clip_to_range: pydaymet ignores dates=() and returns full archive
+# ---------------------------------------------------------------------------
+
+
+def _mk_full_archive_df(*, coords, dates, variables):
+    """Simulate pydaymet ≥ 0.19 ignoring dates and returning 1980-01-01→2025-12-31."""
+    return _mk_df(coords=coords, dates=("1980-01-01", "2025-12-31"), variables=variables)
+
+
+def test_clip_to_range_trims_full_archive_response(monkeypatch, tmp_path):
+    """When pydaymet returns the full 1980-2025 archive, clip to the requested window."""
+    from swatplus_builder.weather.daymet import fetch_daymet
+
+    _install_fake_pydaymet(monkeypatch, _FakeDaymet(_mk_full_archive_df))
+    # 2015-01-01 → 2015-01-05 = 5 days; no leap Dec-31 in this range
+    bundle = fetch_daymet(
+        stations=[(41.1, -77.5, 300.0)],
+        start="2015-01-01",
+        end="2015-01-05",
+        cache_dir=tmp_path,
+    )
+    assert bundle.n_days == 5
+    assert len(bundle.stations[0].pcp or []) == 5
+
+
+def test_clip_to_range_multi_year_span(monkeypatch, tmp_path):
+    """Full-archive clip works across a multi-year, leap-spanning window."""
+    from swatplus_builder.weather.daymet import fetch_daymet
+
+    _install_fake_pydaymet(monkeypatch, _FakeDaymet(_mk_full_archive_df))
+    # 2000-01-01 → 2001-12-31: 731 calendar days (both endpoints inclusive),
+    # 1 leap Dec-31 (2000) → 730 in Daymet; _fill_daymet_calendar_gaps restores it → 731
+    bundle = fetch_daymet(
+        stations=[(41.1, -77.5, 300.0)],
+        start="2000-01-01",
+        end="2001-12-31",
+        cache_dir=tmp_path,
+    )
+    assert bundle.n_days == 731
+    assert len(bundle.stations[0].pcp or []) == 731
+
+
+# ---------------------------------------------------------------------------
+# _fill_daymet_calendar_gaps: Dec-31 of leap years missing from response
+# ---------------------------------------------------------------------------
+
+
+def _mk_missing_leap_dec31(*, coords, dates, variables):
+    """Return the requested range but omit Dec-31 of any leap year it contains."""
+    df = _mk_df(coords=coords, dates=dates, variables=variables)
+    import calendar
+    import datetime as dt
+
+    start_d = dt.date.fromisoformat(dates[0])
+    end_d = dt.date.fromisoformat(dates[1])
+    drops = [
+        pd.Timestamp(dt.date(y, 12, 31))
+        for y in range(start_d.year, end_d.year + 1)
+        if calendar.isleap(y) and start_d <= dt.date(y, 12, 31) <= end_d
+    ]
+    return df.drop(index=[d for d in drops if d in df.index])
+
+
+def test_fill_daymet_calendar_gaps_restores_single_leap_dec31(monkeypatch, tmp_path):
+    """A single missing Dec-31 in a leap year is interpolated and the count is correct."""
+    from swatplus_builder.weather.daymet import fetch_daymet
+
+    _install_fake_pydaymet(monkeypatch, _FakeDaymet(_mk_missing_leap_dec31))
+    # 2000-12-29 → 2001-01-02: 5 days; Dec-31-2000 omitted by Daymet → should be filled
+    bundle = fetch_daymet(
+        stations=[(40.0, -80.0, 200.0)],
+        start="2000-12-29",
+        end="2001-01-02",
+        cache_dir=tmp_path,
+    )
+    assert bundle.n_days == 5
+    assert len(bundle.stations[0].pcp or []) == 5
+
+
+def test_fill_daymet_calendar_gaps_multiple_leap_years(monkeypatch, tmp_path):
+    """Five leap Dec-31 dates missing across 2000-2019 are all filled."""
+    from swatplus_builder.weather.daymet import fetch_daymet
+
+    _install_fake_pydaymet(monkeypatch, _FakeDaymet(_mk_missing_leap_dec31))
+    bundle = fetch_daymet(
+        stations=[(40.0, -80.0, 200.0)],
+        start="2000-01-01",
+        end="2019-12-31",
+        cache_dir=tmp_path,
+    )
+    # 7305 calendar days (7300 Daymet + 5 filled leap Dec-31s)
+    assert bundle.n_days == 7305
+    assert len(bundle.stations[0].pcp or []) == 7305
+
+
+# ---------------------------------------------------------------------------
+# _validate_response_shape: directional error messages
+# ---------------------------------------------------------------------------
+
+
+def test_validate_response_shape_too_many_raises_with_direction():
+    """got > expected raises SwatBuilderPipelineError with direction=too_many."""
+    from swatplus_builder.weather.daymet import _validate_response_shape
+    from swatplus_builder.types import WeatherStation
+
+    station = WeatherStation(name="test", lat=40.0, lon=-80.0, elev=200.0)
+    df = pd.DataFrame({"x": range(100)})
+    with pytest.raises(SwatBuilderPipelineError, match="date-range argument was likely ignored"):
+        _validate_response_shape(df, station=station, n_days=5, start="2015-01-01", end="2015-01-05")
+
+
+def test_validate_response_shape_too_few_raises_with_direction():
+    """got < expected raises SwatBuilderPipelineError with direction=too_few."""
+    from swatplus_builder.weather.daymet import _validate_response_shape
+    from swatplus_builder.types import WeatherStation
+
+    station = WeatherStation(name="test", lat=40.0, lon=-80.0, elev=200.0)
+    df = pd.DataFrame({"x": range(4)})
+    with pytest.raises(SwatBuilderPipelineError, match="THREDDS server may have clamped"):
+        _validate_response_shape(df, station=station, n_days=5, start="2015-01-01", end="2015-01-05")

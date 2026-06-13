@@ -180,7 +180,11 @@ def _classify_build_error(exc: Exception) -> str:
         )
     ):
         return "external_data_provider_unreachable"
-    if any(token in text for token in ("gridmet", "server may have clamped", "date range")):
+    if any(token in text for token in (
+        "gridmet", "server may have clamped", "date range",
+        "daymet", "too_many", "too_few", "date-range argument was likely ignored",
+        "thredds server may have clamped",
+    )):
         return "weather_provider_data_gap"
     if "hru realism gate failed" in text:
         return "hru_overlay_realism_failed"
