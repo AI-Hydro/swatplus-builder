@@ -1212,6 +1212,48 @@ def test_split_sample_validation_fields_populated(monkeypatch, tmp_path: Path) -
     assert evidence.validation_period == ("2010-04-01", "2010-04-30")
 
 
+def test_multi_seed_ensemble_fields_populated(monkeypatch, tmp_path: Path) -> None:
+    """With dds_n_seeds=3, CalibrationEvidence carries ensemble NSE/KGE spread."""
+    lock, _ = _make_lock_and_alignment(tmp_path, n_days=120)
+    txt = tmp_path / "TxtInOut"
+    txt.mkdir()
+
+    def fake_make_real_objective(**kwargs):
+        def objective(params: dict[str, float]) -> dict[str, float]:
+            trace = Path(kwargs["work_root"]) / f"{params_hash(params)}_objective_trace.json"
+            trace.parent.mkdir(parents=True, exist_ok=True)
+            result = {"nse": 0.55, "kge": 0.50, "pbias": 8.0}
+            trace.write_text(json.dumps({"params": params, "metrics": result, "candidate_physical_gate": {
+                "pass": True, "condition_codes": [], "dominant_blocker": None,
+                "calibration_process_gate_pass": True, "calibration_process_condition_codes": [],
+            }}) + "\n", encoding="utf-8")
+            return result
+        return objective
+
+    monkeypatch.setattr("swatplus_builder.calibration.real_engine.make_real_objective", fake_make_real_objective)
+
+    evidence = calibrate_against_lock(
+        lock,
+        txt,
+        tmp_path / "cal",
+        parameters=["CN2"],
+        n_evaluations=5,
+        calibration_phases=[{"phase": "volume", "parameters": ["CN2"], "budget": 5}],
+        dds_n_seeds=3,
+    )
+
+    assert evidence.ensemble_n_seeds == 3
+    # With 3 seeds (all returning same metrics), spread should be 0
+    assert evidence.ensemble_nse_spread is not None
+    assert evidence.ensemble_kge_spread is not None
+    assert len(evidence.ensemble_best_nse_per_seed) >= 1
+    assert len(evidence.ensemble_best_kge_per_seed) >= 1
+
+    best = json.loads(Path(evidence.best_solution_json).read_text(encoding="utf-8"))
+    assert "ensemble_n_seeds" in best
+    assert "ensemble_nse_spread" in best
+
+
 def test_split_sample_raises_on_too_short_validation_period(monkeypatch, tmp_path: Path) -> None:
     """A validation_period with <30 observed days raises SwatBuilderInputError."""
     lock, _ = _make_lock_and_alignment(tmp_path, n_days=120)

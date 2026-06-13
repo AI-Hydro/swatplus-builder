@@ -82,6 +82,12 @@ class CalibrationEvidence(BaseModel):
     validation_kge: float | None = None
     validation_pbias: float | None = None
     validation_transfer_passed: bool | None = None
+    # Multi-seed DDS ensemble fields — populated when dds_n_seeds > 1.
+    ensemble_n_seeds: int | None = None
+    ensemble_best_nse_per_seed: list[float] = Field(default_factory=list)
+    ensemble_best_kge_per_seed: list[float] = Field(default_factory=list)
+    ensemble_nse_spread: float | None = None
+    ensemble_kge_spread: float | None = None
 
 
 class LockedSensitivityEvidence(BaseModel):
@@ -330,6 +336,7 @@ def calibrate_against_lock(
     calibration_phases: list[dict[str, Any]] | None = None,
     search_method: str = "dds",
     dds_r: float = 0.2,
+    dds_n_seeds: int = 1,
     validation_period: tuple[str, str] | None = None,
 ) -> CalibrationEvidence:
     """Run real-engine DDS calibration against a locked benchmark.
@@ -671,6 +678,53 @@ def calibrate_against_lock(
     if phase_failure is not None:
         raise phase_failure
 
+    # --- Multi-seed DDS refinement ensemble (C4.4) -------------------------
+    # Run additional DDS passes from the primary best_params with distinct
+    # random seeds. Records per-seed KGE/NSE for uncertainty quantification
+    # and updates best_params if a secondary seed finds a better feasible point.
+    # Secondary evals call objective() directly (not recorded in history CSV).
+    import math as _math
+
+    ensemble_nse_per_seed: list[float] = [float(best_metrics.get("nse", float("nan")))]
+    ensemble_kge_per_seed: list[float] = [float(best_metrics.get("kge", float("nan")))]
+
+    if search_method == "dds" and dds_n_seeds > 1:
+        final_phase = active_phases[-1]
+        final_phase_obj = str(final_phase["objective"])
+        final_phase_params = [p for p in final_phase["parameters"] if p in parameters]
+        final_phase_budget = max(1, int(final_phase["budget"]))
+
+        for seed_idx in range(1, max(2, dds_n_seeds)):
+            seed_rng = random.Random(42 + seed_idx * 13)
+            refine_params, refine_metrics, _s = _dds_search(
+                evaluate=objective,
+                score_fn=lambda m, _obj=final_phase_obj: _score_candidate(m, objective=_obj),
+                feasible_fn=_volume_gate_passed,
+                phase_parameters=final_phase_params,
+                param_bounds=param_bounds,
+                start_params=best_params,
+                budget=final_phase_budget,
+                rng=seed_rng,
+                r=dds_r,
+            )
+            if refine_params is not None:
+                seed_nse = float(refine_metrics.get("nse", float("nan")))
+                seed_kge = float(refine_metrics.get("kge", float("nan")))
+                ensemble_nse_per_seed.append(seed_nse)
+                ensemble_kge_per_seed.append(seed_kge)
+                refine_score = _score_candidate(refine_metrics, objective=final_phase_obj)
+                primary_score = _score_candidate(best_metrics, objective=final_phase_obj)
+                if _math.isfinite(refine_score) and refine_score > primary_score:
+                    best_params = dict(refine_params)
+                    best_metrics = dict(refine_metrics)
+
+    def _finite_std(vals: list[float]) -> float | None:
+        finite = [v for v in vals if _math.isfinite(v)]
+        if len(finite) < 2:
+            return None
+        mean = sum(finite) / len(finite)
+        return _math.sqrt(sum((v - mean) ** 2 for v in finite) / len(finite))
+
     # --- Split-sample transfer evaluation (Klemeš 1986) -------------------
     # Run best_params against the held-out validation period.  A fresh engine
     # eval is needed because calibration ran with keep_workdirs=False (no cache).
@@ -722,6 +776,12 @@ def calibrate_against_lock(
         best_solution_payload["validation_period"] = list(validation_period)
         best_solution_payload["validation_metrics"] = val_evidence
         best_solution_payload["validation_transfer_passed"] = _volume_gate_passed(val_evidence)
+    if dds_n_seeds > 1:
+        best_solution_payload["ensemble_n_seeds"] = dds_n_seeds
+        best_solution_payload["ensemble_best_nse_per_seed"] = ensemble_nse_per_seed
+        best_solution_payload["ensemble_best_kge_per_seed"] = ensemble_kge_per_seed
+        best_solution_payload["ensemble_nse_spread"] = _finite_std(ensemble_nse_per_seed)
+        best_solution_payload["ensemble_kge_spread"] = _finite_std(ensemble_kge_per_seed)
     best_json.write_text(json.dumps(best_solution_payload, indent=2) + "\n", encoding="utf-8")
 
     # Write summary markdown.
@@ -767,6 +827,11 @@ def calibrate_against_lock(
         validation_kge=float(val_evidence.get("kge", float("nan"))) if val_evidence else None,
         validation_pbias=float(val_evidence.get("pbias", float("nan"))) if val_evidence else None,
         validation_transfer_passed=_volume_gate_passed(val_evidence) if val_evidence else None,
+        ensemble_n_seeds=dds_n_seeds if (search_method == "dds" and dds_n_seeds > 1) else None,
+        ensemble_best_nse_per_seed=ensemble_nse_per_seed if dds_n_seeds > 1 else [],
+        ensemble_best_kge_per_seed=ensemble_kge_per_seed if dds_n_seeds > 1 else [],
+        ensemble_nse_spread=_finite_std(ensemble_nse_per_seed) if dds_n_seeds > 1 else None,
+        ensemble_kge_spread=_finite_std(ensemble_kge_per_seed) if dds_n_seeds > 1 else None,
     )
 
 
