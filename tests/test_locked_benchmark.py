@@ -671,7 +671,8 @@ def test_calibrate_against_lock_writes_history_before_phase_blocker(monkeypatch,
         == "abs(pbias) <= 30 and candidate calibration process gates pass"
     )
     history = pd.read_csv(history_csv)
-    assert len(history) == 9
+    # DDS: 1 seed evaluation + budget=3 iterations = 4 total
+    assert len(history) == 4
     assert pd.isna(history.iloc[0]["param_CN2"])
     assert set(history["volume_gate_passed"]) == {False}
     assert set(history["calibration_process_gate_passed"]) == {False}

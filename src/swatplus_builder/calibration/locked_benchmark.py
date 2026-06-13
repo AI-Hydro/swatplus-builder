@@ -321,6 +321,8 @@ def calibrate_against_lock(
     timeout_s: float = 3600.0,
     parameter_mode: str = "lte",
     calibration_phases: list[dict[str, Any]] | None = None,
+    search_method: str = "dds",
+    dds_r: float = 0.2,
 ) -> CalibrationEvidence:
     """Run real-engine DDS calibration against a locked benchmark.
 
@@ -469,18 +471,25 @@ def calibrate_against_lock(
             eval_idx += 1
             continue
 
-        points = _phase_candidate_points(
-            current_params=current_params,
-            phase_parameters=phase_parameters,
-            param_bounds=param_bounds,
-            rng=rng,
-            n_evaluations=max(1, int(phase["budget"])),
-        )
         phase_best_score = float("-inf")
         phase_best_params: dict[str, float] | None = None
         phase_best_metrics: dict[str, float] = {}
 
-        for point in points:
+        phase_objective = str(phase["objective"])
+        phase_budget = max(1, int(phase["budget"]))
+
+        def _evaluate_and_record(
+            point: dict[str, float],
+            _phase: dict[str, Any] = phase,
+            _phase_index: int = phase_index,
+            _phase_parameters: list[str] = phase_parameters,
+        ) -> dict[str, Any]:
+            """Run one real-engine evaluation and append it to the history.
+
+            Shared by both the DDS and grid search drivers so every evaluation
+            is recorded identically (gates, condition codes, eval index).
+            """
+            nonlocal eval_idx
             try:
                 metrics = objective(point)
             except Exception as e:
@@ -492,11 +501,11 @@ def calibrate_against_lock(
             evaluations.append(
                 {
                     "eval_idx": eval_idx,
-                    "phase": phase["phase"],
-                    "phase_order": phase_index,
-                    "phase_parameters": phase_parameters,
-                    "phase_objective": phase["objective"],
-                    "parameters": point,
+                    "phase": _phase["phase"],
+                    "phase_order": _phase_index,
+                    "phase_parameters": _phase_parameters,
+                    "phase_objective": _phase["objective"],
+                    "parameters": dict(point),
                     "metrics": metrics,
                     "volume_gate_passed": volume_gate_passed,
                     "physical_gate_passed": physical_gate_passed,
@@ -510,13 +519,38 @@ def calibrate_against_lock(
                 }
             )
             eval_idx += 1
-            score = _score_candidate(metrics, objective=str(phase["objective"]))
-            if not volume_gate_passed or score == float("-inf"):
-                continue
-            if score > phase_best_score:
-                phase_best_score = score
-                phase_best_metrics = {k: float(v) for k, v in metrics.items() if isinstance(v, (int, float))}
-                phase_best_params = dict(point)
+            return metrics
+
+        if search_method == "dds":
+            phase_best_params, phase_best_metrics, phase_best_score = _dds_search(
+                evaluate=_evaluate_and_record,
+                score_fn=lambda m, _obj=phase_objective: _score_candidate(m, objective=_obj),
+                feasible_fn=_volume_gate_passed,
+                phase_parameters=phase_parameters,
+                param_bounds=param_bounds,
+                start_params=current_params,
+                budget=phase_budget,
+                rng=rng,
+                r=dds_r,
+            )
+        else:
+            points = _phase_candidate_points(
+                current_params=current_params,
+                phase_parameters=phase_parameters,
+                param_bounds=param_bounds,
+                rng=rng,
+                n_evaluations=phase_budget,
+            )
+            for point in points:
+                metrics = _evaluate_and_record(point)
+                volume_gate_passed = _volume_gate_passed(metrics)
+                score = _score_candidate(metrics, objective=phase_objective)
+                if not volume_gate_passed or score == float("-inf"):
+                    continue
+                if score > phase_best_score:
+                    phase_best_score = score
+                    phase_best_metrics = {k: float(v) for k, v in metrics.items() if isinstance(v, (int, float))}
+                    phase_best_params = dict(point)
 
         if phase_best_params is None:
             gate_reason = (
@@ -1048,11 +1082,16 @@ def _dds_search(
     def _walk_score(metrics: dict[str, Any]) -> float:
         base = score_fn(metrics)
         if feasible_fn(metrics):
-            return base if math.isfinite(base) else -1e9
+            # Any volume-feasible point ranks above any infeasible one. A
+            # feasible point whose skill score is non-finite (e.g. a process
+            # gate failed) still beats the infeasible region (floor -500).
+            return base if math.isfinite(base) else -500.0
+        # Infeasible: ranked below all feasible points, but prefer lower
+        # |pbias| so the walk gravitates toward the feasible region.
         pbias = metrics.get("pbias")
         if isinstance(pbias, (int, float)) and math.isfinite(float(pbias)):
             return -abs(float(pbias)) / 30.0 - 1000.0
-        return -1e6 - 1000.0
+        return -1e6
 
     best_feasible_params: dict[str, float] | None = None
     best_feasible_metrics: dict[str, float] = {}
