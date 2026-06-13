@@ -333,6 +333,16 @@ def delineate(
     _attribute_channels(channels_gdf, subbasins_gdf, dem_cond, flow_acc)
     graph = _prune_topology_to_valid_channels(graph, channels_gdf, subbasins_gdf)
 
+    # Prune isolated fragments — single-gauge delineation must be one connected basin.
+    _outlet_lid = _outlet_link_id(
+        stream_links,
+        snap_diag["outlet_snapped_x"],
+        snap_diag["outlet_snapped_y"],
+    )
+    graph, _n_pruned_isolated, _n_pruned_comps = _prune_disconnected_components(
+        graph, _outlet_lid
+    )
+
     # ------------------------------------------------------------------
     # Save vectors + graph
     # ------------------------------------------------------------------
@@ -365,6 +375,7 @@ def delineate(
         "n_channels": float(len(channels_gdf)),
         "n_routing_edges": float(graph.number_of_edges()),
         "n_terminals": float(sum(1 for n in graph.nodes if graph.out_degree(n) == 0)),
+        "n_pruned_isolated_nodes": float(_n_pruned_isolated),
         "total_area_km2": round(total_area_km2, 3),
         "mean_slope_m_m": round(mean_slope, 5),
         "outlet_lon": snapped_lon,
@@ -408,6 +419,27 @@ def delineate(
     log.info("    Subbasins:      %d", int(stats["n_subbasins"]))
     log.info("    Channels:       %d", int(stats["n_channels"]))
     log.info("    Total area:     %.1f km²", stats["total_area_km2"])
+
+    # Enforce package invariant: single-gauge request ⇒ exactly one routing terminal.
+    # Isolated fragments were pruned above; if multiple terminals remain on the main
+    # component the outlet snap failed to reach the main stem.
+    _n_terminals = int(stats["n_terminals"])
+    if _n_terminals != 1:
+        _terminal_nodes = sorted(n for n in graph.nodes if graph.out_degree(n) == 0)
+        raise SwatBuilderPipelineError(
+            f"Single-terminal invariant violated: {_n_terminals} routing terminal(s) "
+            f"remain after pruning {_n_pruned_isolated} isolated node(s) from "
+            f"{_n_pruned_comps} disconnected component(s). "
+            "A single-gauge delineation must drain to exactly one terminal. "
+            "Likely cause: outlet snapped to a side-channel rather than the main stem, "
+            "or stream_threshold_cells too low (fragmented network). "
+            "Try increasing snap_dist_m or raising stream_threshold_cells.",
+            n_terminals=_n_terminals,
+            n_pruned_isolated_nodes=_n_pruned_isolated,
+            terminal_nodes=_terminal_nodes[:10],
+            outlet_lon=outlet.lon,
+            outlet_lat=outlet.lat,
+        )
 
     check_topology_realism(
         stats,
@@ -1090,6 +1122,75 @@ def _positive_int(value: object) -> int | None:
         return None
     return out if out > 0 else None
 
+
+def _outlet_link_id(stream_links: Path, px: float, py: float) -> int | None:
+    """Return the stream link ID at the snapped outlet pixel.
+
+    Returns None when the pixel falls outside the raster, is not on a
+    stream (value ≤ 0), or the read fails for any reason.
+    """
+    try:
+        with rasterio.open(stream_links) as src:
+            row, col = src.index(px, py)
+            row = max(0, min(src.height - 1, row))
+            col = max(0, min(src.width - 1, col))
+            val = int(src.read(1)[row, col])
+            return val if val > 0 else None
+    except Exception:
+        return None
+
+
+def _prune_disconnected_components(
+    graph: nx.DiGraph,
+    outlet_link_id: int | None,
+) -> tuple[nx.DiGraph, int, int]:
+    """Prune the routing graph to a single weakly-connected component.
+
+    Single-gauge delineation should produce one connected drainage basin.
+    Disconnected fragments are artefacts of raster/vector join mismatches
+    (short stream segments that leak through the watershed mask boundary).
+
+    Keeps the component containing ``outlet_link_id`` (the stream link at
+    the snapped outlet pixel).  Falls back to the largest component when
+    ``outlet_link_id`` is None or absent from the graph.
+
+    Returns:
+        (pruned_graph, n_nodes_pruned, n_components_removed)
+    """
+    if graph.number_of_nodes() == 0:
+        return graph, 0, 0
+
+    components = list(nx.weakly_connected_components(graph))
+    if len(components) == 1:
+        return graph, 0, 0
+
+    main_component: set | None = None
+    if outlet_link_id is not None and outlet_link_id in graph:
+        for comp in components:
+            if outlet_link_id in comp:
+                main_component = comp
+                break
+
+    if main_component is None:
+        main_component = max(components, key=len)
+
+    pruned = graph.subgraph(main_component).copy()
+    n_pruned = graph.number_of_nodes() - pruned.number_of_nodes()
+    n_removed_comps = len(components) - 1
+
+    if n_pruned > 0:
+        anchor = (
+            f"outlet link {outlet_link_id}"
+            if outlet_link_id is not None
+            else "largest component"
+        )
+        log.warning(
+            "Pruned %d isolated routing node(s) from %d disconnected component(s) "
+            "(kept %d-node component anchored to %s).",
+            n_pruned, n_removed_comps, pruned.number_of_nodes(), anchor,
+        )
+
+    return pruned, n_pruned, n_removed_comps
 
 
 # ---------------------------------------------------------------------------
