@@ -1504,3 +1504,49 @@ correction.
 - Hydrofabric-first runs get safer out-of-the-box discretization when users do not explicitly tune thresholds.
 - Existing scripts that pass non-default thresholds keep identical behavior.
 - The chosen threshold source is now traceable in artifacts (`stream_threshold_source`).
+
+---
+
+## DG-C3 — publication_grade tier: sensitivity_screen + soil_fidelity gates graduate to research_grade preconditions (2026-06-13)
+
+**Context.** Prior to C3, `_effective_claim_tier` returned `"diagnostic"` whenever
+calibration and metric gates passed but the basin-specific sensitivity screen
+(`sensitivity_screen_basis=basin_specific`) or soil fidelity gate failed. The
+`publication_grade` tier existed in the constants but was unused in practice.
+
+**Decision.** A run that clears all *process* gates (fresh engine, benchmark lock,
+outlet provenance, physical, routing, terminal scope) AND the *calibration evidence*
+gates (calibration_success, research metrics, calibration improvement) earns
+`publication_grade` by default.  Advancing from `publication_grade` to
+`research_grade` additionally requires:
+
+1. **Basin-specific sensitivity screen** (`sensitivity_screen_basis=basin_specific`)
+   covering all current governed core parameters.
+2. **Soil fidelity** (`soil_mode=high_fidelity`, `pct_fallback_soils=0.0`,
+   authoritative provenance `gnatsgo_raster`).
+
+Both requirements are enforced in `_effective_claim_tier()` in
+`src/swatplus_builder/workflows/usgs_e2e.py`.
+
+**Rationale.** Sensitivity screen and soil provenance are reproducibility and
+physical-realism preconditions, not model-skill metrics.  Separating them from the
+`publication_grade` level makes the tier hierarchy interpretable:
+- `exploratory`: pipeline executed; process gates not fully cleared.
+- `diagnostic`: process gates cleared; calibration not yet verified.
+- `publication_grade`: calibration verified + skill metrics met; reproducibility
+  preconditions pending.
+- `research_grade`: full stack — calibration, skill, sensitivity, soil fidelity.
+
+**Untouchable thresholds (locked until after A2 positive control).**
+KGE ≥ 0.40, |PBIAS| ≤ 30 %, NSE ≥ 0.0 (or documented timing limitation with
+KGE ≥ 0.40).  No threshold may be weakened without a positive-control run
+demonstrating that the current thresholds are miscalibrated rather than correctly
+blocking a weak model.
+
+**Consequences.**
+- Basins that pass calibration/metric gates but lack soil/sensitivity data will
+  now report `publication_grade` instead of `diagnostic`.
+- The current 11-basin suite is unaffected (all basins fail earlier process gates
+  and never reach the calibration check).
+- `CLAIM_TIERS` in `swatplus_builder.governance.tiers` already includes
+  `publication_grade`; no schema change required.

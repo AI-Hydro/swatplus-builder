@@ -640,20 +640,27 @@ def _effective_claim_tier(
     if allowed_tier not in {"research_grade", "publication_grade"}:
         return "diagnostic"
 
-    soil = _soil_fidelity_gate(values)
-    if (
+    if not (
         calibration_success
         and _research_metric_gate(values)["passed"]
         and _calibration_improvement_gate(values)["passed"]
-        and _sensitivity_gate(values)["passed"]
-        and soil["passed"]
     ):
+        return "diagnostic"
+
+    # Calibration and metric gates passed — now check sensitivity + soil fidelity.
+    # publication_grade requires calibration evidence only (no sensitivity/soil requirement).
+    # research_grade additionally requires basin-specific sensitivity screen + soil fidelity.
+    # (C3 decision — documented in DECISIONS.md)
+    soil = _soil_fidelity_gate(values)
+    if _sensitivity_gate(values)["passed"] and soil["passed"]:
         return "research_grade"
-    return "diagnostic"
+    return "publication_grade"
 
 
 def _research_metric_gate(values: dict[str, Any]) -> dict[str, Any]:
     return _research_metric_gate_impl(values)
+
+
 def _soil_fidelity_gate(values: dict[str, Any]) -> dict[str, Any]:
     return _soil_fidelity_gate_impl(values)
 
