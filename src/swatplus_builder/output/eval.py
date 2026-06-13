@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Dict, Any, Literal
 
 from swatplus_builder.output.reader import read_output_file
-from swatplus_builder.output.metrics import nse, kge, pbias, baseflow_index
+from swatplus_builder.output.metrics import nse, kge, log_kge, pbias, baseflow_index
 
 log = logging.getLogger(__name__)
 _SECONDS_PER_DAY = 86400.0
@@ -137,6 +137,7 @@ def evaluate_run(
     try:
         metrics["nse"] = nse(obs_list, sim_list)
         metrics["kge"] = kge(obs_list, sim_list)
+        metrics["log_kge"] = log_kge(obs_list, sim_list)
         metrics["pbias"] = pbias(obs_list, sim_list)
         metrics["bfi_obs"] = baseflow_index(obs_list)
         metrics["bfi_sim"] = baseflow_index(sim_list)

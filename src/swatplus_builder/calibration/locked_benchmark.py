@@ -1249,6 +1249,7 @@ def _score_candidate(metrics: dict[str, Any], *, objective: str) -> float:
     try:
         nse = float(metrics.get("nse", float("nan")))
         kge = float(metrics.get("kge", float("nan")))
+        log_kge_val = float(metrics.get("log_kge", float("nan")))
         pbias = float(metrics.get("pbias", float("nan")))
     except Exception:
         return float("-inf")
@@ -1263,11 +1264,18 @@ def _score_candidate(metrics: dict[str, Any], *, objective: str) -> float:
             return float("-inf")
     nse_term = nse if math.isfinite(nse) else -10.0
     kge_term = kge if math.isfinite(kge) else -10.0
+    # log_kge is a bonus if available; falls back to 0 (neutral) if not recorded
+    # so the objective remains valid for engine runs that pre-date log_kge.
+    log_kge_term = log_kge_val if math.isfinite(log_kge_val) else 0.0
     volume_term = -abs(pbias) / 30.0
     if "rank_nse_kge" in objective:
+        # Blend raw KGE with log-flow KGE (Pushpalatha et al. 2012): equal
+        # weight on peak-flow and recession-limb fit.  NSE has reduced weight
+        # since raw NSE is dominated by flood peaks (already captured in KGE).
+        combined_kge = 0.6 * kge_term + 0.4 * log_kge_term
         if nse_term >= 0.0:
-            return 0.5 * kge_term + 0.2 * nse_term + 0.005 * volume_term
-        return nse_term + 0.1 * kge_term + 0.005 * volume_term
+            return 0.5 * combined_kge + 0.2 * nse_term + 0.005 * volume_term
+        return nse_term + 0.1 * combined_kge + 0.005 * volume_term
     if "pbias" in objective or "volume" in objective:
         preferred_volume_bonus = 1.0 if abs(pbias) <= 15.0 else 0.0
         return preferred_volume_bonus + 0.5 * kge_term + 0.2 * nse_term + 0.01 * volume_term
