@@ -129,7 +129,9 @@ The MCP server starts without the engine binary (health returns `degraded`),
 but **no simulation, calibration, or locked-benchmark tool will succeed** until
 the engine is present.
 
-**Tested version:** `SWAT+ v2023 rev 60.5.7`
+**Supported version:** `SWAT+ v2023` — validated rev **60.5.7 – 61.0.2.61**
+(current builds use rev 61.0.2.61). Each run records the engine revision it
+actually parsed from the binary banner into its evidence bundle.
 
 | Resource | Link |
 |---|---|
@@ -146,8 +148,8 @@ swat health                                  # should show "swatplus_exe: ✓"
 ```
 
 When the agent calls `swat health --json` and sees `"swatplus_exe": false`, it
-should tell the user to download rev 60.5.7 from the link above and set
-`SWATPLUS_EXE`.
+should tell the user to download a supported SWAT+ v2023 engine (rev 60.5.7 –
+61.0.2.61; latest recommended) from the link above and set `SWATPLUS_EXE`.
 
 ## Containers
 

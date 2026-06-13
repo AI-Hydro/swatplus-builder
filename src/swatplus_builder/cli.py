@@ -337,18 +337,27 @@ def cmd_health(
     exe_ok = bool(exe_path) and _P(exe_path).is_file()
     if exe_ok:
         import subprocess as _sp
+        import tempfile as _tf
+
+        from .run.swatplus import parse_engine_revision
+
         try:
-            proc = _sp.run([exe_path, "--version"], capture_output=True, text=True, timeout=5)
-            ver_out = (proc.stdout + proc.stderr).strip().splitlines()
-            ver_line = next((l for l in ver_out if l.strip()), exe_path)
-            exe_detail = f"{exe_path}  [{ver_line.strip()}]"
+            # The engine takes no args; it prints its "Revision X" banner to
+            # stdout then errors on the missing file.cio. Run it in a throwaway
+            # dir and parse the verified revision from the banner.
+            with _tf.TemporaryDirectory() as _d:
+                proc = _sp.run(
+                    [exe_path], capture_output=True, text=True, timeout=5, cwd=_d
+                )
+            rev = parse_engine_revision((proc.stdout or "") + (proc.stderr or ""))
+            exe_detail = f"{exe_path}  [rev {rev}]" if rev else exe_path
         except Exception:
             exe_detail = exe_path
     else:
         exe_detail = (
             "SWATPLUS_EXE not set — engine binary required for real runs. "
-            "Tested version: SWAT+ v2023 rev 60.5.7. "
-            "Download: https://swat.tamu.edu/software/plus/"
+            "Builder targets SWAT+ v2023 (validated rev 60.5.7–61.0.2.61; "
+            "shipped binary 61.0.2.61). Download: https://swat.tamu.edu/software/plus/"
         )
     _check("swatplus_exe", critical=False, ok=exe_ok, detail=exe_detail)
 

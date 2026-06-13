@@ -44,6 +44,8 @@ def _write_shim(
     emit_diagnostics: bool = True,
     echo_threads_env: bool = False,
     emit_outputs: bool = True,
+    revision: str | None = "61.0.2.61",
+    output_header_revision: str | None = None,
 ) -> Path:
     """Write an executable Python shim that pretends to be ``swatplus_exe``.
 
@@ -60,6 +62,11 @@ def _write_shim(
         if not cio.is_file():
             print("MISSING_FILE_CIO", file=sys.stderr)
             raise SystemExit(42)
+        # Mimic the real engine's startup banner so engine_version capture is exercised.
+        if {revision!r} is not None:
+            print("                   SWAT+")
+            print("             Revision " + {revision!r})
+            print("      Soil & Water Assessment Tool")
         print("fake swatplus_exe running in", cwd)
         print("OMP_NUM_THREADS=" + os.environ.get("OMP_NUM_THREADS", "?"))
         time.sleep({sleep_s!r})
@@ -73,6 +80,14 @@ def _write_shim(
             (cwd / "basin_wb_aa.txt").write_text("title\\ncols\\nunits\\n1 2 3\\n")
             (cwd / "channel_sd_aa.txt").write_text("title\\ncols\\nunits\\n")
             (cwd / "hru_wb_aa.txt").write_text("title\\ncols\\nunits\\n")
+            # Stamp the engine revision into an output-file header like the real
+            # engine ("MODULAR Rev <year>.<rev>"). Controlled separately so tests
+            # can make the header and banner disagree.
+            if {output_header_revision!r} is not None:
+                (cwd / "channel_sd_day.txt").write_text(
+                    "basin   SWAT+ 2026-01-16   MODULAR Rev "
+                    + {output_header_revision!r} + "\\njday mon day\\nunits\\n"
+                )
         if {echo_threads_env!r}:
             print("THREADS_ECHO=" + os.environ.get("OMP_NUM_THREADS", "?"), file=sys.stderr)
         raise SystemExit({exit_code!r})
@@ -98,6 +113,128 @@ def txtinout(tmp_path: Path) -> Path:
         "file.cio: written by test\nsimulation: time.sim\n"
     )
     return d
+
+
+# ---------------------------------------------------------------------------
+# engine version: parsed from banner, never operator-asserted
+# ---------------------------------------------------------------------------
+
+
+class TestEngineVersion:
+    """The engine revision must be READ from the binary's banner, not trusted
+    from an operator-typed string. A binary mislabeled ``swatplus_exe.6057``
+    that is actually rev 61 must not be recordable as 60.5.7."""
+
+    def test_parse_revision_from_real_banner_shape(self):
+        from swatplus_builder.run.swatplus import parse_engine_revision
+
+        banner = (
+            "                   SWAT+\n"
+            "             Revision 61.0.2.61  \n"
+            "      Soil & Water Assessment Tool\n"
+            "GNU (13.4.0), 2026-01-16 19:36:44, Darwin\n"
+        )
+        assert parse_engine_revision(banner) == "61.0.2.61"
+
+    def test_parse_revision_handles_dotted_and_legacy_forms(self):
+        from swatplus_builder.run.swatplus import parse_engine_revision
+
+        assert parse_engine_revision("Revision 60.5.7") == "60.5.7"
+        assert parse_engine_revision("revision 61.0.2.61\n") == "61.0.2.61"
+        assert parse_engine_revision("no banner here") is None
+        assert parse_engine_revision("") is None
+        assert parse_engine_revision(None) is None
+
+    def test_parse_revision_from_output_header_strips_build_year(self):
+        from swatplus_builder.run.swatplus import parse_engine_revision
+
+        # Output-file header form carries a 4-digit build-year prefix; both the
+        # banner ("Revision 61.0.2.61") and header ("Rev 2026.61.0.2.61") must
+        # normalize to the same canonical revision.
+        header = "usgs_03351500   SWAT+ 2026-01-16   MODULAR Rev 2026.61.0.2.61"
+        assert parse_engine_revision(header) == "61.0.2.61"
+        assert parse_engine_revision("MODULAR Rev 2025.60.5.7") == "60.5.7"
+
+    def test_engine_revision_from_outputs_reads_persisted_header(self, tmp_path):
+        from swatplus_builder.run.swatplus import engine_revision_from_outputs
+
+        txt = tmp_path / "TxtInOut"
+        txt.mkdir()
+        # Only the header line matters; the engine stamps every output file.
+        (txt / "channel_sd_day.txt").write_text(
+            "basin SWAT+ 2026-01-16 MODULAR Rev 2026.61.0.2.61\njday\nunits\n"
+        )
+        assert engine_revision_from_outputs(txt) == "61.0.2.61"
+
+    def test_engine_revision_from_outputs_none_when_unstamped(self, tmp_path):
+        from swatplus_builder.run.swatplus import engine_revision_from_outputs
+
+        txt = tmp_path / "TxtInOut"
+        txt.mkdir()
+        (txt / "channel_sd_day.txt").write_text("no revision header here\n")
+        assert engine_revision_from_outputs(txt) is None
+        assert engine_revision_from_outputs(tmp_path / "absent") is None
+
+    def test_run_prefers_persisted_output_header_over_stdout_banner(self, txtinout, tmp_path):
+        from swatplus_builder.run.swatplus import run
+
+        # Header and banner deliberately disagree: the persisted artifact wins,
+        # because it is the auditable record of what actually produced outputs.
+        shim = _write_shim(
+            tmp_path / "swatplus_exe_shim",
+            revision="99.9.9.9",  # stdout banner (weaker source)
+            output_header_revision="2026.61.0.2.61",  # persisted header (authoritative)
+        )
+        result = run(txtinout, binary=shim, threads=1, timeout_s=30)
+        assert result.engine_version == "61.0.2.61"
+
+    def test_verify_records_banner_over_disagreeing_assertion(self):
+        from swatplus_builder.run.swatplus import verify_engine_version
+
+        verdict = verify_engine_version("60.5.7", "61.0.2.61")
+        assert verdict["engine_version"] == "61.0.2.61"  # banner wins
+        assert verdict["verified"] is True
+        assert verdict["mismatch"] is True
+        assert "disagrees" in verdict["reason"]
+
+    def test_verify_accepts_matching_assertion(self):
+        from swatplus_builder.run.swatplus import verify_engine_version
+
+        verdict = verify_engine_version("61.0.2.61", "61.0.2.61")
+        assert verdict["mismatch"] is False
+        assert verdict["verified"] is True
+
+    def test_verify_unknown_assertion_takes_banner_without_mismatch(self):
+        from swatplus_builder.run.swatplus import verify_engine_version
+
+        for asserted in ("unknown", "", None):
+            verdict = verify_engine_version(asserted, "61.0.2.61")
+            assert verdict["engine_version"] == "61.0.2.61"
+            assert verdict["mismatch"] is False
+            assert verdict["verified"] is True
+
+    def test_verify_without_banner_is_unverified_fallback(self):
+        from swatplus_builder.run.swatplus import verify_engine_version
+
+        verdict = verify_engine_version("60.5.7", None)
+        assert verdict["engine_version"] == "60.5.7"
+        assert verdict["verified"] is False
+
+    def test_run_captures_engine_version_from_banner(self, txtinout, tmp_path):
+        from swatplus_builder.run.swatplus import run
+
+        shim = _write_shim(tmp_path / "swatplus_exe_shim", revision="61.0.2.61")
+        result = run(txtinout, binary=shim, threads=1, timeout_s=30)
+        assert result.success
+        assert result.engine_version == "61.0.2.61"
+
+    def test_run_engine_version_none_when_banner_absent(self, txtinout, tmp_path):
+        from swatplus_builder.run.swatplus import run
+
+        shim = _write_shim(tmp_path / "swatplus_exe_noban", revision=None)
+        result = run(txtinout, binary=shim, threads=1, timeout_s=30)
+        assert result.success
+        assert result.engine_version is None
 
 
 # ---------------------------------------------------------------------------

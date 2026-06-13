@@ -43,12 +43,14 @@ A real build needs two things not shipped with the Python package:
 
 ### SWAT+ engine binary
 
-**Tested / required version: SWAT+ v2023 rev 60.5.7**
+**Required: SWAT+ v2023 — validated rev 60.5.7 – 61.0.2.61** (current builds
+use rev 61.0.2.61).
 
 The topology converter and routing pipeline target the `rte_cha=1` /
-`chandeg.con` layout specific to rev 60.5.7. Other rev 60.x releases are
-likely compatible; earlier revisions produce different output layouts and
-may break parsing.
+`chandeg.con` connect-block layout introduced in rev 60.5.7 and unchanged
+through rev 61.0.2.61. Earlier revisions produce different output layouts and
+may break parsing. Each run records the engine revision it parsed from the
+binary banner into its evidence bundle.
 
 **Where to get it:**
 - Official download page: https://swat.tamu.edu/software/plus/
@@ -62,9 +64,9 @@ export SWATPLUS_EXE=/path/to/swatplus_exe   # or place as 'swatplus' on PATH
 ```
 
 **Agent guidance:** if `swat health --json` shows `"swatplus_exe": false`,
-tell the user to download SWAT+ v2023 rev 60.5.7 from
-https://swat.tamu.edu/software/plus/ and set the `SWATPLUS_EXE` environment
-variable to its path.
+tell the user to download a supported SWAT+ v2023 engine (rev 60.5.7 –
+61.0.2.61; latest recommended) from https://swat.tamu.edu/software/plus/ and
+set the `SWATPLUS_EXE` environment variable to its path.
 
 ### Reference databases
 

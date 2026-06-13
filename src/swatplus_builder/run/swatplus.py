@@ -44,6 +44,7 @@ Typical agent flow
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -58,11 +59,141 @@ from ..types import SwatPlusProject, SwatPlusRun
 
 __all__ = [
     "BINARY_CANDIDATES",
+    "engine_revision_from_outputs",
     "locate_binary",
+    "parse_engine_revision",
     "run",
     "run_project",
     "run_solver_subprocess",
+    "verify_engine_version",
 ]
+
+# The SWAT+ engine records its revision in two places, both of which we parse so
+# the version in provenance is READ FROM THE ENGINE, never asserted by whoever
+# launched the run (a binary mislabeled ``swatplus_exe.6057`` that is actually
+# rev 61 cannot fool either source):
+#
+#   1. The stdout startup banner::    "        Revision 61.0.2.61"
+#   2. Every output file's header::   "... MODULAR Rev 2026.61.0.2.61"
+#
+# Source 2 is the stronger one — it is PERSISTED in the artifact, so any past
+# run's engine version is auditable after the fact (this is how the historical
+# objective suite's engine was identified retroactively).
+_REVISION_RE = re.compile(r"Rev(?:ision)?\s+([0-9][0-9A-Za-z._-]*)", re.IGNORECASE)
+# A leading 4-digit build year (e.g. "2026.") appears in output headers but not
+# the banner; strip it so both sources yield the same canonical "61.0.2.61".
+_BUILD_YEAR_PREFIX_RE = re.compile(r"^(19|20)\d{2}\.")
+
+# Output files whose header carries the "MODULAR Rev <x>" stamp. First hit wins.
+_REVISION_HEADER_FILES: tuple[str, ...] = (
+    "channel_sd_day.txt",
+    "channel_sd_aa.txt",
+    "basin_wb_aa.txt",
+    "basin_wb_day.txt",
+)
+
+
+def parse_engine_revision(text: str | None) -> str | None:
+    """Extract the SWAT+ engine revision from banner or output-header text.
+
+    Handles both the stdout banner form (``"Revision 61.0.2.61"``) and the
+    output-file header form (``"MODULAR Rev 2026.61.0.2.61"``), normalizing a
+    leading build-year prefix away so both yield ``"61.0.2.61"``.
+
+    Args:
+        text: Any text that may contain the revision — engine ``proc.stdout``
+            or the header line of an output file.
+
+    Returns:
+        The canonical revision string (e.g. ``"61.0.2.61"``) or ``None``.
+    """
+    if not text:
+        return None
+    match = _REVISION_RE.search(text)
+    if not match:
+        return None
+    revision = match.group(1).strip()
+    return _BUILD_YEAR_PREFIX_RE.sub("", revision)
+
+
+def engine_revision_from_outputs(txtinout: Path) -> str | None:
+    """Read the engine revision stamped into a run's output-file headers.
+
+    This is the authoritative, PERSISTED provenance source: SWAT+ writes
+    ``MODULAR Rev <x>`` into the header of every output file, so the version is
+    recoverable from the artifacts alone — even for a run completed long ago.
+
+    Args:
+        txtinout: Directory containing the engine's output files.
+
+    Returns:
+        The canonical revision, or ``None`` if no stamped header is found.
+    """
+    for name in _REVISION_HEADER_FILES:
+        path = txtinout / name
+        if not path.is_file():
+            continue
+        try:
+            with path.open("r", encoding="utf-8", errors="replace") as fh:
+                header = fh.readline()
+        except OSError:
+            continue
+        revision = parse_engine_revision(header)
+        if revision:
+            return revision
+    return None
+
+
+def verify_engine_version(
+    asserted: str | None,
+    observed: str | None,
+) -> dict[str, object]:
+    """Compare an operator-asserted engine version against the observed banner.
+
+    The observed (banner-parsed) version is authoritative. This returns a typed
+    verdict the workflow/CLI can record in provenance and warn on — closing the
+    gap where ``--engine-version`` was trusted blindly and could silently
+    disagree with the binary that actually ran.
+
+    Args:
+        asserted: The version a caller claimed (e.g. CLI ``--engine-version``).
+            ``"unknown"``/empty is treated as "no assertion".
+        observed: The version parsed from the engine banner (authoritative).
+
+    Returns:
+        ``{"engine_version": <authoritative or asserted>, "verified": bool,
+        "mismatch": bool, "reason": str}``.
+    """
+    asserted_norm = (asserted or "").strip()
+    if asserted_norm.lower() in {"", "unknown"}:
+        asserted_norm = ""
+
+    if observed:
+        if asserted_norm and asserted_norm != observed:
+            return {
+                "engine_version": observed,
+                "verified": True,
+                "mismatch": True,
+                "reason": (
+                    f"asserted engine_version={asserted_norm!r} disagrees with the "
+                    f"engine banner revision {observed!r}; recording the verified "
+                    f"banner value"
+                ),
+            }
+        return {
+            "engine_version": observed,
+            "verified": True,
+            "mismatch": False,
+            "reason": f"engine_version verified from banner: {observed}",
+        }
+
+    # No observed banner — fall back to the assertion, but flag it unverified.
+    return {
+        "engine_version": asserted_norm or "unknown",
+        "verified": False,
+        "mismatch": False,
+        "reason": "engine banner revision not observed; engine_version is unverified",
+    }
 
 BINARY_CANDIDATES: tuple[str, ...] = (
     # Order matters: first hit wins. Conventional names before SWAT+-Editor-
@@ -270,6 +401,13 @@ def run(
 
     stdout_tail = (proc.stdout or "")[-_STDOUT_TAIL_BYTES:]
     stderr_tail = (proc.stderr or "")[-_STDERR_TAIL_BYTES:]
+    # Engine version, in order of authority: the revision stamped into the
+    # persisted output-file headers (recoverable from artifacts alone), then the
+    # stdout startup banner (the banner prints at the START of stdout, so parse
+    # the head — a long run may have truncated it out of the tail).
+    engine_version = engine_revision_from_outputs(txtinout) or parse_engine_revision(
+        (proc.stdout or "")[:_STDOUT_TAIL_BYTES]
+    )
     diagnostics_tail = _read_diagnostics_tail(txtinout)
     output_files = _enumerate_output_files(txtinout)
     paths = _collect_well_known_paths(txtinout, output_files)
@@ -302,6 +440,7 @@ def run(
     return SwatPlusRun(
         project=project,
         binary=exe,
+        engine_version=engine_version,
         txtinout_dir=txtinout,
         command=cmd,
         exit_code=proc.returncode,

@@ -5,8 +5,8 @@ message: >-
   the run's provenance hash from evidence_summary.json so the claim
   is traceable to the exact run.
 title: "swatplus-builder: Claim-governed SWAT+ hydrologic modeling from a USGS gauge ID"
-version: 0.4.0
-date-released: "2026-06-11"
+version: 0.5.0
+date-released: "2026-06-12"
 doi: 10.5281/zenodo.20650908
 license: MIT
 repository-code: "https://github.com/AI-Hydro/swatplus-builder"
@@ -56,4 +56,4 @@ preferred-citation:
   doi: 10.5281/zenodo.20650908
   url: "https://github.com/AI-Hydro/swatplus-builder"
   year: 2026
-  version: 0.4.0
+  version: 0.5.0

@@ -5,10 +5,25 @@ adapter is intentionally a fallback provider for real-basin builds when
 GridMET/THREDDS is unavailable. Daymet does not provide wind speed, so the
 returned bundle includes precipitation, temperature, humidity, and solar
 radiation only.
+
+Known upstream quirk (pydaymet ≥ 0.19):
+    ``get_bycoords`` can ignore the ``dates=(start, end)`` argument and return
+    the full Daymet archive (1980-present) when its internal file-metadata
+    cache is stale or the request falls outside a cached region.  We defend
+    against this in ``_clip_to_range`` — called immediately after each fetch —
+    which slices the returned DataFrame to exactly ``[start, end]`` before any
+    downstream validation or gap-repair runs.
+
+Daymet 365-day calendar:
+    Daymet omits December 31 in leap years.  After clipping to the requested
+    window, ``_fill_daymet_calendar_gaps`` synthetically fills those missing
+    Dec-31 rows by interpolating from Dec-30 and Jan-1, so the downstream
+    SWAT+ writer always receives a complete calendar-day sequence.
 """
 
 from __future__ import annotations
 
+import calendar as _calendar
 import datetime as _dt
 import math
 import time
@@ -90,6 +105,12 @@ def fetch_daymet(
             variables=daymet_vars,
             cache_dir=cache_path,
         )
+        # Clip first: pydaymet ≥ 0.19 can return the full archive (1980-present)
+        # when dates=() is ignored.  Slice to exactly [start, end] before any
+        # gap-repair or validation so the rest of the pipeline sees a clean window.
+        df = _clip_to_range(df, start_date, end_date)
+        # Fill Dec-31 gaps introduced by Daymet's 365-day calendar in leap years.
+        df = _fill_daymet_calendar_gaps(df, start_date, end_date)
         df = _repair_bounded_day_gaps(
             df,
             station=station,
@@ -97,7 +118,7 @@ def fetch_daymet(
             end=end,
             n_days=n_days,
         )
-        _validate_response_shape(df, station=station, n_days=n_days)
+        _validate_response_shape(df, station=station, n_days=n_days, start=start, end=end)
         series_list.append(
             _build_series(
                 df=df,
@@ -220,15 +241,142 @@ def _fetch_one(
     ) from last_exc
 
 
-def _validate_response_shape(df: "pd.DataFrame", *, station: WeatherStation, n_days: int) -> None:
-    if len(df) != n_days:
+def _clip_to_range(
+    df: "pd.DataFrame",  # noqa: UP037
+    start_date: _dt.date,
+    end_date: _dt.date,
+) -> "pd.DataFrame":  # noqa: UP037
+    """Slice a Daymet response to exactly [start_date, end_date].
+
+    pydaymet ≥ 0.19 sometimes returns the full archive (1980-present) when
+    the ``dates=`` argument is silently ignored.  Slicing here makes the
+    caller robust against that version-specific bug without needing to pin
+    the library.
+
+    If the returned frame does not have a DatetimeIndex we return it
+    unchanged and let ``_validate_response_shape`` raise a useful error.
+    """
+    try:
+        import pandas as pd
+
+        if not isinstance(df.index, pd.DatetimeIndex):
+            return df
+        start_ts = pd.Timestamp(start_date)
+        end_ts = pd.Timestamp(end_date)
+        clipped = df.loc[start_ts:end_ts]
+        return clipped
+    except Exception:
+        return df
+
+
+def _fill_daymet_calendar_gaps(
+    df: "pd.DataFrame",  # noqa: UP037
+    start_date: _dt.date,
+    end_date: _dt.date,
+) -> "pd.DataFrame":  # noqa: UP037
+    """Synthetically fill December 31 rows that Daymet omits in leap years.
+
+    Daymet uses a 365-day calendar and never emits a Dec-31 row for leap
+    years.  After ``_clip_to_range`` those dates are simply absent from the
+    index.  We interpolate each missing Dec-31 as the mean of Dec-30 and
+    Jan-1 so the downstream SWAT+ writer always sees a continuous
+    calendar-day sequence.
+
+    If the frame does not have a DatetimeIndex, or any expected neighbour is
+    also missing, we return the frame unchanged (``_validate_response_shape``
+    will then fire).
+    """
+    try:
+        import pandas as pd
+
+        if not isinstance(df.index, pd.DatetimeIndex):
+            return df
+
+        leap_dec31: list[_dt.date] = [
+            _dt.date(y, 12, 31)
+            for y in range(start_date.year, end_date.year + 1)
+            if _calendar.isleap(y) and start_date <= _dt.date(y, 12, 31) <= end_date
+        ]
+        if not leap_dec31:
+            return df
+
+        got_dates = set(df.index.normalize().date)  # type: ignore[attr-defined]
+        missing = [d for d in leap_dec31 if d not in got_dates]
+        if not missing:
+            return df
+
+        repaired = df.copy()
+        for day in missing:
+            dec30 = pd.Timestamp(_dt.date(day.year, 12, 30))
+            jan01 = pd.Timestamp(_dt.date(day.year + 1, 1, 1))
+            if dec30 not in repaired.index or jan01 not in repaired.index:
+                # Can't interpolate without both neighbours; leave it for the
+                # validator to catch rather than writing a garbled value.
+                continue
+            row = (
+                (
+                    repaired.loc[[dec30]].reset_index(drop=True)
+                    + repaired.loc[[jan01]].reset_index(drop=True)
+                )
+                / 2.0
+            )
+            row.index = pd.DatetimeIndex([pd.Timestamp(day)])
+            repaired = pd.concat([repaired, row])
+
+        return repaired.sort_index()
+    except Exception:
+        return df
+
+
+def _validate_response_shape(
+    df: "pd.DataFrame",
+    *,
+    station: WeatherStation,
+    n_days: int,
+    start: str,
+    end: str,
+) -> None:
+    """Fail loudly when the row count does not match what was requested.
+
+    Two distinct failure modes are reported separately:
+
+    * ``got > expected`` — the date-range argument was ignored by the upstream
+      library and more data than requested was returned.  ``_clip_to_range``
+      should have prevented this; if it occurs anyway the DataFrame index is
+      likely not a DatetimeIndex.
+    * ``got < expected`` — the Daymet server or THREDDS clamped the date range
+      (e.g. the start predates available coverage for this location).  A later
+      start date or a shorter window usually resolves this.
+    """
+    got = int(len(df))
+    if got == n_days:
+        return
+    if got > n_days:
         raise SwatBuilderPipelineError(
-            f"Daymet returned {len(df)} rows for station {station.name!r}, "
-            f"expected {n_days}. The server may have clamped the date range.",
+            f"Daymet returned {got} rows for station {station.name!r} but only "
+            f"{n_days} were requested ({start} → {end}). The date-range argument "
+            "was likely ignored by pydaymet (known issue in ≥ 0.19 when its file "
+            "cache is stale). Automatic clipping failed because the response index "
+            "is not a DatetimeIndex. Try upgrading pydaymet or clearing its cache.",
             station=station.name,
-            got=int(len(df)),
+            got=got,
             expected=n_days,
+            direction="too_many",
+            start=start,
+            end=end,
         )
+    raise SwatBuilderPipelineError(
+        f"Daymet returned only {got} of {n_days} requested rows for station "
+        f"{station.name!r} ({start} → {end}). The Daymet THREDDS server may have "
+        "clamped the date range (data may not be available for the full window at "
+        "this location). Try a later start date or a shorter time window.",
+        station=station.name,
+        got=got,
+        expected=n_days,
+        direction="too_few",
+        start=start,
+        end=end,
+    )
 
 
 def _build_series(
