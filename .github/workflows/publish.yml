@@ -30,7 +30,11 @@ jobs:
           python-version: "3.11"
 
       - name: Install build tools
-        run: pip install build twine
+        # -U packaging: twine's metadata validation needs packaging>=24.2 to
+        # recognise the Metadata-Version 2.4 'License-File' field hatchling emits.
+        # The runner's preinstalled packaging is too old and trips
+        # "InvalidDistribution: unrecognized or malformed field 'license-file'".
+        run: pip install -U build twine packaging
 
       - name: Build wheel and sdist
         run: python -m build
@@ -64,5 +68,5 @@ jobs:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
         run: |
-          pip install twine
+          pip install -U twine packaging
           twine upload dist/*
