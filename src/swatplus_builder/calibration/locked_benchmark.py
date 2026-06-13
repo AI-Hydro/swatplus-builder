@@ -75,6 +75,19 @@ class CalibrationEvidence(BaseModel):
     summary_md: str
     best_solution_json: str
     outdir: str
+    # Split-sample (Klemeš) validation fields — populated only when
+    # validation_period was passed to calibrate_against_lock.
+    validation_period: tuple[str, str] | None = None
+    validation_nse: float | None = None
+    validation_kge: float | None = None
+    validation_pbias: float | None = None
+    validation_transfer_passed: bool | None = None
+    # Multi-seed DDS ensemble fields — populated when dds_n_seeds > 1.
+    ensemble_n_seeds: int | None = None
+    ensemble_best_nse_per_seed: list[float] = Field(default_factory=list)
+    ensemble_best_kge_per_seed: list[float] = Field(default_factory=list)
+    ensemble_nse_spread: float | None = None
+    ensemble_kge_spread: float | None = None
 
 
 class LockedSensitivityEvidence(BaseModel):
@@ -321,6 +334,10 @@ def calibrate_against_lock(
     timeout_s: float = 3600.0,
     parameter_mode: str = "lte",
     calibration_phases: list[dict[str, Any]] | None = None,
+    search_method: str = "dds",
+    dds_r: float = 0.2,
+    dds_n_seeds: int = 1,
+    validation_period: tuple[str, str] | None = None,
 ) -> CalibrationEvidence:
     """Run real-engine DDS calibration against a locked benchmark.
 
@@ -358,12 +375,36 @@ def calibrate_against_lock(
     )
 
     obs_series = load_observed_from_alignment_csv(alignment_csv)
+
+    # Split-sample (Klemeš): if a validation_period is specified, withhold those
+    # dates from the calibration objective so the optimizer never sees them.
+    obs_train = obs_series
+    obs_val: pd.Series | None = None
+    if validation_period is not None:
+        val_start = pd.Timestamp(validation_period[0])
+        val_end = pd.Timestamp(validation_period[1])
+        mask_val = (obs_series.index >= val_start) & (obs_series.index <= val_end)
+        obs_val = obs_series[mask_val]
+        obs_train = obs_series[~mask_val]
+        if len(obs_val) < 30:
+            raise SwatBuilderInputError(
+                "validation_period has fewer than 30 observed days after slicing; "
+                "choose a longer held-out window.",
+                path=str(alignment_csv),
+            )
+        if len(obs_train) < 30:
+            raise SwatBuilderInputError(
+                "Training period has fewer than 30 observed days after excluding "
+                "validation_period; choose a shorter held-out window.",
+                path=str(alignment_csv),
+            )
+
     cal_dir = out / "calibration_reports_locked"
     cal_dir.mkdir(parents=True, exist_ok=True)
 
     objective = make_real_objective(
         base_txtinout=base_txtinout,
-        observed_series=obs_series,
+        observed_series=obs_train,
         work_root=cal_dir / "objective_runs",
         outlet_gis_id=lock.outlet_gis_id,
         binary=binary,
@@ -469,18 +510,25 @@ def calibrate_against_lock(
             eval_idx += 1
             continue
 
-        points = _phase_candidate_points(
-            current_params=current_params,
-            phase_parameters=phase_parameters,
-            param_bounds=param_bounds,
-            rng=rng,
-            n_evaluations=max(1, int(phase["budget"])),
-        )
         phase_best_score = float("-inf")
         phase_best_params: dict[str, float] | None = None
         phase_best_metrics: dict[str, float] = {}
 
-        for point in points:
+        phase_objective = str(phase["objective"])
+        phase_budget = max(1, int(phase["budget"]))
+
+        def _evaluate_and_record(
+            point: dict[str, float],
+            _phase: dict[str, Any] = phase,
+            _phase_index: int = phase_index,
+            _phase_parameters: list[str] = phase_parameters,
+        ) -> dict[str, Any]:
+            """Run one real-engine evaluation and append it to the history.
+
+            Shared by both the DDS and grid search drivers so every evaluation
+            is recorded identically (gates, condition codes, eval index).
+            """
+            nonlocal eval_idx
             try:
                 metrics = objective(point)
             except Exception as e:
@@ -492,11 +540,11 @@ def calibrate_against_lock(
             evaluations.append(
                 {
                     "eval_idx": eval_idx,
-                    "phase": phase["phase"],
-                    "phase_order": phase_index,
-                    "phase_parameters": phase_parameters,
-                    "phase_objective": phase["objective"],
-                    "parameters": point,
+                    "phase": _phase["phase"],
+                    "phase_order": _phase_index,
+                    "phase_parameters": _phase_parameters,
+                    "phase_objective": _phase["objective"],
+                    "parameters": dict(point),
                     "metrics": metrics,
                     "volume_gate_passed": volume_gate_passed,
                     "physical_gate_passed": physical_gate_passed,
@@ -510,13 +558,38 @@ def calibrate_against_lock(
                 }
             )
             eval_idx += 1
-            score = _score_candidate(metrics, objective=str(phase["objective"]))
-            if not volume_gate_passed or score == float("-inf"):
-                continue
-            if score > phase_best_score:
-                phase_best_score = score
-                phase_best_metrics = {k: float(v) for k, v in metrics.items() if isinstance(v, (int, float))}
-                phase_best_params = dict(point)
+            return metrics
+
+        if search_method == "dds":
+            phase_best_params, phase_best_metrics, phase_best_score = _dds_search(
+                evaluate=_evaluate_and_record,
+                score_fn=lambda m, _obj=phase_objective: _score_candidate(m, objective=_obj),
+                feasible_fn=_volume_gate_passed,
+                phase_parameters=phase_parameters,
+                param_bounds=param_bounds,
+                start_params=current_params,
+                budget=phase_budget,
+                rng=rng,
+                r=dds_r,
+            )
+        else:
+            points = _phase_candidate_points(
+                current_params=current_params,
+                phase_parameters=phase_parameters,
+                param_bounds=param_bounds,
+                rng=rng,
+                n_evaluations=phase_budget,
+            )
+            for point in points:
+                metrics = _evaluate_and_record(point)
+                volume_gate_passed = _volume_gate_passed(metrics)
+                score = _score_candidate(metrics, objective=phase_objective)
+                if not volume_gate_passed or score == float("-inf"):
+                    continue
+                if score > phase_best_score:
+                    phase_best_score = score
+                    phase_best_metrics = {k: float(v) for k, v in metrics.items() if isinstance(v, (int, float))}
+                    phase_best_params = dict(point)
 
         if phase_best_params is None:
             gate_reason = (
@@ -605,49 +678,139 @@ def calibrate_against_lock(
     if phase_failure is not None:
         raise phase_failure
 
+    # --- Multi-seed DDS refinement ensemble (C4.4) -------------------------
+    # Run additional DDS passes from the primary best_params with distinct
+    # random seeds. Records per-seed KGE/NSE for uncertainty quantification
+    # and updates best_params if a secondary seed finds a better feasible point.
+    # Secondary evals call objective() directly (not recorded in history CSV).
+    import math as _math
+
+    ensemble_nse_per_seed: list[float] = [float(best_metrics.get("nse", float("nan")))]
+    ensemble_kge_per_seed: list[float] = [float(best_metrics.get("kge", float("nan")))]
+
+    if search_method == "dds" and dds_n_seeds > 1:
+        final_phase = active_phases[-1]
+        final_phase_obj = str(final_phase["objective"])
+        final_phase_params = [p for p in final_phase["parameters"] if p in parameters]
+        final_phase_budget = max(1, int(final_phase["budget"]))
+
+        for seed_idx in range(1, max(2, dds_n_seeds)):
+            seed_rng = random.Random(42 + seed_idx * 13)
+            refine_params, refine_metrics, _s = _dds_search(
+                evaluate=objective,
+                score_fn=lambda m, _obj=final_phase_obj: _score_candidate(m, objective=_obj),
+                feasible_fn=_volume_gate_passed,
+                phase_parameters=final_phase_params,
+                param_bounds=param_bounds,
+                start_params=best_params,
+                budget=final_phase_budget,
+                rng=seed_rng,
+                r=dds_r,
+            )
+            if refine_params is not None:
+                seed_nse = float(refine_metrics.get("nse", float("nan")))
+                seed_kge = float(refine_metrics.get("kge", float("nan")))
+                ensemble_nse_per_seed.append(seed_nse)
+                ensemble_kge_per_seed.append(seed_kge)
+                refine_score = _score_candidate(refine_metrics, objective=final_phase_obj)
+                primary_score = _score_candidate(best_metrics, objective=final_phase_obj)
+                if _math.isfinite(refine_score) and refine_score > primary_score:
+                    best_params = dict(refine_params)
+                    best_metrics = dict(refine_metrics)
+
+    def _finite_std(vals: list[float]) -> float | None:
+        finite = [v for v in vals if _math.isfinite(v)]
+        if len(finite) < 2:
+            return None
+        mean = sum(finite) / len(finite)
+        return _math.sqrt(sum((v - mean) ** 2 for v in finite) / len(finite))
+
+    # --- Split-sample transfer evaluation (Klemeš 1986) -------------------
+    # Run best_params against the held-out validation period.  A fresh engine
+    # eval is needed because calibration ran with keep_workdirs=False (no cache).
+    val_evidence: dict[str, float] = {}
+    if obs_val is not None and len(obs_val) >= 30:
+        try:
+            val_objective = make_real_objective(
+                base_txtinout=base_txtinout,
+                observed_series=obs_val,
+                work_root=cal_dir / "validation_eval",
+                outlet_gis_id=lock.outlet_gis_id,
+                binary=binary,
+                timeout_s=timeout_s,
+                objective_sim_file=lock.sim_source_file,
+                strict_objective_file=True,
+                allow_outlet_autodetect=False,
+                objective_outlet_policy=_objective_outlet_policy_for_lock(lock),
+                parameter_mode=parameter_mode,
+                keep_workdirs=True,
+            )
+            val_evidence = val_objective(best_params)
+        except Exception as _e:  # noqa: BLE001
+            val_evidence = {
+                "nse": float("nan"),
+                "kge": float("nan"),
+                "pbias": float("nan"),
+                "error": str(_e),
+            }
+
     best_nse_val = float(best_metrics.get("nse", float("nan")))
     best_kge_val = float(best_metrics.get("kge", float("nan")))
 
     # Write best solution JSON.
     best_json = cal_dir / "best_solution.json"
-    best_json.write_text(
-        json.dumps(
-            {
-                "parameters": best_params,
-                "metrics": best_metrics,
-                "benchmark_baseline_nse": lock.baseline_nse,
-                "benchmark_baseline_kge": lock.baseline_kge,
-                "selection_policy": "staged_volume_baseflow_peaks_then_nse_kge",
-                "volume_gate": "abs(pbias) <= 30",
-                "kge_nse_finetune_gate": (
-                    "candidate calibration process gates must pass when available; "
-                    "skill-only claim gates remain final locked-rerun gates"
-                ),
-                "calibration_protocol": active_phases,
-            },
-            indent=2,
-        ) + "\n",
-        encoding="utf-8",
-    )
+    best_solution_payload: dict[str, Any] = {
+        "parameters": best_params,
+        "metrics": best_metrics,
+        "benchmark_baseline_nse": lock.baseline_nse,
+        "benchmark_baseline_kge": lock.baseline_kge,
+        "selection_policy": "staged_volume_baseflow_peaks_then_nse_kge",
+        "volume_gate": "abs(pbias) <= 30",
+        "kge_nse_finetune_gate": (
+            "candidate calibration process gates must pass when available; "
+            "skill-only claim gates remain final locked-rerun gates"
+        ),
+        "calibration_protocol": active_phases,
+    }
+    if validation_period is not None:
+        best_solution_payload["validation_period"] = list(validation_period)
+        best_solution_payload["validation_metrics"] = val_evidence
+        best_solution_payload["validation_transfer_passed"] = _volume_gate_passed(val_evidence)
+    if dds_n_seeds > 1:
+        best_solution_payload["ensemble_n_seeds"] = dds_n_seeds
+        best_solution_payload["ensemble_best_nse_per_seed"] = ensemble_nse_per_seed
+        best_solution_payload["ensemble_best_kge_per_seed"] = ensemble_kge_per_seed
+        best_solution_payload["ensemble_nse_spread"] = _finite_std(ensemble_nse_per_seed)
+        best_solution_payload["ensemble_kge_spread"] = _finite_std(ensemble_kge_per_seed)
+    best_json.write_text(json.dumps(best_solution_payload, indent=2) + "\n", encoding="utf-8")
 
     # Write summary markdown.
+    summary_lines = [
+        "# Locked-Benchmark Calibration Summary",
+        "",
+        f"- Basin: `{lock.basin_id}`",
+        f"- Benchmark NSE/KGE: `{lock.baseline_nse:.6f}` / `{lock.baseline_kge:.6f}`",
+        f"- Best calibrated NSE/KGE: `{best_nse_val:.6f}` / `{best_kge_val:.6f}`",
+        f"- Delta NSE/KGE: `{best_nse_val - lock.baseline_nse:+.6f}` / `{best_kge_val - lock.baseline_kge:+.6f}`",
+        f"- Evaluations: `{len(evaluations)}`",
+        f"- Parameters: `{', '.join(parameters)}`",
+        "- Selection policy: `staged_volume_baseflow_peaks_then_nse_kge`",
+    ]
+    if validation_period is not None:
+        val_nse = val_evidence.get("nse", float("nan"))
+        val_kge = val_evidence.get("kge", float("nan"))
+        val_pbias = val_evidence.get("pbias", float("nan"))
+        val_pass = _volume_gate_passed(val_evidence)
+        summary_lines += [
+            "",
+            "## Split-Sample Validation (Klemeš 1986)",
+            f"- Validation period: `{validation_period[0]}` – `{validation_period[1]}`",
+            f"- Validation NSE/KGE: `{val_nse:.6f}` / `{val_kge:.6f}`",
+            f"- Validation PBIAS: `{val_pbias:.2f}%`",
+            f"- Transfer passed (volume gate): `{'YES' if val_pass else 'NO'}`",
+        ]
     summary_md = cal_dir / "summary.md"
-    summary_md.write_text(
-        "\n".join(
-            [
-                "# Locked-Benchmark Calibration Summary",
-                "",
-                f"- Basin: `{lock.basin_id}`",
-                f"- Benchmark NSE/KGE: `{lock.baseline_nse:.6f}` / `{lock.baseline_kge:.6f}`",
-                f"- Best calibrated NSE/KGE: `{best_nse_val:.6f}` / `{best_kge_val:.6f}`",
-                f"- Delta NSE/KGE: `{best_nse_val - lock.baseline_nse:+.6f}` / `{best_kge_val - lock.baseline_kge:+.6f}`",
-                f"- Evaluations: `{len(evaluations)}`",
-                f"- Parameters: `{', '.join(parameters)}`",
-                "- Selection policy: `staged_volume_baseflow_peaks_then_nse_kge`",
-            ]
-        ) + "\n",
-        encoding="utf-8",
-    )
+    summary_md.write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
 
     return CalibrationEvidence(
         basin_id=lock.basin_id,
@@ -659,6 +822,16 @@ def calibrate_against_lock(
         summary_md=str(summary_md),
         best_solution_json=str(best_json),
         outdir=str(cal_dir),
+        validation_period=validation_period,
+        validation_nse=float(val_evidence["nse"]) if val_evidence else None,
+        validation_kge=float(val_evidence.get("kge", float("nan"))) if val_evidence else None,
+        validation_pbias=float(val_evidence.get("pbias", float("nan"))) if val_evidence else None,
+        validation_transfer_passed=_volume_gate_passed(val_evidence) if val_evidence else None,
+        ensemble_n_seeds=dds_n_seeds if (search_method == "dds" and dds_n_seeds > 1) else None,
+        ensemble_best_nse_per_seed=ensemble_nse_per_seed if dds_n_seeds > 1 else [],
+        ensemble_best_kge_per_seed=ensemble_kge_per_seed if dds_n_seeds > 1 else [],
+        ensemble_nse_spread=_finite_std(ensemble_nse_per_seed) if dds_n_seeds > 1 else None,
+        ensemble_kge_spread=_finite_std(ensemble_kge_per_seed) if dds_n_seeds > 1 else None,
     )
 
 
@@ -948,6 +1121,161 @@ def _diagnostic_calibration_phases(
     return normalized
 
 
+def _reflect_at_bounds(value: float, lo: float, hi: float) -> float:
+    """Fold ``value`` back into ``[lo, hi]`` using DDS boundary reflection.
+
+    Tolson & Shoemaker (2007): when a perturbed value falls outside the
+    feasible range it is reflected back across the violated bound; if the
+    reflection overshoots the opposite bound the value is set to that bound.
+    """
+    if hi <= lo:
+        return lo
+    if value < lo:
+        reflected = lo + (lo - value)
+        return hi if reflected > hi else reflected
+    if value > hi:
+        reflected = hi - (value - hi)
+        return lo if reflected < lo else reflected
+    return value
+
+
+def _dds_propose(
+    best_params: dict[str, float],
+    *,
+    phase_parameters: list[str],
+    param_bounds: dict[str, tuple[float, float]],
+    iteration: int,
+    n_iterations: int,
+    rng: Any,
+    r: float = 0.2,
+) -> dict[str, float]:
+    """Propose one Dynamically Dimensioned Search candidate.
+
+    Implements the neighbourhood operator of Tolson & Shoemaker (2007):
+
+    * Each decision variable is selected for perturbation with probability
+      ``P(i) = 1 - ln(i)/ln(m)`` which decays as the search progresses, so
+      early iterations perturb many dimensions (exploration) and late
+      iterations perturb few (exploitation). At least one variable is always
+      perturbed.
+    * Each selected variable receives a reflected Gaussian step with standard
+      deviation ``r * (hi - lo)``.
+
+    The candidate is built by copying ``best_params`` (so non-phase parameters
+    carried forward from earlier phases are preserved) and perturbing only the
+    selected phase parameters.
+    """
+    import math
+
+    m = max(int(n_iterations), 1)
+    i = max(int(iteration), 1)
+    if m > 1:
+        p_include = 1.0 - (math.log(i) / math.log(m))
+    else:
+        p_include = 1.0
+    p_include = min(1.0, max(0.0, p_include))
+
+    selected = [j for j in phase_parameters if rng.random() < p_include]
+    if not selected and phase_parameters:
+        selected = [rng.choice(phase_parameters)]
+
+    candidate = dict(best_params)
+    for name in selected:
+        lo, hi = param_bounds[name]
+        current = best_params.get(name, (lo + hi) / 2.0)
+        step = r * (hi - lo) * rng.gauss(0.0, 1.0)
+        candidate[name] = _reflect_at_bounds(current + step, lo, hi)
+    return candidate
+
+
+def _dds_search(
+    *,
+    evaluate: Any,
+    score_fn: Any,
+    feasible_fn: Any,
+    phase_parameters: list[str],
+    param_bounds: dict[str, tuple[float, float]],
+    start_params: dict[str, float],
+    budget: int,
+    rng: Any,
+    r: float = 0.2,
+) -> tuple[dict[str, float] | None, dict[str, float], float]:
+    """Run DDS over ``phase_parameters``, seeded from ``start_params``.
+
+    ``evaluate(point) -> metrics`` runs (and records) one real-engine
+    evaluation. ``score_fn(metrics) -> float`` ranks candidates;
+    ``feasible_fn(metrics) -> bool`` is the volume gate.
+
+    The DDS walk perturbs from the best point by a *walk score* that ranks any
+    feasible candidate above any infeasible one, while still preferring lower
+    ``|pbias|`` among infeasible candidates so the search gravitates toward the
+    feasible region before optimising skill within it. Only feasible candidates
+    (volume gate passed) are eligible to be returned — this preserves the
+    volume-gate-first governance of the staged search.
+
+    Returns ``(best_feasible_params, best_feasible_metrics, best_feasible_score)``
+    or ``(None, {}, -inf)`` when no feasible candidate is found.
+    """
+    import math
+
+    def _walk_score(metrics: dict[str, Any]) -> float:
+        base = score_fn(metrics)
+        if feasible_fn(metrics):
+            # Any volume-feasible point ranks above any infeasible one. A
+            # feasible point whose skill score is non-finite (e.g. a process
+            # gate failed) still beats the infeasible region (floor -500).
+            return base if math.isfinite(base) else -500.0
+        # Infeasible: ranked below all feasible points, but prefer lower
+        # |pbias| so the walk gravitates toward the feasible region.
+        pbias = metrics.get("pbias")
+        if isinstance(pbias, (int, float)) and math.isfinite(float(pbias)):
+            return -abs(float(pbias)) / 30.0 - 1000.0
+        return -1e6
+
+    best_feasible_params: dict[str, float] | None = None
+    best_feasible_metrics: dict[str, float] = {}
+    best_feasible_score = float("-inf")
+
+    # Seed evaluation: the carried-forward baseline (no perturbation).
+    seed_metrics = evaluate(dict(start_params))
+    walk_best_point = dict(start_params)
+    walk_best_score = _walk_score(seed_metrics)
+    if feasible_fn(seed_metrics):
+        s = score_fn(seed_metrics)
+        if math.isfinite(s):
+            best_feasible_params = dict(start_params)
+            best_feasible_metrics = {
+                k: float(v) for k, v in seed_metrics.items() if isinstance(v, (int, float))
+            }
+            best_feasible_score = s
+
+    for i in range(1, max(int(budget), 1) + 1):
+        candidate = _dds_propose(
+            walk_best_point,
+            phase_parameters=phase_parameters,
+            param_bounds=param_bounds,
+            iteration=i,
+            n_iterations=budget,
+            rng=rng,
+            r=r,
+        )
+        metrics = evaluate(candidate)
+        ws = _walk_score(metrics)
+        if ws > walk_best_score:
+            walk_best_score = ws
+            walk_best_point = dict(candidate)
+        if feasible_fn(metrics):
+            s = score_fn(metrics)
+            if math.isfinite(s) and s > best_feasible_score:
+                best_feasible_score = s
+                best_feasible_metrics = {
+                    k: float(v) for k, v in metrics.items() if isinstance(v, (int, float))
+                }
+                best_feasible_params = dict(candidate)
+
+    return best_feasible_params, best_feasible_metrics, best_feasible_score
+
+
 def _phase_candidate_points(
     *,
     current_params: dict[str, float],
@@ -986,6 +1314,7 @@ def _score_candidate(metrics: dict[str, Any], *, objective: str) -> float:
     try:
         nse = float(metrics.get("nse", float("nan")))
         kge = float(metrics.get("kge", float("nan")))
+        log_kge_val = float(metrics.get("log_kge", float("nan")))
         pbias = float(metrics.get("pbias", float("nan")))
     except Exception:
         return float("-inf")
@@ -1000,11 +1329,18 @@ def _score_candidate(metrics: dict[str, Any], *, objective: str) -> float:
             return float("-inf")
     nse_term = nse if math.isfinite(nse) else -10.0
     kge_term = kge if math.isfinite(kge) else -10.0
+    # log_kge is a bonus if available; falls back to 0 (neutral) if not recorded
+    # so the objective remains valid for engine runs that pre-date log_kge.
+    log_kge_term = log_kge_val if math.isfinite(log_kge_val) else 0.0
     volume_term = -abs(pbias) / 30.0
     if "rank_nse_kge" in objective:
+        # Blend raw KGE with log-flow KGE (Pushpalatha et al. 2012): equal
+        # weight on peak-flow and recession-limb fit.  NSE has reduced weight
+        # since raw NSE is dominated by flood peaks (already captured in KGE).
+        combined_kge = 0.6 * kge_term + 0.4 * log_kge_term
         if nse_term >= 0.0:
-            return 0.5 * kge_term + 0.2 * nse_term + 0.005 * volume_term
-        return nse_term + 0.1 * kge_term + 0.005 * volume_term
+            return 0.5 * combined_kge + 0.2 * nse_term + 0.005 * volume_term
+        return nse_term + 0.1 * combined_kge + 0.005 * volume_term
     if "pbias" in objective or "volume" in objective:
         preferred_volume_bonus = 1.0 if abs(pbias) <= 15.0 else 0.0
         return preferred_volume_bonus + 0.5 * kge_term + 0.2 * nse_term + 0.01 * volume_term

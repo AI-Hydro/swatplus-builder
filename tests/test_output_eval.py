@@ -509,4 +509,51 @@ def test_evaluate_run_rejects_invalid_outlet_policy(tmp_path):
             obs,
             outlet_gis_id=1,
             outlet_policy="unknown",  # type: ignore[arg-type]
+
         )
+
+
+def _write_flow_sim(path, dates, flows):
+    header = "channel_sd_day\njday mon day yr unit gis_id name flo_out\nn/a n/a n/a n/a n/a n/a n/a m3/s\n"
+    rows = "\n".join(
+        f"{d.dayofyear} {d.month} {d.day} {d.year} 1 1 cha01 {q:.4f}" for d, q in zip(dates, flows)
+    )
+    path.write_text(header + rows + "\n", encoding="utf-8")
+
+
+def test_evaluate_run_includes_log_kge_metric(tmp_path):
+    """evaluate_run must return a log_kge key alongside nse/kge/pbias."""
+    from swatplus_builder.output.eval import evaluate_run
+
+    dates = pd.date_range("2015-01-01", periods=30, freq="D")
+    flows = [float(i % 5 + 1) for i in range(30)]
+
+    txt = tmp_path / "TxtInOut"
+    txt.mkdir()
+    _write_flow_sim(txt / "channel_sd_day.txt", dates, flows)
+
+    obs = pd.Series(flows, index=dates)
+    _df, metrics = evaluate_run(txt / "channel_sd_day.txt", obs, outlet_gis_id=1)
+
+    assert "log_kge" in metrics
+    import math
+    assert math.isfinite(metrics["log_kge"])
+    # Perfect simulation → log_kge should be close to 1
+    assert metrics["log_kge"] > 0.99
+
+
+def test_log_kge_score_prefers_recession_fit(tmp_path):
+    """Candidate with better low-flow fit should score higher under rank_nse_kge."""
+    from swatplus_builder.calibration.locked_benchmark import _score_candidate
+
+    # Candidate A: decent raw KGE, poor low-flow fit (log_kge low)
+    candidate_a = {"nse": 0.5, "kge": 0.6, "log_kge": 0.1, "pbias": 10.0,
+                   "physical_gate_passed": 1.0, "calibration_process_gate_passed": 1.0}
+    # Candidate B: same raw KGE, much better low-flow fit (log_kge high)
+    candidate_b = {"nse": 0.5, "kge": 0.6, "log_kge": 0.7, "pbias": 10.0,
+                   "physical_gate_passed": 1.0, "calibration_process_gate_passed": 1.0}
+
+    score_a = _score_candidate(candidate_a, objective="maintain_volume_gate_then_rank_nse_kge")
+    score_b = _score_candidate(candidate_b, objective="maintain_volume_gate_then_rank_nse_kge")
+
+    assert score_b > score_a, f"Better log_kge should rank higher: {score_b} > {score_a}"

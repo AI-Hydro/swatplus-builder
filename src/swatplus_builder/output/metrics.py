@@ -29,6 +29,7 @@ __all__ = [
     "nse",
     "kge",
     "kge_components",
+    "log_kge",
     "pbias",
     "baseflow_index",
     "flow_duration_curve_quantiles",
@@ -140,6 +141,22 @@ def kge_components(obs: Sequence[float], sim: Sequence[float]) -> dict[str, floa
         "variability_deficit": float(abs(alpha - 1.0)),
         "bias_deficit": float(abs(beta - 1.0)),
     }
+
+
+def log_kge(obs: Sequence[float], sim: Sequence[float], epsilon: float = 0.01) -> float:
+    """KGE computed on log(Q + ε) to emphasise low-flow and recession fit.
+
+    Applying a log transform before KGE shifts weight from flood peaks to
+    baseflow and recession limbs — the components that dominate multi-year
+    water balance and are insensitive to raw-flow KGE (Pushpalatha et al.
+    2012).  ``epsilon`` shifts the origin to avoid log(0); the default
+    0.01 m³/s is suitable for typical USGS daily streamflow records.
+    """
+    obs_list = [max(float(v), 0.0) + epsilon for v in obs]
+    sim_list = [max(float(v), 0.0) + epsilon for v in sim]
+    log_obs = [math.log(v) for v in obs_list]
+    log_sim = [math.log(v) for v in sim_list]
+    return kge(log_obs, log_sim)
 
 
 def pbias(obs: Sequence[float], sim: Sequence[float]) -> float:
