@@ -93,6 +93,14 @@ def parse_object_cnt(txtinout: Path) -> tuple[int | None, int | None]:
 
 
 def parse_terminal_channel_ids(txtinout: Path) -> set[int]:
+    """Return the channel object ids of terminal channels from chandeg.con.
+
+    A terminal channel is one with no downstream routing connection, encoded in
+    SWAT+ editor output as ``out_tot == 0`` (such rows omit the trailing
+    ``obj_typ/obj_id/hyd_typ/frac`` columns entirely). The returned ids are the
+    ``id`` column values, which match the ``unit`` column in channel_sd_day.txt
+    (NOT ``gis_id`` — the two diverge once a channel is dropped from the network).
+    """
     p = txtinout / "chandeg.con"
     if not p.exists():
         return set()
@@ -102,19 +110,21 @@ def parse_terminal_channel_ids(txtinout: Path) -> set[int]:
         parts = line.split()
         if not parts:
             continue
-        if "gis_id" in parts and "obj_typ" in parts:
+        if "id" in parts and "out_tot" in parts and "gis_id" in parts:
             col_idx = {c: i for i, c in enumerate(parts)}
             continue
         if col_idx is None:
-            if len(parts) >= 14 and parts[0].isdigit() and parts[13] == "out":
-                terminals.add(int(parts[0]))
+            continue
+        id_i = col_idx["id"]
+        out_i = col_idx["out_tot"]
+        if len(parts) <= max(id_i, out_i):
             continue
         try:
-            obj_typ = parts[col_idx["obj_typ"]]
-            if obj_typ != "out":
+            if not parts[id_i].isdigit():
                 continue
-            terminals.add(int(parts[col_idx["gis_id"]]))
-        except (KeyError, IndexError, ValueError):
+            if int(parts[out_i]) == 0:
+                terminals.add(int(parts[id_i]))
+        except (IndexError, ValueError):
             continue
     return terminals
 
