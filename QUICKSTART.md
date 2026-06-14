@@ -12,7 +12,9 @@ Repo: <https://github.com/AI-Hydro/swatplus-builder>
 ## 1. Requirements
 
 - **Python ≥ 3.10**
-- **SWAT+ engine binary** (`rev60+`) on `PATH` as `swatplus`, or set
+- **SWAT+ engine binary** — SWAT+ v2023 rev 60.5.7–61.0.2.61. Download from
+  [swat.tamu.edu/software/plus](https://swat.tamu.edu/software/plus/), then
+  install with `swat setup engine --path <binary>` (recommended) or set
   `SWATPLUS_EXE` to its path.
 - **SWAT+ reference databases** (datasets / soils / wgn).
 - OS: macOS or Linux (Windows: place `swatplus.exe` on `PATH`).
@@ -37,18 +39,21 @@ Planetary Computer), `mcp` (agent tool server).
 ## 3. Bootstrap engine + reference data
 
 ```bash
-# Reference DBs → ~/.swatplus-builder/reference_dbs (tag v60.5.7)
+# Reference DBs → ~/.swatplus_builder/reference_dbs
 bash scripts/bootstrap_reference_dbs.sh
 
-# SWAT+ engine binary (see script for the per-platform download)
-bash scripts/bootstrap_swatplus_binary.sh
+# SWAT+ engine binary — download from https://swat.tamu.edu/software/plus/
+# then install with one command (no PATH or env-var needed after this):
+swat setup engine --path /path/to/downloaded/swatplus_exe
+
+# Run with no args to see download instructions + current status:
+swat setup engine
 ```
 
 Verify:
 
 ```bash
-PYTHONPATH=src python -m swatplus_builder.cli version
-PYTHONPATH=src python -m swatplus_builder.cli workflow run --help
+swat health --json   # engine + reference-DB readiness; exit 0 = healthy
 ```
 
 ## 4. Run the canonical workflow (one command)
@@ -57,7 +62,7 @@ One USGS gauge ID → build → fresh engine run → benchmark lock → gated
 diagnostic calibration → independently verified locked rerun → evidence bundle.
 
 ```bash
-PYTHONPATH=src python -m swatplus_builder.cli workflow run \
+swat workflow run \
   --usgs-id 02177000 \
   --model-family full \
   --start 2000-01-01 --end 2019-12-31 \
@@ -82,42 +87,58 @@ Outputs land in the run directory as a machine-readable **evidence bundle**:
 what you may *not* say, with a typed reason and an artifact pointer. Metrics
 alone never promote a claim tier.
 
-## 5. Drive it with an AI agent (MCP)
+## 5. Drive it with an AI agent
 
-The package exposes an MCP tool server so an agent (Claude Code, Claude
-Desktop, or any MCP client) operates the workflow through typed tools rather
-than free-form code.
+swatplus-builder exposes two surfaces — choose based on your agent type:
+
+| Surface | When to use |
+|---|---|
+| **`swat` CLI** | Shell-native agents (Claude Code, Cursor), reproducible scripts, CI — use `swat workflow run` directly |
+| **MCP tools** | Hosted/chat agents that can't shell out; structured background launch + poll |
+
+### CLI path (shell-native agents — recommended)
 
 ```bash
-# start the stdio MCP server
-PYTHONPATH=src python -m swatplus_builder.cli mcp
+swat workflow run \
+  --usgs-id 02177000 \
+  --start 2000-01-01 --end 2019-12-31 \
+  --model-family full --warmup-years 3 \
+  --calibrate --claim-tier diagnostic \
+  --out-dir runs/usgs_02177000 --json
 ```
 
-Register it with your agent client (Claude Desktop / Claude Code
-`claude_desktop_config.json` example):
+### MCP path (hosted/chat agents)
+
+```bash
+pip install "swatplus-builder[mcp]"
+swat mcp   # start the stdio MCP server
+```
+
+Register with your agent client (`claude_desktop_config.json` example):
 
 ```json
 {
   "mcpServers": {
     "swatplus-builder": {
-      "command": "python",
-      "args": ["-m", "swatplus_builder.cli", "mcp"],
-      "env": { "PYTHONPATH": "src" }
+      "command": "swat",
+      "args": ["mcp"]
     }
   }
 }
 ```
 
-Then ask the agent in natural language, e.g.:
+Then ask the agent:
 
-> "Negotiate a research-grade contract for USGS 02177000 over 2000–2019, run
-> the canonical workflow, then summarize only from the evidence bundle —
-> report allowed and blocked claims."
+> "Build and calibrate a SWAT+ model for USGS gauge 02177000. Summarize only
+> from the evidence bundle — report allowed and blocked claims."
+
+The agent calls `run_workflow` (background launch), polls `workflow_status`,
+then reads `evidence_summary_path`. The `run_workflow` response includes
+`equivalent_cli` — the exact `swat workflow run` command for reproducibility.
 
 ### The agent contract (what the agent may and may not do)
 
-- The agent **operates**: it negotiates contracts, calls tools, reads
-  diagnostics, and reruns workflows.
+- The agent **operates**: it calls tools, reads diagnostics, reruns workflows.
 - The package **governs**: it builds, evaluates, verifies, blocks, downgrades,
   and writes evidence. Claim tiers come from gates, not from the agent.
 - Summaries must come from the **evidence bundle**, not from terminal text.

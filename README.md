@@ -48,7 +48,7 @@ agent — decides what may be claimed.
 
 ## Status
 
-**Alpha, v0.4.0** — locked-benchmark calibration, 13-tool agent (MCP) surface, container baseline.
+**Alpha, v0.7.0** — locked-benchmark calibration, 13-tool agent (MCP) surface, container baseline.
 
 - [x] Pure-Python GIS (WhiteboxTools, rasterio, geopandas)
 - [x] Automated SWAT+ project generation
@@ -126,7 +126,12 @@ pip install "swatplus-builder[gis,hyriver]"
 pip install -e ".[all]"
 ```
 
-SWAT+ engine binary is **not** a pip dependency — bring your own `swatplus_exe` and mount it at runtime.
+SWAT+ engine binary is **not** a pip dependency. After downloading from
+[swat.tamu.edu/software/plus](https://swat.tamu.edu/software/plus/):
+```bash
+swat setup engine --path /path/to/swatplus_exe   # installs to ~/.swatplus_builder/bin/
+swat setup engine                                 # no args: print status / download help
+```
 
 ---
 
@@ -165,6 +170,10 @@ Volume mounts (configured in `docker-compose.yml`):
 ## CLI (`swat`)
 
 ```bash
+# One-time setup
+swat setup engine --path /path/to/swatplus_exe   # install binary to ~/.swatplus_builder/bin/
+swat setup engine                                 # show download instructions + current status
+
 # Version with git SHA
 swat version
 swat version --json   # machine-readable
@@ -222,7 +231,21 @@ swat mcp-check           # pre-flight: exits 0 if all imports + tools OK
 swat mcp                 # start stdio MCP server
 ```
 
-MCP client config (Claude Desktop / Cursor / any MCP host):
+MCP client config (Claude Desktop / Cursor / any MCP host) — no env vars needed
+when the engine is installed via `swat setup engine --path`:
+
+```json
+{
+  "mcpServers": {
+    "swatplus-builder": {
+      "command": "swat",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+If you installed the engine manually via `SWATPLUS_EXE` instead:
 
 ```json
 {
@@ -230,10 +253,7 @@ MCP client config (Claude Desktop / Cursor / any MCP host):
     "swatplus-builder": {
       "command": "swat",
       "args": ["mcp"],
-      "env": {
-        "SWATPLUS_EXE": "/usr/local/bin/swatplus_exe",
-        "SWATPLUS_BUILDER_ARTIFACTS": "/data/artifacts"
-      }
+      "env": { "SWATPLUS_EXE": "/path/to/swatplus_exe" }
     }
   }
 }
@@ -277,29 +297,11 @@ Use `swat inspect <run_path>` to view persisted metadata.
 
 ---
 
-## Agent-facing API
+## Python API
 
-```python
-from swatplus_builder.tools import (
-    build_watershed,
-    create_hrus,
-    generate_swat_project,
-    run_swat,
-)
-
-ws = build_watershed(
-    dem_path="data/dem.tif",
-    outlet=(-77.123, 41.456),
-    stream_threshold_cells=500,
-    workdir="runs/marsh_creek/",
-)
-
-hrus = create_hrus(ws, "data/nlcd_2019.tif", "data/gnatsgo_mukey.tif")
-project = generate_swat_project(ws, hrus, "data/weather/", "2000-01-01", "2010-12-31", "marsh_creek_v1")
-result = run_swat(project, threads=4)
-```
-
-Locked-benchmark API (for direct Python use):
+The canonical path is the CLI (`swat workflow run`) or MCP (`run_workflow` tool).
+For direct Python use, the locked-benchmark calibration API is the authoritative
+surface:
 
 ```python
 from swatplus_builder.calibration.locked_benchmark import (
@@ -357,7 +359,7 @@ If you use swatplus-builder in your research, please cite:
                    modeling from a USGS gauge ID}},
   year         = {2026},
   publisher    = {Zenodo},
-  version      = {0.4.0},
+  version      = {0.7.0},
   doi          = {10.5281/zenodo.20650908},
   url          = {https://doi.org/10.5281/zenodo.20650908}
 }
