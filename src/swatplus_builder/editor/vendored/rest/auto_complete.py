@@ -1,7 +1,7 @@
 from flask import Blueprint, request, abort
 from .config import RequestHeaders as rh
 
-from database.project import connect, climate, channel, aquifer, reservoir, hydrology, hru, hru_parm_db, lum, soils, routing_unit, dr, init, decision_table, exco, dr, structural, gis
+from _swatplus_db.project import connect, climate, channel, aquifer, reservoir, hydrology, hru, hru_parm_db, lum, soils, routing_unit, dr, init, decision_table, exco, dr, structural, gis
 from helpers import table_mapper # Note: string to table name dictionary moved here
 
 MAX_ROWS = 1000
@@ -77,7 +77,7 @@ def getItemId(table_type, name):
 		return {'id': m.id}
 	except table.DoesNotExist:
 		rh.close()
-		abort(404, '{name} does not exist in the database.'.format(name=name))
+		abort(404, '{name} does not exist in the _swatplus_db.'.format(name=name))
 
 @bp.route('/select-list/<table_type>/<value>', methods=['GET'])
 def getSelectList(table_type, value):

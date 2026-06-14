@@ -1,9 +1,9 @@
 from .base import BaseFileModel, FileColumn as col
 from peewee import *
-from database.project import init
-import database.project.channel as db
-import database.project.link as link
-from database.project.salts import Salt_channel_ini, Salt_module
+from _swatplus_db.project import init
+import _swatplus_db.project.channel as db
+import _swatplus_db.project.link as link
+from _swatplus_db.project.salts import Salt_channel_ini, Salt_module
 
 
 class Initial_cha(BaseFileModel):

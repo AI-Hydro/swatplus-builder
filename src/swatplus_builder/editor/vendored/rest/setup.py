@@ -6,8 +6,8 @@ from playhouse.migrate import *
 
 from actions import import_gis
 from actions.get_swatplus_check import GetSwatplusCheck
-from database.project import config, gis, climate, connect, simulation, regions, basin
-from database import lib
+from _swatplus_db.project import config, gis, climate, connect, simulation, regions, basin
+from _swatplus_db import lib
 from fileio import config as fileio_config
 
 from helpers import utils

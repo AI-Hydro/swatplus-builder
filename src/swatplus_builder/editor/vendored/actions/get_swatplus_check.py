@@ -1,11 +1,11 @@
 from helpers.executable_api import ExecutableApi, Unbuffered
 from peewee import *
 
-from database.project.setup import SetupProjectDatabase
-from database.output.setup import SetupOutputDatabase
-from database.output import check, aquifer, channel, hyd, losses, misc, nutbal, plantwx, reservoir, waterbal, pest, base
-from database.project import connect, climate, gis, regions, simulation, hru_parm_db, config
-from database import lib
+from _swatplus_db.project.setup import SetupProjectDatabase
+from _swatplus_db.output.setup import SetupOutputDatabase
+from _swatplus_db.output import check, aquifer, channel, hyd, losses, misc, nutbal, plantwx, reservoir, waterbal, pest, base
+from _swatplus_db.project import connect, climate, gis, regions, simulation, hru_parm_db, config
+from _swatplus_db import lib
 
 import traceback
 import json, sys, argparse
@@ -840,7 +840,7 @@ class GetSwatplusCheck(ExecutableApi):
 		for table in required_tables:
 			if not lib.exists_table(conn, table):
 				conn.close()
-				return json.dumps({'error': 'Could not load SWAT+ Check because the table "{}" does not exist in your output database. Re-run your model and check all yearly and average annual files under the print options, and keep the analyze output box checked.'.format(table)})
+				return json.dumps({'error': 'Could not load SWAT+ Check because the table "{}" does not exist in your output _swatplus_db. Re-run your model and check all yearly and average annual files under the print options, and keep the analyze output box checked.'.format(table)})
 
 		try:
 			has_res = lib.exists_table(conn, 'basin_res_aa')

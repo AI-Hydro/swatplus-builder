@@ -1,7 +1,7 @@
 from .base import BaseFileModel
 from helpers import utils, table_mapper
-from database.project import connect
-import database.project.routing_unit as db
+from _swatplus_db.project import connect
+import _swatplus_db.project.routing_unit as db
 
 from peewee import *
 

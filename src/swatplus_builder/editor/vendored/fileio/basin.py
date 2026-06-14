@@ -1,12 +1,12 @@
 from .base import BaseFileModel
-from database.project import base as project_base
-from database.project import basin as project_basin
-from database.datasets import base as datasets_base
-from database.datasets import basin as datasets_basin
-from database import lib as db_lib
+from _swatplus_db.project import base as project_base
+from _swatplus_db.project import basin as project_basin
+from _swatplus_db.datasets import base as datasets_base
+from _swatplus_db.datasets import basin as datasets_basin
+from _swatplus_db import lib as db_lib
 
 from helpers import utils
-import database.project.basin as db
+import _swatplus_db.project.basin as db
 
 
 class Codes_bsn(BaseFileModel):
@@ -17,7 +17,7 @@ class Codes_bsn(BaseFileModel):
 
 	def read(self, database='project'):
 		"""
-		Read a codes.bsn text file into the database.
+		Read a codes.bsn text file into the _swatplus_db.
 		:param database: project or datasets
 		:return:
 		"""
@@ -42,7 +42,7 @@ class Parameters_bsn(BaseFileModel):
 
 	def read(self, database='project'):
 		"""
-		Read a parameters.bsn text file into the database.
+		Read a parameters.bsn text file into the _swatplus_db.
 		:param database: project or datasets
 		:return:
 		"""

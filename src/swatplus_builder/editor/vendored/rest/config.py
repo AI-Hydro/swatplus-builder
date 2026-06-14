@@ -1,4 +1,4 @@
-from database.project.setup import SetupProjectDatabase
+from _swatplus_db.project.setup import SetupProjectDatabase
 
 class RequestHeaders:
 	PROJECT_DB = "Project-Db"

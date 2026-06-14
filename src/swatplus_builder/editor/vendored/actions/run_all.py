@@ -4,8 +4,8 @@ from .setup_project import SetupProject
 from .import_weather import WeatherImport, Swat2012WeatherImport, WgnImport
 from .write_files import WriteFiles
 from .read_output import ReadOutput
-from database.project.config import Project_config
-from database.project.simulation import Time_sim
+from _swatplus_db.project.config import Project_config
+from _swatplus_db.project.simulation import Time_sim
 
 import sys
 import argparse

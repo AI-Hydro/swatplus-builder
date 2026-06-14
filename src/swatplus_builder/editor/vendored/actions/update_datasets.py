@@ -1,14 +1,14 @@
 from helpers.executable_api import ExecutableApi, Unbuffered
 from helpers import utils
-from database import lib
-from database.datasets.setup import SetupDatasetsDatabase
-from database.project.setup import SetupProjectDatabase
-from database.output.base import Project_config
-from database.project.config import Project_config as project_config_table
+from _swatplus_db import lib
+from _swatplus_db.datasets.setup import SetupDatasetsDatabase
+from _swatplus_db.project.setup import SetupProjectDatabase
+from _swatplus_db.output.base import Project_config
+from _swatplus_db.project.config import Project_config as project_config_table
 
-from database.datasets.hru_parm_db import Plants_plt as dataset_plants
-from database.datasets.definitions import File_cio as dataset_file_cio, Var_range, Version, Print_prt as dataset_print_prt, Print_prt_object as dataset_print_prt_object, File_cio_classification as dataset_file_cio_classification
-from database.datasets import change as datasets_change, init as datasets_init, lum as datasets_lum, basin as datasets_basin, ops as datasets_ops, decision_table as datasets_decision_table, hru_parm_db as datasets_hru_parm_db, base as datasets_base
+from _swatplus_db.datasets.hru_parm_db import Plants_plt as dataset_plants
+from _swatplus_db.datasets.definitions import File_cio as dataset_file_cio, Var_range, Version, Print_prt as dataset_print_prt, Print_prt_object as dataset_print_prt_object, File_cio_classification as dataset_file_cio_classification
+from _swatplus_db.datasets import change as datasets_change, init as datasets_init, lum as datasets_lum, basin as datasets_basin, ops as datasets_ops, decision_table as datasets_decision_table, hru_parm_db as datasets_hru_parm_db, base as datasets_base
 
 import sys
 import argparse
@@ -61,7 +61,7 @@ class UpdateDatasets(ExecutableApi):
 		
 		m = Version.get_or_none()
 		if m is None:
-			sys.exit('No version found in datasets database. Please download the latest datasets database from plus.swat.tamu.edu.')
+			sys.exit('No version found in datasets _swatplus_db. Please download the latest datasets database from plus.swat.tamu.edu.')
 
 		# Find matching upgrade path
 		version = m.value
@@ -75,7 +75,7 @@ class UpdateDatasets(ExecutableApi):
 		if upgrade_chain is not None:
 			# Backup original db before beginning
 			try:
-				self.emit_progress(2, 'Backing up datasets database...')
+				self.emit_progress(2, 'Backing up datasets _swatplus_db...')
 				base_path = os.path.dirname(datasets_db)
 				rel_datasets_db = os.path.relpath(datasets_db, base_path)
 				
@@ -97,7 +97,7 @@ class UpdateDatasets(ExecutableApi):
 					method(datasets_db)
 				except Exception as ex:
 					if backup_db_file is not None:
-						self.emit_progress(50, "Error occurred. Rolling back database...")
+						self.emit_progress(50, "Error occurred. Rolling back _swatplus_db...")
 						SetupDatasetsDatabase.rollback(datasets_db, backup_db_file)
 						self.emit_progress(100, "Error occurred.")
 					sys.exit(str(ex))

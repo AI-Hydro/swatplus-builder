@@ -5,8 +5,8 @@ from playhouse.shortcuts import model_to_dict
 from peewee import *
 
 from .defaults import DefaultRestMethods, RestHelpers
-from database.project import ops as db
-from database.datasets import ops as ds
+from _swatplus_db.project import ops as db
+from _swatplus_db.datasets import ops as ds
 
 bp = Blueprint('ops', __name__, url_prefix='/ops')
 

@@ -1,13 +1,13 @@
 from .base import BaseFileModel, FileColumn as col
 from helpers import utils
-import database.project.ops as db
-import database.datasets.ops as db_datasets
+import _swatplus_db.project.ops as db
+import _swatplus_db.datasets.ops as db_datasets
 
-from database.project import base as project_base
-from database.datasets import base as datasets_base
-from database import lib as db_lib
+from _swatplus_db.project import base as project_base
+from _swatplus_db.datasets import base as datasets_base
+from _swatplus_db import lib as db_lib
 
-from database.datasets.hru_parm_db import Fertilizer_frt
+from _swatplus_db.datasets.hru_parm_db import Fertilizer_frt
 
 
 class Graze_ops(BaseFileModel):
@@ -18,7 +18,7 @@ class Graze_ops(BaseFileModel):
 
 	def read(self, database ='project'):
 		"""
-		Read a graze.ops text file into the database.
+		Read a graze.ops text file into the _swatplus_db.
 		:param database: project or datasets
 		:return:
 		"""
@@ -46,7 +46,7 @@ class Graze_ops(BaseFileModel):
 					}
 					data.append(d)
 				except Fertilizer_frt.DoesNotExist:
-					raise ValueError("Could not find matching fertilizer {fert_name} in database.".format(fert_name=fert_name))
+					raise ValueError("Could not find matching fertilizer {fert_name} in _swatplus_db.".format(fert_name=fert_name))
 
 			i += 1
 
@@ -91,7 +91,7 @@ class Harv_ops(BaseFileModel):
 
 	def read(self, database ='project'):
 		"""
-		Read a harv.ops text file into the database.
+		Read a harv.ops text file into the _swatplus_db.
 		:param database: project or datasets
 		:return:
 		"""
@@ -147,7 +147,7 @@ class Fire_ops(BaseFileModel):
 
 	def read(self, database ='project'):
 		"""
-		Read a fire.ops text file into the database.
+		Read a fire.ops text file into the _swatplus_db.
 		:param database: project or datasets
 		:return:
 		"""
@@ -185,7 +185,7 @@ class Sweep_ops(BaseFileModel):
 
 	def read(self, database ='project'):
 		"""
-		Read a sweep.ops text file into the database.
+		Read a sweep.ops text file into the _swatplus_db.
 		:param database: project or datasets
 		:return:
 		"""
@@ -223,7 +223,7 @@ class Chem_app_ops(BaseFileModel):
 
 	def read(self, database ='project'):
 		"""
-		Read a chem_app.ops text file into the database.
+		Read a chem_app.ops text file into the _swatplus_db.
 		:param database: project or datasets
 		:return:
 		"""

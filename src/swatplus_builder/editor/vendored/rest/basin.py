@@ -1,6 +1,6 @@
 from flask import Blueprint, request, abort
 from .defaults import DefaultRestMethods
-from database.project.basin import Parameters_bsn, Codes_bsn
+from _swatplus_db.project.basin import Parameters_bsn, Codes_bsn
 
 bp = Blueprint('basin', __name__, url_prefix='/basin')
 

@@ -5,11 +5,11 @@ from playhouse.shortcuts import model_to_dict
 from peewee import *
 
 from .defaults import DefaultRestMethods, RestHelpers
-from database.project.connect import Channel_con, Chandeg_con, Chandeg_con_out
-from database.project.channel import Channel_cha, Initial_cha, Hydrology_cha, Sediment_cha, Nutrients_cha, Channel_lte_cha, Hyd_sed_lte_cha
-from database.project.climate import Weather_sta_cli
-from database.project.init import Om_water_ini, Pest_water_ini, Path_water_ini, Hmet_water_ini
-from database.project.salts import Salt_channel_ini
+from _swatplus_db.project.connect import Channel_con, Chandeg_con, Chandeg_con_out
+from _swatplus_db.project.channel import Channel_cha, Initial_cha, Hydrology_cha, Sediment_cha, Nutrients_cha, Channel_lte_cha, Hyd_sed_lte_cha
+from _swatplus_db.project.climate import Weather_sta_cli
+from _swatplus_db.project.init import Om_water_ini, Pest_water_ini, Path_water_ini, Hmet_water_ini
+from _swatplus_db.project.salts import Salt_channel_ini
 
 bp = Blueprint('channels', __name__, url_prefix='/channels')
 

@@ -1,13 +1,13 @@
 from helpers.executable_api import ExecutableApi, Unbuffered
 from helpers import utils
-from database import lib
-from database.project import base as project_base
-from database.project.config import Project_config
-from database.project.setup import SetupProjectDatabase
-from database.datasets.setup import SetupDatasetsDatabase
-from database.datasets.definitions import Version
-from database.project.hru_parm_db import Plants_plt as project_plants
-from database.datasets.hru_parm_db import Plants_plt as dataset_plants
+from _swatplus_db import lib
+from _swatplus_db.project import base as project_base
+from _swatplus_db.project.config import Project_config
+from _swatplus_db.project.setup import SetupProjectDatabase
+from _swatplus_db.datasets.setup import SetupDatasetsDatabase
+from _swatplus_db.datasets.definitions import Version
+from _swatplus_db.project.hru_parm_db import Plants_plt as project_plants
+from _swatplus_db.datasets.hru_parm_db import Plants_plt as dataset_plants
 from .import_gis import GisImport
 from . import update_project, update_datasets
 
@@ -39,7 +39,7 @@ class SetupProject(ExecutableApi):
 		if datasets_db is None:
 			conn = lib.open_db(project_db)
 			if not lib.exists_table(conn, 'project_config'):
-				sys.exit('No datasets database provided and the project_config table in your project database does not exist. Please provide either a datasets database file or an existing project database.')
+				sys.exit('No datasets database provided and the project_config table in your project database does not exist. Please provide either a datasets database file or an existing project _swatplus_db.')
 			conn.close()
 
 			SetupProjectDatabase.init(project_db)
@@ -62,7 +62,7 @@ class SetupProject(ExecutableApi):
 		if os.path.exists(project_db):
 			do_gis = True
 			try:
-				self.emit_progress(2, 'Backing up GIS database...')
+				self.emit_progress(2, 'Backing up GIS _swatplus_db...')
 				filename, file_extension = os.path.splitext(rel_project_db)
 				bak_filename = filename + '_bak_' + time.strftime('%Y%m%d-%H%M%S') + file_extension
 				bak_dir = os.path.join(base_path, 'DatabaseBackups')
@@ -77,7 +77,7 @@ class SetupProject(ExecutableApi):
 			SetupProjectDatabase.init(project_db, datasets_db)
 			self.emit_progress(10, 'Creating database tables...')
 			SetupProjectDatabase.create_tables()
-			self.emit_progress(50, 'Copying data from SWAT+ datasets database...')
+			self.emit_progress(50, 'Copying data from SWAT+ datasets _swatplus_db...')
 			description = project_description if project_description is not None and project_description != 'null' else project_name
 			SetupProjectDatabase.initialize_data(description, is_lte, overwrite_plants=OVERWRITE_PLANTS)
 
@@ -119,7 +119,7 @@ class SetupProject(ExecutableApi):
 					p.save()
 		except Exception as ex:
 			if backup_db_file is not None:
-				self.emit_progress(50, "Error occurred. Rolling back database...")
+				self.emit_progress(50, "Error occurred. Rolling back _swatplus_db...")
 				SetupProjectDatabase.rollback(project_db, backup_db_file)
 				self.emit_progress(100, "Error occurred.")
 			sys.exit(str(ex))

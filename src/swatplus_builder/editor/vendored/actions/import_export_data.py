@@ -1,10 +1,10 @@
 from helpers.executable_api import ExecutableApi, Unbuffered
 from helpers import table_mapper
-from database.project.setup import SetupProjectDatabase
-from database.project import base as project_base
-from database.project.recall import Recall_rec, Recall_dat
-from database.project.climate import Weather_sta_cli
-from database.project.salts import Salt_recall_rec, Salt_recall_dat
+from _swatplus_db.project.setup import SetupProjectDatabase
+from _swatplus_db.project import base as project_base
+from _swatplus_db.project.recall import Recall_rec, Recall_dat
+from _swatplus_db.project.climate import Weather_sta_cli
+from _swatplus_db.project.salts import Salt_recall_rec, Salt_recall_dat
 from fileio import base as fileio
 from fileio import connect, exco, dr, recall, climate, channel, aquifer, hydrology, reservoir, hru, lum, soils, init, routing_unit, regions, simulation, hru_parm_db, config, ops, structural, decision_table, basin, change, gwflow, salts
 

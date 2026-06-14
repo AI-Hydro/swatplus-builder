@@ -14,7 +14,7 @@ NUMB	 NAME		NSPU	HRU1	 HRU2
 The "-" indicates "through", e.g., HRUs 1 through 12 in NUMB 1.
 NUMB 2 would mean HRUs 13-16, 21-25, and 27.
 
-We really do not need rout_unit.def in the database.
+We really do not need rout_unit.def in the _swatplus_db.
 Instead, add a FK to rout_unit_rtu.id in rout_unit_ele.
 Get rid of def in rout_unit_rtu altogether!
 '''

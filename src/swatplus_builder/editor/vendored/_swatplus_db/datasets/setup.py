@@ -8,7 +8,7 @@ from fileio import decision_table as files_dtable
 from fileio import basin as files_basin
 from fileio import change as files_change
 from fileio import soils as files_soils
-from database import lib as db_lib
+from _swatplus_db import lib as db_lib
 from datetime import datetime
 
 from playhouse.migrate import *

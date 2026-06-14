@@ -10,6 +10,7 @@ swat hrus        — build HRUs by LU × Soil × Slope overlay
 swat project     — build SWAT+ SQLite + TxtInOut from a prepared workdir
 swat run         — run the SWAT+ engine on a prepared project
 swat build       — full pipeline: watershed → hrus → project → run (one-shot)
+swat setup       — one-time environment setup (engine binary, reference DBs)
 swat mcp         — start the stdio MCP server (requires [mcp] extra)
 swat version     — print version
 
@@ -23,6 +24,7 @@ import contextlib
 import json
 import os
 import sys
+from pathlib import Path
 
 import typer
 from rich import print as rprint
@@ -44,6 +46,13 @@ workflow_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(workflow_app, name="workflow")
+
+setup_app = typer.Typer(
+    name="setup",
+    help="One-time environment setup: install the SWAT+ engine binary, reference DBs.",
+    no_args_is_help=True,
+)
+app.add_typer(setup_app, name="setup")
 
 
 class _DiscardingBuffer:
@@ -1824,6 +1833,120 @@ def cmd_workflow_run(
         return
     rprint(f"[bold]workflow run[/bold] success={res.success} run_id={res.run_id}")
     rprint(f"  evidence={res.evidence_summary_path}")
+
+
+# ---------------------------------------------------------------------------
+# swat setup  — one-time environment setup
+# ---------------------------------------------------------------------------
+
+_SWAT_DOWNLOAD_URL = "https://swat.tamu.edu/software/plus/"
+_SWAT_GITHUB_RELEASES = "https://github.com/swat-model/swatplus/releases"
+
+
+@setup_app.command("engine")
+def cmd_setup_engine(
+    path: str = typer.Option(
+        None,
+        "--path",
+        "-p",
+        help="Path to a SWAT+ engine binary you already downloaded. "
+             "Copies it to ~/.swatplus_builder/bin/ and marks it executable.",
+    ),
+    force: bool = typer.Option(False, "--force", "-f", help="Overwrite an existing install."),
+) -> None:
+    """Install the SWAT+ engine binary into ~/.swatplus_builder/bin/.
+
+    **Why this command exists**
+
+    The SWAT+ engine is a compiled Fortran binary distributed by Texas A&M
+    (swat.tamu.edu). It cannot be bundled in a Python package or auto-downloaded
+    without a browser session. This command is the recommended one-time setup
+    step for agents and agentic platforms:
+
+    \\b
+    1. Download the binary for your platform from:
+       https://swat.tamu.edu/software/plus/
+       (or GitHub releases: https://github.com/swat-model/swatplus/releases)
+    2. Run:  swat setup engine --path /path/to/downloaded/binary
+
+    After this, `swat run`, `swat build`, and the full workflow automatically
+    find the binary — no SWATPLUS_EXE env var or PATH edits required.
+
+    **Supported binary names (any will be recognised)**
+
+    swatplus_exe, swatplus, swatplus_exe.exe, swatplus.exe
+
+    **Platform notes**
+
+    - Linux x86_64: download the Linux binary (no .exe extension).
+    - macOS Apple Silicon: the official binary is x86_64; run via Rosetta
+      (`softwareupdate --install-rosetta`) or use `arch -x86_64`.
+    - Windows: download the .exe variant.
+    """
+    from .run.swatplus import BINARY_CANDIDATES, ENGINE_BIN_DIR, locate_binary
+
+    if path is None:
+        # Print guidance and check current state
+        rprint("\n[bold]SWAT+ Engine Setup[/bold]\n")
+        rprint("The SWAT+ engine binary is NOT bundled with swatplus-builder.")
+        rprint("Download it for your platform from:\n")
+        rprint(f"  [cyan]{_SWAT_DOWNLOAD_URL}[/cyan]")
+        rprint(f"  [cyan]{_SWAT_GITHUB_RELEASES}[/cyan]  (direct binary downloads)\n")
+        rprint("Then run:\n")
+        rprint("  [bold]swat setup engine --path /path/to/downloaded/binary[/bold]\n")
+        rprint(f"Install location: [dim]{ENGINE_BIN_DIR}/[/dim]")
+        rprint(f"Recognised names: {', '.join(BINARY_CANDIDATES)}\n")
+
+        # Show current state
+        try:
+            found = locate_binary()
+            rprint(f"[green]✓ Engine already available:[/green] {found}")
+            rprint("  Run [bold]swat health[/bold] to verify it works correctly.")
+        except Exception:
+            rprint("[yellow]✗ No engine found yet.[/yellow]  Complete the steps above.")
+        raise typer.Exit(0)
+
+    src = Path(path).expanduser().resolve()
+    if not src.is_file():
+        rprint(f"[red]Error:[/red] --path does not point at a file: {src}")
+        raise typer.Exit(1)
+
+    ENGINE_BIN_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Use the source filename if it's a recognised name, otherwise default to 'swatplus_exe'
+    dest_name = src.name if src.name in BINARY_CANDIDATES else "swatplus_exe"
+    dest = ENGINE_BIN_DIR / dest_name
+
+    if dest.exists() and not force:
+        rprint(f"[yellow]Already installed:[/yellow] {dest}")
+        rprint("Use --force to overwrite.")
+        raise typer.Exit(0)
+
+    import shutil as _shutil
+    _shutil.copy2(src, dest)
+    dest.chmod(dest.stat().st_mode | 0o111)  # ensure +x on all execute bits
+
+    rprint(f"[green]✓ Installed:[/green] {dest}")
+
+    # Quick smoke-test: does it print a revision banner?
+    import subprocess as _subprocess
+    try:
+        result = _subprocess.run(
+            [str(dest)],
+            capture_output=True, text=True, timeout=10,
+            cwd=str(ENGINE_BIN_DIR),
+        )
+        combined = (result.stdout or "") + (result.stderr or "")
+        from .run.swatplus import parse_engine_revision
+        rev = parse_engine_revision(combined)
+        if rev:
+            rprint(f"  Engine revision: [bold]{rev}[/bold]")
+        else:
+            rprint("  [dim](revision not detected in banner — run 'swat health' to verify)[/dim]")
+    except Exception as exc:
+        rprint(f"  [dim](smoke test skipped: {exc})[/dim]")
+
+    rprint("\nRun [bold]swat health[/bold] to confirm full setup.")
 
 
 if __name__ == "__main__":

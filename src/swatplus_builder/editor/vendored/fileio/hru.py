@@ -1,8 +1,8 @@
 from .base import BaseFileModel, FileColumn as col
 from peewee import *
 from helpers import utils
-from database.project import soils, decision_table, hru_parm_db
-import database.project.hru as db
+from _swatplus_db.project import soils, decision_table, hru_parm_db
+import _swatplus_db.project.hru as db
 
 
 class Hru_data_hru(BaseFileModel):

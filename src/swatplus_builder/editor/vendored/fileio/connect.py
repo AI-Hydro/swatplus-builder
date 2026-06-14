@@ -1,7 +1,7 @@
 from helpers import utils, table_mapper
-import database.project.connect as db
+import _swatplus_db.project.connect as db
 
-from database.project import hru, routing_unit, exco, reservoir, aquifer, channel, recall, dr, basin
+from _swatplus_db.project import hru, routing_unit, exco, reservoir, aquifer, channel, recall, dr, basin
 from .base import BaseFileModel
 
 

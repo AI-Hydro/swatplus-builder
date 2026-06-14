@@ -1,6 +1,6 @@
 from peewee import *
 from . import base
-from database import lib as db_lib
+from _swatplus_db import lib as db_lib
 
 
 class Cal_parms_cal(base.BaseModel):

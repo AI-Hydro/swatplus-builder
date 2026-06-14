@@ -13,9 +13,9 @@ Design:
   so it has our installed ``peewee`` etc. We launch via ``python -c`` with an
   inline bootstrap that calls ``sys.path.insert(0, vendored_dir)`` before any
   import fires, then uses ``runpy.run_path`` to execute ``swatplus_api.py``.
-  This is more robust than ``PYTHONPATH`` alone: conda/venv ``.pth`` files can
-  inject site-packages before ``PYTHONPATH`` on some platforms, causing a PyPI
-  ``database`` package to shadow the vendored ``database/`` subpackage.
+  The vendored SWAT+ Editor's internal package is named ``_swatplus_db/``
+  (renamed from upstream's ``database/``) so it can never clash with the PyPI
+  ``database`` package regardless of what is installed in the host environment.
 * **CWD = vendored dir.** The editor uses a mix of absolute paths (we pass
   those in as args) and relative paths (it sometimes writes logs next to
   itself). Running in the vendored dir avoids surprises.

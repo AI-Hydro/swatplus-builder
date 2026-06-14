@@ -12,7 +12,7 @@ from actions.reimport_gis import ReimportGis
 from actions.run_all import RunAll
 from actions.load_scenarios import LoadScenarios
 from actions.get_swatplus_check import GetSwatplusCheck
-from database import soils
+from _swatplus_db import soils
 
 import sys
 import argparse

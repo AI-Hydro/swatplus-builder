@@ -5,8 +5,8 @@ from playhouse.shortcuts import model_to_dict
 from playhouse.migrate import *
 
 from helpers import table_mapper, utils
-from database import lib as db_lib
-from database.project import base as project_base, climate
+from _swatplus_db import lib as db_lib
+from _swatplus_db.project import base as project_base, climate
 
 import ast
 
@@ -503,7 +503,7 @@ class DefaultRestMethods:
 		
 
 class RestHelpers:
-	__invalid_name_msg = 'Invalid name {name}. Please ensure the value exists in your database.'
+	__invalid_name_msg = 'Invalid name {name}. Please ensure the value exists in your _swatplus_db.'
 
 	@staticmethod
 	def has_arg(args, name):

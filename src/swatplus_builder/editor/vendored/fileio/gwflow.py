@@ -1,8 +1,8 @@
 from playhouse.shortcuts import model_to_dict
 from .base import BaseFileModel, FileColumn as col
-from database.project import gis, gwflow, connect, reservoir, basin, base, setup
-from database.project.config import Project_config
-from database import lib
+from _swatplus_db.project import gis, gwflow, connect, reservoir, basin, base, setup
+from _swatplus_db.project.config import Project_config
+from _swatplus_db import lib
 from helpers import table_mapper
 from helpers import utils
 from .connect import IndexHelper

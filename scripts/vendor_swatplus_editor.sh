@@ -24,6 +24,29 @@ rsync -a --delete \
 
 echo "$COMMIT" > "$DEST/.VENDORED_COMMIT"
 
+# Rename upstream's 'database/' package to '_swatplus_db/' to prevent
+# namespace collision with the PyPI 'database' package.
+if [ -d "$DEST/database" ]; then
+  mv "$DEST/database" "$DEST/_swatplus_db"
+  echo "Renamed database/ → _swatplus_db/"
+fi
+
+# Rewrite all Python-level references to the renamed package.
+find "$DEST" -name "*.py" ! -path '*/__pycache__/*' -print0 \
+  | xargs -0 python3 - <<'PYEOF'
+import re, sys
+from pathlib import Path
+
+for p in [Path(f) for f in sys.argv[1:]]:
+    text = p.read_text(encoding="utf-8")
+    new  = re.sub(r'\bimport database\b', 'import _swatplus_db', text)
+    new  = re.sub(r'\bfrom database\b',   'from _swatplus_db',   new)
+    new  = re.sub(r'\bdatabase\.',        '_swatplus_db.',        new)
+    if new != text:
+        p.write_text(new, encoding="utf-8")
+        print(f"  rewritten: {p.name}")
+PYEOF
+
 echo "---"
 echo "Previous commit: $PREV_COMMIT"
 echo "New commit:      $COMMIT"

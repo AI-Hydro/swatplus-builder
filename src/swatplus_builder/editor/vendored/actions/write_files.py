@@ -1,11 +1,11 @@
 from helpers.executable_api import ExecutableApi, Unbuffered
-from database import lib as db_lib
-from database.project import base as project_base
-from database.project.setup import SetupProjectDatabase
-from database.project.config import Project_config
-from database.project.config import File_cio as project_file_cio, File_cio_classification
-from database.project.climate import Weather_file
-from database.project.salts import Salt_module
+from _swatplus_db import lib as db_lib
+from _swatplus_db.project import base as project_base
+from _swatplus_db.project.setup import SetupProjectDatabase
+from _swatplus_db.project.config import Project_config
+from _swatplus_db.project.config import File_cio as project_file_cio, File_cio_classification
+from _swatplus_db.project.climate import Weather_file
+from _swatplus_db.project.salts import Salt_module
 
 from fileio import connect, exco, dr, recall, climate, channel, aquifer, hydrology, reservoir, hru, lum, soils, init, routing_unit, regions, salts, simulation, hru_parm_db, config, ops, structural, decision_table, basin, change, water_rights, gwflow
 from helpers import utils
@@ -54,7 +54,7 @@ class WriteFiles(ExecutableApi):
 			self.__weather_data_format = config.weather_data_format
 			self.__netcdf_data_file = config.netcdf_data_file
 		except Project_config.DoesNotExist:
-			sys.exit('Could not retrieve project configuration from database')
+			sys.exit('Could not retrieve project configuration from _swatplus_db')
 
 	def __del__(self):
 		SetupProjectDatabase.close()
@@ -178,7 +178,7 @@ class WriteFiles(ExecutableApi):
 
 		if len(file_names) < num_required:
 			raise ValueError(
-				"{section} file names not available in the project database nor the SWAT+ datasets database.".format(
+				"{section} file names not available in the project database nor the SWAT+ datasets _swatplus_db.".format(
 					section=section))
 
 		return file_names
@@ -1089,7 +1089,7 @@ class WriteFiles(ExecutableApi):
 
 if __name__ == '__main__':
 	sys.stdout = Unbuffered(sys.stdout)
-	parser = argparse.ArgumentParser(description="Write SWAT+ text files from database.")
+	parser = argparse.ArgumentParser(description="Write SWAT+ text files from _swatplus_db.")
 	parser.add_argument("project_db_file", type=str, help="full path of project SQLite database file")
 	parser.add_argument("swat_version", type=str, help="SWAT+ revision number")
 	args = parser.parse_args()

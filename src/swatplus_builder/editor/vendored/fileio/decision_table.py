@@ -1,11 +1,11 @@
 from .base import BaseFileModel, FileColumn as col
 from helpers import utils
-import database.project.decision_table as db
-import database.datasets.decision_table as db_datasets
+import _swatplus_db.project.decision_table as db
+import _swatplus_db.datasets.decision_table as db_datasets
 
-from database.project import base as project_base
-from database.datasets import base as datasets_base
-from database import lib as db_lib
+from _swatplus_db.project import base as project_base
+from _swatplus_db.datasets import base as datasets_base
+from _swatplus_db import lib as db_lib
 from pathlib import Path
 
 
@@ -34,7 +34,7 @@ class D_table_dtl(BaseFileModel):
 
 	def read(self, database ='project'):
 		"""
-		Read a d_table.dtl text file into the database.
+		Read a d_table.dtl text file into the _swatplus_db.
 		:param database: project or datasets
 		:return:
 		"""

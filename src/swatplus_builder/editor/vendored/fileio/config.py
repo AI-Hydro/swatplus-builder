@@ -3,8 +3,8 @@ from helpers import utils
 
 from peewee import *
 
-import database.project.config as db
-from database.project import simulation, climate, connect, channel, reservoir, routing_unit, hru, dr, aquifer, link, basin, hydrology, exco, recall, structural, hru_parm_db, ops, lum, change, init, soils, decision_table, regions, config, water_rights
+import _swatplus_db.project.config as db
+from _swatplus_db.project import simulation, climate, connect, channel, reservoir, routing_unit, hru, dr, aquifer, link, basin, hydrology, exco, recall, structural, hru_parm_db, ops, lum, change, init, soils, decision_table, regions, config, water_rights
 
 
 class File_cio(BaseFileModel):

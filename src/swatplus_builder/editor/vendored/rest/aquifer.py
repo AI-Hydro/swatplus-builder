@@ -5,11 +5,11 @@ from playhouse.shortcuts import model_to_dict
 from peewee import *
 
 from .defaults import DefaultRestMethods, RestHelpers
-from database.project.connect import Aquifer_con, Aquifer_con_out
-from database.project.aquifer import Aquifer_aqu, Initial_aqu
-from database.project.climate import Weather_sta_cli
-from database.project.init import Om_water_ini, Pest_water_ini, Path_water_ini, Hmet_water_ini
-from database.project.salts import Salt_aqu_ini
+from _swatplus_db.project.connect import Aquifer_con, Aquifer_con_out
+from _swatplus_db.project.aquifer import Aquifer_aqu, Initial_aqu
+from _swatplus_db.project.climate import Weather_sta_cli
+from _swatplus_db.project.init import Om_water_ini, Pest_water_ini, Path_water_ini, Hmet_water_ini
+from _swatplus_db.project.salts import Salt_aqu_ini
 
 bp = Blueprint('aquifers', __name__, url_prefix='/aquifers')
 

@@ -5,7 +5,7 @@ from playhouse.shortcuts import model_to_dict
 from peewee import *
 
 from .defaults import DefaultRestMethods, RestHelpers
-from database.project import water_rights as db
+from _swatplus_db.project import water_rights as db
 
 bp = Blueprint('water_rights', __name__, url_prefix='/water_rights')
 

@@ -1,5 +1,5 @@
 from helpers.executable_api import ExecutableApi, Unbuffered
-from database.output import data
+from _swatplus_db.output import data
 
 import csv
 import os, os.path
@@ -60,7 +60,7 @@ def adjust_gis_id(gis_id_value, name_value):
 		return gis_id_value
 
 def reset_database(db_file):
-	"""Completely reset a SQLite database."""
+	"""Completely reset a SQLite _swatplus_db."""
 	conn = sqlite3.connect(db_file)
 	cursor = conn.cursor()
 	

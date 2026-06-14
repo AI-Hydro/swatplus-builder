@@ -1,12 +1,12 @@
 from .base import BaseFileModel
-from database.project import base as project_base
-from database.project import hru_parm_db as project_parmdb
-from database.datasets import base as datasets_base
-from database.datasets import hru_parm_db as datasets_parmdb
-from database import lib as db_lib
+from _swatplus_db.project import base as project_base
+from _swatplus_db.project import hru_parm_db as project_parmdb
+from _swatplus_db.datasets import base as datasets_base
+from _swatplus_db.datasets import hru_parm_db as datasets_parmdb
+from _swatplus_db import lib as db_lib
 
 from helpers import utils
-import database.project.hru_parm_db as db
+import _swatplus_db.project.hru_parm_db as db
 
 
 class Plants_plt(BaseFileModel):
@@ -105,7 +105,7 @@ class Septic_sep(BaseFileModel):
 
 	def read(self, database ='project'):
 		"""
-		Read a septic.sep text file into the database.
+		Read a septic.sep text file into the _swatplus_db.
 		NOTE: CURRENTLY THERE IS AN EXTRA NUMERIC COLUMN BEFORE THE DESCRIPTION.
 		:param database: project or datasets
 		:return:

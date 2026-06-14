@@ -5,12 +5,12 @@ from playhouse.shortcuts import model_to_dict
 from peewee import *
 
 from .defaults import DefaultRestMethods, RestHelpers
-from database.project.climate import Weather_sta_cli
-from database.project.connect import Hru_lte_con, Hru_lte_con_out
-from database.project.hru import Hru_data_hru, Hru_lte_hru
-from database.project.soils import Soils_lte_sol
-from database.project.hru_parm_db import Plants_plt
-from database.project.decision_table import D_table_dtl
+from _swatplus_db.project.climate import Weather_sta_cli
+from _swatplus_db.project.connect import Hru_lte_con, Hru_lte_con_out
+from _swatplus_db.project.hru import Hru_data_hru, Hru_lte_hru
+from _swatplus_db.project.soils import Soils_lte_sol
+from _swatplus_db.project.hru_parm_db import Plants_plt
+from _swatplus_db.project.decision_table import D_table_dtl
 
 bp = Blueprint('hru_lte', __name__, url_prefix='/hrus-lte')
 

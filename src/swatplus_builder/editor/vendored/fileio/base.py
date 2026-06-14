@@ -5,7 +5,7 @@ import time
 import ntpath
 import csv
 from helpers import utils, table_mapper
-from database import lib as db_lib
+from _swatplus_db import lib as db_lib
 from enum import Enum
 
 DO_DEBUG = False
