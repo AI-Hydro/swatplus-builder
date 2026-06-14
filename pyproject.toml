@@ -66,6 +66,11 @@ soils = [
     "pystac-client>=0.7",
     "planetary-computer>=1.0",
     "pyarrow>=15",
+    # Azure Blob filesystem driver + its fsspec backend. soil/pc.py reads the
+    # gNATSGO muaggatt parquet directly from Planetary Computer blob storage via
+    # adlfs; without these the real soil path silently degrades to synthetic.
+    "fsspec>=2024.2",
+    "adlfs>=2024.2",
 ]
 mcp = [
     "mcp>=1.2",
