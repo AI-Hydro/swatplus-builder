@@ -1538,6 +1538,10 @@ def main(
                     lte_hru_rows_patched,
                 )
 
+    from swatplus_builder.full_mode.warmup import (
+        reset_and_apply_warmup as _reset_and_apply_warmup,
+    )
+
     if not is_lte:
         # Full SWAT+ mode: apply post-editor routing fixes for engine rev 60.5.7.
         # Editor v3.2.0 generates sdc/chandeg routing natively but needs:
@@ -1550,15 +1554,28 @@ def main(
 
         # Warmup: prepend spin-up years before the evaluation period
         if warmup_years > 0:
-            from swatplus_builder.full_mode.warmup import (
-                reset_and_apply_warmup as _reset_and_apply_warmup,
-            )
             _reset_and_apply_warmup(
                 wf.txtinout_dir,
                 warmup_years=warmup_years,
                 evaluation_start_year=eval_start_dt.year,
             )
             log.info("Applied %d-year spin-up warmup (stale-safe reset)", warmup_years)
+    else:
+        # LTE cold-start: without spin-up, a 1-year simulation starting with zero
+        # soil/GW storage produces zero channel flow on Linux (Intel ifx binary).
+        # Prepend 2 warmup years; the engine uses WGN for those years since the
+        # observed weather files only cover the evaluation period. nyskip=2 ensures
+        # only the evaluation-period output reaches channel_sd_day.txt.
+        _lte_warmup = warmup_years if warmup_years > 0 else 2
+        try:
+            _reset_and_apply_warmup(
+                wf.txtinout_dir,
+                warmup_years=_lte_warmup,
+                evaluation_start_year=eval_start_dt.year,
+            )
+            log.info("Applied %d-year LTE spin-up warmup", _lte_warmup)
+        except Exception as _warmup_err:
+            log.warning("LTE warmup skipped (non-fatal): %s", _warmup_err)
 
     _ok(f"TxtInOut ready ({sum(1 for _ in wf.txtinout_dir.iterdir())} files)", elapsed=time.time() - t0)
 
@@ -1576,6 +1593,7 @@ def main(
         end_jday,   end_year   = d_end.timetuple().tm_yday,   d_end.year
 
         # Read actual yrc_start from time.sim (may differ from sim_start due to warmup)
+        eval_year = d_start.year  # original evaluation year before warmup adjustment
         time_sim = wf.txtinout_dir / "time.sim"
         if time_sim.is_file():
             ts_lines = [l for l in time_sim.read_text(encoding="utf-8", errors="replace").splitlines() if l.strip()]
@@ -1593,8 +1611,9 @@ def main(
             out: list[str] = []
             for i, line in enumerate(lines):
                 if i == 2:
-                    # Rewrite control row; preserve warmup nyskip if set
-                    nskip = warmup_years
+                    # nyskip = years between warmup start and evaluation start.
+                    # max() guards against warmup_years being set explicitly too.
+                    nskip = max(warmup_years, eval_year - start_year)
                     line = (
                         f"{nskip:<12}{start_jday:<11}{start_year:<11}"
                         f"{end_jday:<11}{end_year:<11}{'1':<10}"
