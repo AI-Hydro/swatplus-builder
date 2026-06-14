@@ -173,12 +173,18 @@ def _terminal_scope_metric_diagnostics(
     *,
     selected_outlet_gis_id: int,
 ) -> dict[str, Any]:
-    """Diagnostic-only selected-vs-all terminal metrics for multi-terminal runs."""
+    """Diagnostic-only selected-vs-all terminal metrics for terminal runs."""
 
     txtinout_dir = sim_source_path.parent
     terminal_ids = sorted(int(gid) for gid in _terminal_ids_from_chandeg_con(txtinout_dir))
-    if len(terminal_ids) < 2 or not sim_source_path.exists():
+    if not sim_source_path.exists():
         return {}
+    if not terminal_ids:
+        return {
+            "terminal_scope_metrics_available": False,
+            "terminal_scope_metric_reason": "terminal_inventory_empty",
+            "terminal_scope_metric_terminal_ids": terminal_ids,
+        }
     try:
         table = read_output_file(sim_source_path)
     except Exception as exc:

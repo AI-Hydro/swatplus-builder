@@ -343,6 +343,52 @@ def test_evaluate_run_reports_diagnostic_all_terminal_scope_metrics(tmp_path):
     assert diag["all_terminal_volume_gate_passes_diagnostic"] is True
 
 
+def test_evaluate_run_reports_single_terminal_fraction_as_one(tmp_path):
+    from swatplus_builder.output.eval import evaluate_run
+
+    txt = tmp_path / "TxtInOut"
+    txt.mkdir()
+
+    _write(
+        txt / "channel_sd_day.txt",
+        """\
+        channel_sd_day
+        jday mon day yr unit gis_id name flo_out
+        n/a n/a n/a n/a n/a n/a n/a m3/s
+        1 1 1 2015 12 12 cha12 3.0
+        2 1 2 2015 12 12 cha12 5.0
+        """,
+    )
+    _write(
+        txt / "chandeg.con",
+        """\
+        chandeg.con
+        id name gis_id area lat lon elev lcha wst cst ovfl rule out_tot obj_typ obj_id hyd_typ frac
+        12 cha0012 12 0 0 0 0 12 s 0 0 0 1 out 1 tot 1.0
+        """,
+    )
+    obs = pd.Series(
+        [3.0, 5.0],
+        index=pd.to_datetime(["2015-01-01", "2015-01-02"]),
+        name="obs",
+    )
+
+    _df, _metrics, diag = evaluate_run(
+        txt / "channel_sd_day.txt",
+        obs,
+        outlet_gis_id=12,
+        outlet_policy="strict",
+        return_diagnostics=True,
+    )
+
+    assert diag["terminal_scope_metrics_available"] is True
+    assert diag["terminal_scope_metric_terminal_ids"] == [12]
+    assert diag["selected_terminal_fraction_of_all_terminal_flow"] == pytest.approx(1.0)
+    assert diag["selected_terminal_pbias"] == pytest.approx(0.0)
+    assert diag["all_terminal_pbias"] == pytest.approx(0.0)
+    assert diag["all_terminal_volume_gate_passes_diagnostic"] is True
+
+
 def test_terminal_parser_uses_gis_id_not_internal_id(tmp_path):
     from swatplus_builder.output.eval import _terminal_ids_from_chandeg_con
 

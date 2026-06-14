@@ -2511,6 +2511,98 @@ def test_mass_trace_accepts_standalone_txtinout_for_locked_verification(tmp_path
     assert Path(tmp_path, "mass_trace", "mass_trace.json").exists()
 
 
+def test_mass_trace_recovers_selected_outlet_from_run_root_provenance(tmp_path: Path):
+    run = tmp_path / "run"
+    txt = run / "project" / "Scenarios" / "Default" / "TxtInOut"
+    _write_basin_wb(txt)
+    (txt / "object.cnt").write_text("object.cnt:\nbasin 100\n", encoding="utf-8")
+    (txt / "chandeg.con").write_text(
+        "chandeg.con\n"
+        "id name gis_id out_tot obj_typ\n"
+        "1 cha12 12 0 cha\n",
+        encoding="utf-8",
+    )
+    (txt / "channel_sdmorph_day.txt").write_text(
+        "channel_sdmorph_day\n"
+        "jday mon day yr unit gis_id name flo_in flo_out\n"
+        "m^3/s m^3/s\n"
+        "1 1 1 2010 1 12 cha12 5.787 5.787\n",
+        encoding="utf-8",
+    )
+    (run / "outlet_provenance.json").write_text(
+        json.dumps({"selected_outlet_gis_id": 12}) + "\n",
+        encoding="utf-8",
+    )
+
+    report = trace_mass_balance(run, out_dir=tmp_path / "mass_trace")
+
+    assert report.selected_outlet_gis_id == 12
+    assert report.selected_channel_row_count == 1
+    assert report.terminal_channel_row_count == 1
+    assert report.closure_status == "pass"
+
+
+def test_mass_trace_recovers_locked_txt_outlet_from_benchmark_lock(tmp_path: Path):
+    source_run = tmp_path / "run"
+    txt = source_run / "calibration" / "locked_calibrated_TxtInOut"
+    _write_basin_wb(txt)
+    (txt / "object.cnt").write_text("object.cnt:\nbasin 100\n", encoding="utf-8")
+    (txt / "chandeg.con").write_text(
+        "chandeg.con\n"
+        "id name gis_id out_tot obj_typ\n"
+        "1 cha12 12 0 cha\n",
+        encoding="utf-8",
+    )
+    (txt / "channel_sdmorph_day.txt").write_text(
+        "channel_sdmorph_day\n"
+        "jday mon day yr unit gis_id name flo_in flo_out\n"
+        "m^3/s m^3/s\n"
+        "1 1 1 2010 1 12 cha12 5.787 5.787\n",
+        encoding="utf-8",
+    )
+    benchmark = source_run / "benchmark"
+    benchmark.mkdir(parents=True)
+    (benchmark / "benchmark_lock.json").write_text(
+        json.dumps({"basin_id": "usgs_fixture", "outlet_gis_id": 12}) + "\n",
+        encoding="utf-8",
+    )
+
+    report = trace_mass_balance(txt, out_dir=tmp_path / "mass_trace")
+
+    assert report.selected_outlet_gis_id == 12
+    assert report.selected_channel_row_count == 1
+    assert report.terminal_channel_row_count == 1
+    assert report.closure_status == "pass"
+
+
+def test_mass_trace_missing_selected_outlet_is_explicit_outlet_failure(tmp_path: Path):
+    txt = tmp_path / "run" / "project" / "Scenarios" / "Default" / "TxtInOut"
+    _write_basin_wb(txt)
+    (txt / "object.cnt").write_text("object.cnt:\nbasin 100\n", encoding="utf-8")
+    (txt / "chandeg.con").write_text(
+        "chandeg.con\n"
+        "id name gis_id out_tot obj_typ\n"
+        "1 cha12 12 0 cha\n",
+        encoding="utf-8",
+    )
+    (txt / "channel_sdmorph_day.txt").write_text(
+        "channel_sdmorph_day\n"
+        "jday mon day yr unit gis_id name flo_in flo_out\n"
+        "m^3/s m^3/s\n"
+        "1 1 1 2010 1 12 cha12 5.787 5.787\n",
+        encoding="utf-8",
+    )
+
+    report = trace_mass_balance(tmp_path / "run", out_dir=tmp_path / "mass_trace")
+
+    assert report.selected_outlet_gis_id is None
+    assert report.selected_channel_row_count == 0
+    assert report.terminal_channel_row_count == 1
+    assert report.all_terminal_mass_closure_ratio is not None
+    assert report.closure_status == "fail_outlet_selection"
+    assert "selected_outlet_gis_id_missing" in report.flags
+
+
 def test_mass_trace_tolerates_trailing_blank_water_balance_fields(tmp_path: Path):
     txt = tmp_path / "run" / "project" / "Scenarios" / "Default" / "TxtInOut"
     txt.mkdir(parents=True)

@@ -8216,3 +8216,39 @@ New documentation: `docs/FULL_MODE_QSWAT_REFERENCE_AUDIT.md`.
     - Nonblank image checks passed for all 14 rendered slide PNGs.
     - `git diff --check -- Research_article/Conference/swatplus_builder_conference_v2_review_notes.md Research_article/Conference/swatplus_builder_conference_v2_reviewed.pptx`
       -> passed.
+- [2026-06-14] [01031500 end-to-end workflow run and single-terminal gate fix]
+  Ran the canonical workflow end-to-end for USGS `01031500` and verified the
+  single-terminal outlet/routing bug against live artifacts.
+  - The first attempt with `.venv` failed before hydrology execution because
+    the environment lacks required GIS/test dependencies (`geopandas`,
+    `shapely`, `pyogrio`, `rasterio`, `fiona`, `pytest`). This is an
+    environment/setup issue, not a watershed-model failure.
+  - The conda-backed run succeeded:
+    `demo_runs/workflow/e2e_01031500_20260614_153413_conda/`.
+  - Final evidence reports `effective_claim_tier=research_grade`,
+    `physical_gates_status=passed`, `routing_flow_gates_status=passed`, and
+    `calibration_claim_status=verified_and_claim_gates_passed`.
+  - Baseline metrics were `NSE=0.2032`, `KGE=0.4556`, `PBIAS=-3.22%`;
+    independently verified calibrated metrics were `NSE=0.4101`,
+    `KGE=0.6889`, `PBIAS=-2.87%`.
+  - The selected-outlet issue did not recur: `selected_outlet_gis_id=12`,
+    `terminal_outlet_count=1`, and
+    `selected_terminal_fraction_of_all_terminal_flow=1.0` in both baseline and
+    locked-calibrated routing-flow evidence.
+  - Implemented regression coverage for selected-outlet recovery from
+    provenance/benchmark artifacts and for single-terminal terminal-scope
+    diagnostics.
+  - Remaining issues to track: JSON shutdown stderr contains a truncated
+    `Error in sys.excepthook:` message; the routing-flow payload still exposes
+    a very large non-authoritative `ru_outflow_to_basin_wateryld_ratio`; and
+    `outlet_provenance.json` is minimal despite downstream gates retaining the
+    richer outlet evidence.
+  - Verification:
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m pytest -q tests/test_output_eval.py -k 'terminal_scope or single_terminal_fraction or terminal_parser'`
+      -> 3 passed.
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m pytest -q tests/test_workflow_usgs_e2e.py -k 'mass_trace or locked_calibrated_txtinout_routing_gate or routing_flow_gate'`
+      -> 10 passed.
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache ./.venv/bin/python -m py_compile src/swatplus_builder/output/eval.py src/swatplus_builder/output/mass_trace.py tests/test_output_eval.py tests/test_workflow_usgs_e2e.py`
+      -> passed.
+    - `git diff --check -- src/swatplus_builder/output/eval.py src/swatplus_builder/output/mass_trace.py tests/test_output_eval.py tests/test_workflow_usgs_e2e.py`
+      -> passed.

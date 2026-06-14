@@ -11,7 +11,7 @@ runtime gates, provenance, diagnostics, and machine-readable evidence.
 ## Status
 
 Active hardening toward research-grade production pipeline. Last updated:
-2026-05-25.
+2026-06-14.
 
 ## Where To Read Next
 
@@ -31,6 +31,12 @@ Active hardening toward research-grade production pipeline. Last updated:
 
 - Active phase: Phase 1, canonical workflow authority and locked calibration
   auditability.
+- Latest live run: `01031500` completed end-to-end on 2026-06-14 with
+  conda Python and real SWAT+ execution; evidence is under
+  `demo_runs/workflow/e2e_01031500_20260614_153413_conda/`. The run passed
+  physical gates, routing-flow gates, locked calibration verification, and
+  emitted `effective_claim_tier=research_grade`; `.venv` remains missing GIS
+  and test dependencies needed for this workflow.
 - Current canonical command:
 
 ```bash
