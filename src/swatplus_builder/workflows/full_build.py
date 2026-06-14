@@ -1,7 +1,7 @@
 """Package-owned full-mode basin build handoff.
 
 The current production build implementation still lives in
-``examples/build_real_basin.py``. This module is the canonical package boundary:
+``examples/usgs_basin_workflow.py``. This module is the canonical package boundary:
 workflow code calls this wrapper, receives typed success/blocker metadata, and
 never shells out to ad hoc scripts or derives claim policy from them.
 """
@@ -66,9 +66,9 @@ def build_full_model(
         )
         with _temporary_usgs_id(usgs_id), _temporary_env(env_overrides):
             module = _load_example_builder()
-            # build_real_basin.main currently reads a CLI-created global args
-            # object for model_family in two locations. Provide the minimum
-            # object needed to keep the package wrapper deterministic.
+            # usgs_basin_workflow.main reads a CLI-created global args object
+            # for model_family in two locations. Provide the minimum object
+            # needed to keep the package wrapper deterministic.
             module.STATION_ID = usgs_id
             module.log = logging.getLogger(f"swat_build_{usgs_id}")
             module.args = SimpleNamespace(model_family="full")
@@ -116,10 +116,10 @@ def build_full_model(
 
 def _load_example_builder():
     # Resolve relative to the package so this works after `pip install`
-    # (the script is bundled at swatplus_builder/examples/build_real_basin.py).
+    # (the script is bundled at swatplus_builder/examples/usgs_basin_workflow.py).
     # Fall back to the repo examples/ directory for editable installs.
-    pkg_path = Path(__file__).resolve().parent.parent / "examples" / "build_real_basin.py"
-    repo_path = Path(__file__).resolve().parents[3] / "examples" / "build_real_basin.py"
+    pkg_path = Path(__file__).resolve().parent.parent / "examples" / "usgs_basin_workflow.py"
+    repo_path = Path(__file__).resolve().parents[3] / "examples" / "usgs_basin_workflow.py"
     path = pkg_path if pkg_path.exists() else repo_path
     if not path.exists():
         raise FileNotFoundError(
@@ -127,7 +127,7 @@ def _load_example_builder():
             "Re-install the package: pip install --upgrade swatplus-builder"
         )
     spec = importlib.util.spec_from_file_location(
-        "swatplus_builder_package_full_build_real_basin",
+        "swatplus_builder_package_usgs_basin_workflow",
         path,
     )
     if spec is None or spec.loader is None:

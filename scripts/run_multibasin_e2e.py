@@ -26,7 +26,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-import examples.real_basin_marsh_creek as demo
+import examples.single_basin_workflow as demo
 
 
 @dataclass
@@ -259,7 +259,7 @@ def run_site(
         "timestamp_utc": now_utc(),
         "iteration": usgs_id,
         "hypothesis": "Current pipeline should run end-to-end on an unseen basin with physically connected channel routing.",
-        "action_taken": "Start full real-basin run using examples.real_basin_marsh_creek main() with dynamic NLDI area guard.",
+        "action_taken": "Start full real-basin run using examples.single_basin_workflow main() with dynamic NLDI area guard.",
         "evidence": "Run started",
         "result": "in_progress",
         "next_step": "Compute basin area and launch pipeline",

@@ -1,5 +1,6 @@
-"""End-to-end real-basin demo: Marsh Creek at Blanchard, PA (USGS 01547700).
+"""End-to-end single-basin workflow: driven by any USGS gauge ID.
 
+Default example uses Marsh Creek at Blanchard, PA (USGS 01547700).
 Drives the full ``swatplus-builder`` pipeline against **real data**:
 
 1. **Basin boundary** — USGS NLDI via ``pynhd``.
@@ -19,7 +20,7 @@ Drives the full ``swatplus-builder`` pipeline against **real data**:
 
 Run:
 
-    python examples/real_basin_marsh_creek.py /tmp/marsh_creek
+    python examples/single_basin_workflow.py /tmp/basin_output
 
 Every stage prints the artifact paths it produced so you can inspect
 them on disk.
@@ -50,7 +51,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%H:%M:%S",
 )
-log = logging.getLogger("marsh_creek")
+log = logging.getLogger("single_basin_workflow")
 
 STATION_ID = "01547700"
 EXPECTED_AREA_KM2 = 114.0
@@ -643,7 +644,7 @@ def main(
     project_dir = outdir / "project"
     project_dir.mkdir(exist_ok=True)
     t0 = time.time()
-    db_path = create_project_db("marsh_creek", project_dir, reference_db=datasets_db, overwrite=True)
+    db_path = create_project_db("swatplus_project", project_dir, reference_db=datasets_db, overwrite=True)
     write_all(db_path, tables)
     _ok(f"project.sqlite created", elapsed=time.time() - t0)
 
@@ -1096,7 +1097,7 @@ def main(
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument("outdir", nargs="?", default="./marsh_creek_output", type=Path)
+    p.add_argument("outdir", nargs="?", default="./basin_output", type=Path)
     p.add_argument("--run", action="store_true", help="Also run the SWAT+ engine.")
     p.add_argument("--start", default=SIM_START, help="Simulation start date (YYYY-MM-DD).")
     p.add_argument("--end", default=SIM_END, help="Simulation end date (YYYY-MM-DD).")

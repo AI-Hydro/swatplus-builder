@@ -77,8 +77,8 @@ def test_example_fetch_basin_boundary_uses_cascade_without_stale_nldi_import(mon
 
     repo_root = Path(__file__).resolve().parents[1]
     spec = importlib.util.spec_from_file_location(
-        "build_real_basin_under_test",
-        repo_root / "examples" / "build_real_basin.py",
+        "usgs_basin_workflow_under_test",
+        repo_root / "examples" / "usgs_basin_workflow.py",
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

@@ -212,7 +212,7 @@ class RunWorkflowRequest(BaseModel):
     )
     out_dir: str | None = Field(
         None,
-        description="Output directory. Defaults to demo_runs/workflow/usgs_<id>_<timestamp> under the current directory.",
+        description="Output directory. Defaults to swatplus_runs/workflow/usgs_<id>_<timestamp> under the current directory.",
     )
 
 
@@ -297,7 +297,7 @@ def create_mcp_server() -> FastMCP:
             out_dir = Path(req.out_dir).expanduser().resolve()
         else:
             stamp = time.strftime("%Y%m%d_%H%M%S")
-            out_dir = (Path.cwd() / "demo_runs" / "workflow" / f"usgs_{usgs_id}_{stamp}").resolve()
+            out_dir = (Path.cwd() / "swatplus_runs" / "workflow" / f"usgs_{usgs_id}_{stamp}").resolve()
         out_dir.mkdir(parents=True, exist_ok=True)
 
         argv = [

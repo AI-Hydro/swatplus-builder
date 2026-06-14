@@ -12,9 +12,9 @@ from swatplus_builder.types import SoilHorizon, SoilProfile
 from swatplus_builder.workflows import full_build
 
 
-def _load_build_real_basin_module():
-    path = Path(__file__).resolve().parents[1] / "examples" / "build_real_basin.py"
-    spec = importlib.util.spec_from_file_location("build_real_basin_under_test", path)
+def _load_basin_workflow_module():
+    path = Path(__file__).resolve().parents[1] / "examples" / "usgs_basin_workflow.py"
+    spec = importlib.util.spec_from_file_location("usgs_basin_workflow_under_test", path)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -23,15 +23,15 @@ def _load_build_real_basin_module():
 
 
 def test_weather_station_sampling_is_even_and_bounded() -> None:
-    module = _load_build_real_basin_module()
+    module = _load_basin_workflow_module()
 
     assert module._sample_evenly(list(range(10)), 4) == [0, 3, 6, 9]
     assert module._sample_evenly(list(range(10)), 1) == [5]
     assert module._sample_evenly([1, 2, 3], 5) == [1, 2, 3]
 
 
-def test_build_real_basin_writes_successful_soil_report_artifact(tmp_path: Path) -> None:
-    module = _load_build_real_basin_module()
+def test_basin_workflow_writes_successful_soil_report_artifact(tmp_path: Path) -> None:
+    module = _load_basin_workflow_module()
 
     path = module._write_soil_report(
         tmp_path,
@@ -52,11 +52,11 @@ def test_build_real_basin_writes_successful_soil_report_artifact(tmp_path: Path)
     assert payload["source_priority"][-1]["research_grade_eligible"] is False
 
 
-def test_build_real_basin_replaces_partial_default_soils_with_soilgrids(
+def test_basin_workflow_replaces_partial_default_soils_with_soilgrids(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    module = _load_build_real_basin_module()
+    module = _load_basin_workflow_module()
 
     def profile(name: str, source: str) -> SoilProfile:
         return SoilProfile(
@@ -100,7 +100,7 @@ def test_build_real_basin_replaces_partial_default_soils_with_soilgrids(
 
 
 def test_fetch_dem_reuses_same_gauge_authoritative_cache(monkeypatch, tmp_path: Path) -> None:
-    module = _load_build_real_basin_module()
+    module = _load_basin_workflow_module()
     monkeypatch.setattr(module, "STATION_ID", "01013500")
 
     class _Py3dep(types.ModuleType):
@@ -109,10 +109,10 @@ def test_fetch_dem_reuses_same_gauge_authoritative_cache(monkeypatch, tmp_path: 
 
     monkeypatch.setitem(sys.modules, "py3dep", _Py3dep("py3dep"))
 
-    cached = tmp_path / "demo_runs" / "objective_01013500" / "raw" / "dem.tif"
+    cached = tmp_path / "swatplus_runs" / "objective_01013500" / "raw" / "dem.tif"
     cached.parent.mkdir(parents=True)
     cached.write_bytes(b"cached authoritative 3dep dem")
-    out = tmp_path / "demo_runs" / "post_hardening_01013500_network" / "raw" / "dem.tif"
+    out = tmp_path / "swatplus_runs" / "post_hardening_01013500_network" / "raw" / "dem.tif"
 
     class _Geometry:
         @property
@@ -131,7 +131,7 @@ def test_fetch_dem_reuses_same_gauge_authoritative_cache(monkeypatch, tmp_path: 
 
 
 def test_datasets_db_reuses_local_authoritative_cache(monkeypatch, tmp_path: Path) -> None:
-    module = _load_build_real_basin_module()
+    module = _load_basin_workflow_module()
     monkeypatch.setattr(module, "STATION_ID", "01013500")
 
     def fail_fetch(*_args, **_kwargs):
@@ -143,14 +143,14 @@ def test_datasets_db_reuses_local_authoritative_cache(monkeypatch, tmp_path: Pat
 
     cached = (
         tmp_path
-        / "demo_runs"
+        / "swatplus_runs"
         / "objective_01013500"
         / "reference_dbs"
         / "swatplus_datasets-3.2.0.sqlite"
     )
     cached.parent.mkdir(parents=True)
     cached.write_bytes(b"cached datasets sqlite")
-    outdir = tmp_path / "demo_runs" / "post_hardening_01013500_network"
+    outdir = tmp_path / "swatplus_runs" / "post_hardening_01013500_network"
 
     settings = SimpleNamespace(reference_db_dir=outdir / "reference_dbs")
     result = module._ensure_datasets_db_with_local_cache(settings, outdir)

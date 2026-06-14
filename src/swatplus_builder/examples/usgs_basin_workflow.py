@@ -22,7 +22,7 @@ Drives the full ``swatplus-builder`` pipeline against **real data**:
 
 Run:
 
-    python examples/build_real_basin.py /tmp/usgs_basin
+    python examples/usgs_basin_workflow.py /tmp/usgs_basin
 
 Every stage prints the artifact paths it produced so you can inspect
 them on disk.

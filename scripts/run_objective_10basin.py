@@ -4225,7 +4225,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--out-root",
-        default="demo_runs/objective_10basin",
+        default="swatplus_runs/objective_10basin",
         help="Root directory containing or receiving per-basin workflow artifacts.",
     )
     parser.add_argument(

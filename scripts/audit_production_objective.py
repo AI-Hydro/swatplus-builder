@@ -18,7 +18,7 @@ OBJECTIVE_REPORT_JSON = ROOT / "docs" / "objective_basin_validation_report.json"
 OBJECTIVE_REPORT_MD = ROOT / "docs" / "OBJECTIVE_BASIN_VALIDATION_REPORT.md"
 OVERLAY_REPAIR_REPORT = (
     ROOT
-    / "demo_runs"
+    / "swatplus_runs"
     / "post_overlay_repair_01013500_network"
     / "reports"
     / "overlay_repair"
@@ -284,7 +284,7 @@ def _append_static_checks(checks: list[Check]) -> None:
             (
                 "src/swatplus_builder/workflows/full_build.py; "
                 "tests/test_full_build.py; tests/test_orchestrate.py; "
-                "demo_runs/post_overlay_repair_01013500_network/reports/overlay_repair/overlay_repair_report.json"
+                "swatplus_runs/post_overlay_repair_01013500_network/reports/overlay_repair/overlay_repair_report.json"
             ),
         )
     )

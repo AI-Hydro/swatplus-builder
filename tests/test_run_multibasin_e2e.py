@@ -73,7 +73,7 @@ class TestTopologyGateClassification:
 
     def _make_run_site_with_exc(self, exc: Exception, monkeypatch, tmp_path) -> SiteResult:
         """Patch demo.main to raise exc and call run_site directly."""
-        import examples.real_basin_marsh_creek as demo
+        import examples.single_basin_workflow as demo
 
         monkeypatch.setattr(demo, "main", lambda *a, **kw: (_ for _ in ()).throw(exc))
         monkeypatch.setattr(run_multibasin_e2e, "get_basin_area_km2", self._fake_area)
@@ -129,7 +129,7 @@ class TestTopologyGateClassification:
             n_channels=5334,
             n_terminals=20,
         )
-        import examples.real_basin_marsh_creek as demo
+        import examples.single_basin_workflow as demo
 
         monkeypatch.setattr(demo, "main", lambda *a, **kw: (_ for _ in ()).throw(exc))
         monkeypatch.setattr(run_multibasin_e2e, "get_basin_area_km2", self._fake_area)

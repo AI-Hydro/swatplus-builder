@@ -1693,7 +1693,7 @@ def cmd_realism_audit(
 def cmd_workflow_negotiate(
     task: str = typer.Option(..., "--task", help="Natural-language workflow request."),
     out_dir: str = typer.Option(
-        "demo_runs/contracts/latest",
+        "swatplus_runs/contracts/latest",
         "--out-dir",
         help="Directory to write workflow_contract.json and WORKFLOW_CONTRACT.md.",
     ),
@@ -1737,7 +1737,7 @@ def cmd_workflow_run(
     ),
     start: str = typer.Option("2000-01-01", "--start", help="Simulation start date."),
     end: str = typer.Option("2019-12-31", "--end", help="Simulation end date."),
-    out_dir: str = typer.Option("demo_runs/workflow/latest", "--out-dir"),
+    out_dir: str = typer.Option("swatplus_runs/workflow/latest", "--out-dir"),
     warmup_years: int = typer.Option(3, "--warmup-years"),
     calibrate: bool = typer.Option(True, "--calibrate/--no-calibrate"),
     claim_tier: str = typer.Option("diagnostic", "--claim-tier"),
