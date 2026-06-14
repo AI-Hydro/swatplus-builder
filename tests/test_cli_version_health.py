@@ -1,4 +1,4 @@
-"""PR-3E-02: Regression tests for swat version and swat health CLI commands.
+"""Regression tests for swat version and swat health CLI commands.
 
 Exit-code contract
 ------------------
@@ -9,9 +9,6 @@ health
   0  — all checks pass (healthy)
   1  — non-critical items missing (degraded)
   2  — critical failure (wrong Python, import error)
-
-Other commands fixed in PR-3E-02
-  sensitivity / diagnose: runtime SwatBuilderError → exit 1 (was 2)
 """
 
 from __future__ import annotations
@@ -79,19 +76,19 @@ class TestCmdHealthExitCodes:
         # May be 0 or 1 depending on binary/db/gis — just assert no critical fail (not 2)
         assert res.exit_code in {0, 1}
 
-    def test_degraded_returns_0_when_optional_missing(self, tmp_path):
+    def test_degraded_returns_1_when_optional_missing(self, tmp_path):
         """Clear all optional env vars so binary/db/artifacts are missing."""
         with patch.dict("os.environ", {}, clear=True):
             res = runner.invoke(app, ["health"])
-        # Python is fine, package imported, but binary/db/artifacts all missing → degraded (exit 0)
-        assert res.exit_code == 0
+        # Python is fine, package imported, but binary/db/artifacts all missing → degraded (exit 1)
+        assert res.exit_code == 1
 
-    def test_unhealthy_returns_1_on_critical_fail(self):
+    def test_unhealthy_returns_2_on_critical_fail(self):
         """Simulate Python version too old → unhealthy."""
         with patch("sys.version_info", (3, 9, 0)):
             res = runner.invoke(app, ["health"])
-        # critical failures → exit 1
-        assert res.exit_code == 1
+        # critical failures → exit 2
+        assert res.exit_code == 2
 
     def test_json_output_structure(self):
         res = runner.invoke(app, ["health", "--json"])
@@ -145,7 +142,7 @@ class TestCmdHealthExitCodes:
             res = runner.invoke(app, ["health", "--json"])
         data = json.loads(res.stdout)
         assert data["status"] == "unhealthy"
-        assert res.exit_code == 1
+        assert res.exit_code == 2
 
     def test_health_healthy_status_string_when_all_pass(self, tmp_path):
         fake_exe = tmp_path / "swatplus_exe"
