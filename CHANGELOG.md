@@ -2,6 +2,17 @@
 
 All notable changes to swatplus-builder are documented here.
 
+## [0.6.1] — 2026-06-14
+
+### Fixed
+- **`build_real_basin.py` missing from installed package** (regression since 0.5.0):
+  `full_build._load_example_builder()` resolved the script relative to the repo
+  root, which worked in editable installs but failed after `pip install` because
+  `examples/` was excluded from the wheel by the sdist allowlist added in 0.5.0.
+  The script is now bundled inside the package at
+  `swatplus_builder/examples/build_real_basin.py` and the loader tries the
+  package-relative path first, falling back to the repo path for editable installs.
+
 ## [0.6.0] — 2026-06-14
 
 ### Added

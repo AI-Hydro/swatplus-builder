@@ -115,10 +115,17 @@ def build_full_model(
 
 
 def _load_example_builder():
-    repo_root = Path(__file__).resolve().parents[3]
-    path = repo_root / "examples" / "build_real_basin.py"
+    # Resolve relative to the package so this works after `pip install`
+    # (the script is bundled at swatplus_builder/examples/build_real_basin.py).
+    # Fall back to the repo examples/ directory for editable installs.
+    pkg_path = Path(__file__).resolve().parent.parent / "examples" / "build_real_basin.py"
+    repo_path = Path(__file__).resolve().parents[3] / "examples" / "build_real_basin.py"
+    path = pkg_path if pkg_path.exists() else repo_path
     if not path.exists():
-        raise FileNotFoundError(f"Full model builder not found: {path}")
+        raise FileNotFoundError(
+            f"Full model builder not found at {pkg_path} or {repo_path}. "
+            "Re-install the package: pip install --upgrade swatplus-builder"
+        )
     spec = importlib.util.spec_from_file_location(
         "swatplus_builder_package_full_build_real_basin",
         path,
