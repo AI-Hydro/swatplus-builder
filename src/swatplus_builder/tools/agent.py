@@ -139,8 +139,7 @@ def generate_swat_project(
         5. editor.api.import_weather   (wgn + observed)
         6. editor.api.write_files
     """
-    # TODO(phase1): implement
-    raise NotImplementedError("tools.generate_swat_project is a Phase 1 deliverable.")
+    raise NotImplementedError("tools.generate_swat_project is not yet implemented.")
 
 
 def run_swat(
