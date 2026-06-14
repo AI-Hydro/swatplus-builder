@@ -366,6 +366,24 @@ def delineate(
         graph, _outlet_lid
     )
 
+    # Prune secondary terminal nodes (DEM-edge artefacts on flat terrain).
+    graph, _n_pruned_boundary = _prune_secondary_terminals(graph, _outlet_lid)
+    if _n_pruned_boundary > 0:
+        _n_pruned_isolated += _n_pruned_boundary
+        _valid_link_ids: set[int] = {int(n) for n in graph.nodes if _positive_int(n) is not None}
+        channels_gdf = channels_gdf[
+            channels_gdf["link_id"].apply(_positive_int).isin(_valid_link_ids)
+        ].copy()
+        _valid_sub_ids: set[int] = {
+            s for s in (
+                _positive_int(v) for v in channels_gdf.get("sub_id", [])
+            ) if s is not None
+        }
+        if "sub_id" in subbasins_gdf.columns and _valid_sub_ids:
+            subbasins_gdf = subbasins_gdf[
+                subbasins_gdf["sub_id"].apply(_positive_int).isin(_valid_sub_ids)
+            ].copy()
+
     # ------------------------------------------------------------------
     # Save vectors + graph
     # ------------------------------------------------------------------
@@ -1294,6 +1312,79 @@ def _prune_disconnected_components(
         )
 
     return pruned, n_pruned, n_removed_comps
+
+
+def _prune_secondary_terminals(
+    graph: nx.DiGraph,
+    outlet_link_id: int | None,
+    max_secondary_fraction: float = 0.20,
+) -> tuple[nx.DiGraph, int]:
+    """Prune secondary terminal nodes and their exclusive upstream subgraphs.
+
+    After back-edge removal and disconnected-component pruning, the main
+    weakly-connected component may still contain multiple sink nodes (out_degree
+    == 0).  These secondary terminals arise from DEM-edge artefacts on flat
+    terrain: a small portion of the basin drains to the grid boundary rather than
+    the gauge outlet, and BreachDepressionsLeastCost / FillDepressions cannot
+    always remedy this.
+
+    Strategy:
+    - Identify the *primary* terminal: the sink that contains ``outlet_link_id``
+      in its upstream subgraph (falls back to the sink with the most ancestors).
+    - For each secondary sink, compute the set of nodes whose ONLY path to a
+      sink goes through that secondary sink (exclusive ancestors).
+    - If exclusive nodes < max_secondary_fraction × total nodes (default 20 %),
+      auto-prune them and log an INFO message.
+    - If any secondary sink's exclusive subgraph is >= 20 % of total, leave it
+      intact so the invariant check below can fire with a clear error.
+
+    Returns (pruned_graph, n_nodes_pruned).
+    """
+    sinks = [n for n in graph.nodes if graph.out_degree(n) == 0]
+    if len(sinks) <= 1:
+        return graph, 0
+
+    # Identify primary terminal.
+    primary: int | None = None
+    if outlet_link_id is not None and outlet_link_id in graph:
+        for sink in sinks:
+            if outlet_link_id in nx.ancestors(graph, sink) or outlet_link_id == sink:
+                primary = sink
+                break
+    if primary is None:
+        primary = max(sinks, key=lambda s: len(nx.ancestors(graph, s)))
+
+    primary_anc: set[int] = nx.ancestors(graph, primary) | {primary}
+    n_total = graph.number_of_nodes()
+    to_prune: set[int] = set()
+
+    for sink in sinks:
+        if sink == primary:
+            continue
+        secondary_anc: set[int] = nx.ancestors(graph, sink) | {sink}
+        exclusive: set[int] = secondary_anc - primary_anc
+        if not exclusive:
+            continue
+        frac = len(exclusive) / n_total
+        if frac < max_secondary_fraction:
+            to_prune |= exclusive
+            log.info(
+                "Pruning secondary routing terminal %s and %d exclusive upstream "
+                "node(s) (%.1f%% of %d total — DEM-edge artefact on flat terrain).",
+                sink, len(exclusive) - 1, frac * 100, n_total,
+            )
+        else:
+            log.warning(
+                "Secondary routing terminal %s has %d exclusive upstream nodes "
+                "(%.1f%% of total) — too large to auto-prune; invariant check will fire.",
+                sink, len(exclusive), frac * 100,
+            )
+
+    if not to_prune:
+        return graph, 0
+
+    pruned = graph.subgraph(set(graph.nodes) - to_prune).copy()
+    return pruned, len(to_prune)
 
 
 # ---------------------------------------------------------------------------

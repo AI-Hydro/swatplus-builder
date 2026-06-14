@@ -78,7 +78,7 @@ def fetch_nhd_flowlines(usgs_id: str, out_gpkg: Path) -> Path | None:
             "nwissite",
             f"USGS-{usgs_id}",
             "upstreamTributaries",
-            "nhdflowline_network",
+            "flowlines",
             distance=9999,
         )
         if flowlines is None or flowlines.empty:
