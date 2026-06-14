@@ -33,8 +33,7 @@ def compute_slope(
     Returns:
         Path to the written slope raster.
     """
-    # TODO(phase1): rasterio + numpy Horn method, or whitebox.Slope.
-    raise NotImplementedError("terrain.compute_slope is a Phase 1 deliverable.")
+    raise NotImplementedError("terrain.compute_slope is not yet implemented.")
 
 
 def classify_slope(
@@ -57,5 +56,4 @@ def classify_slope(
     Returns:
         Path to the written classified raster.
     """
-    # TODO(phase1): numpy digitize.
-    raise NotImplementedError("terrain.classify_slope is a Phase 1 deliverable.")
+    raise NotImplementedError("terrain.classify_slope is not yet implemented.")

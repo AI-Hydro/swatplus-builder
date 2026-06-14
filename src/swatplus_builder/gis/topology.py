@@ -67,14 +67,12 @@ def build_routing(
     Raises:
         SwatBuilderPipelineError: routing graph has a cycle or multiple sinks.
     """
-    # TODO(phase1)
-    raise NotImplementedError("topology.build_routing is a Phase 1 deliverable.")
+    raise NotImplementedError("topology.build_routing is not yet implemented.")
 
 
 def validate_dag(edges: list[RoutingEdge]) -> None:
     """Assert the routing graph is a DAG with exactly one ``sinkcat='X'``."""
-    # TODO(phase1)
-    raise NotImplementedError("topology.validate_dag is a Phase 1 deliverable.")
+    raise NotImplementedError("topology.validate_dag is not yet implemented.")
 
 
 def save_graphml(graph: nx.DiGraph, output_path: Path | str) -> Path:

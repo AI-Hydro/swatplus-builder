@@ -29,9 +29,6 @@ from . import __version__
 import sys
 
 if sys.version_info < (3, 10):
-    import warnings
-    warnings.warn("swatplus-builder requires Python >= 3.10. Execution will proceed but may fail.", RuntimeWarning)
-    # The user suggested a strict RuntimeError, let's raise it.
     raise RuntimeError("swatplus-builder requires Python >= 3.10. Please upgrade your environment.")
 
 app = typer.Typer(
@@ -42,7 +39,7 @@ app = typer.Typer(
 )
 workflow_app = typer.Typer(
     name="workflow",
-    help="Agent-governed workflow commands (negotiate/run).",
+    help="Agent-governed workflow commands (negotiate → parse contract, run → execute).",
     no_args_is_help=True,
 )
 app.add_typer(workflow_app, name="workflow")

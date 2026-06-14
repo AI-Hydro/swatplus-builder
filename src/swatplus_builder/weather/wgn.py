@@ -29,5 +29,4 @@ def nearest_station(
     table: str = "wgn_cfsr_world",
 ) -> WgnStation:
     """Return the nearest WGN station to ``(lat, lon)``."""
-    # TODO(phase1): haversine-sorted sqlite query.
-    raise NotImplementedError("wgn.nearest_station is a Phase 1 deliverable.")
+    raise NotImplementedError("wgn.nearest_station is not yet implemented.")

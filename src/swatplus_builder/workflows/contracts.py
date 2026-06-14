@@ -1,4 +1,10 @@
-"""Minimal workflow contract negotiation for agent-governed execution."""
+"""Typed pre-execution contract parser for agent-governed workflows.
+
+Parses a natural-language task string via regex and returns a ``WorkflowContract``
+dataclass (typed, serialisable).  This is a structured parser — not an LLM-side
+negotiator; LLM interaction is the caller's responsibility.  ``negotiate_workflow``
+is the parse entry-point; the CLI exposes it as ``swat workflow negotiate``.
+"""
 
 from __future__ import annotations
 
