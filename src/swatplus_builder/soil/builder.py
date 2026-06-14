@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import logging
 import copy
+import logging
 from collections.abc import Iterable
+
 from swatplus_builder.config import DEFAULT_SETTINGS, Settings
-from swatplus_builder.soil.models import SoilConfig, SoilProfilesResult, SoilProfile
+from swatplus_builder.soil.models import SoilConfig, SoilProfile, SoilProfilesResult
 from swatplus_builder.soil.pc import fetch_aggregated_profiles
 from swatplus_builder.soil.sda import fetch_sda_horizons
 

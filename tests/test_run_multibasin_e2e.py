@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from textwrap import dedent
 
 from scripts import run_multibasin_e2e

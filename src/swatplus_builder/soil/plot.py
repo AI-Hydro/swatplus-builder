@@ -15,8 +15,9 @@ from __future__ import annotations
 
 import logging
 from collections import Counter
+from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from swatplus_builder.types import SoilProfile
@@ -27,7 +28,7 @@ __all__ = ["plot_depth_distribution"]
 
 
 def plot_depth_distribution(
-    profiles: Sequence["SoilProfile"],
+    profiles: Sequence[SoilProfile],
     out_path: Path | str | None = None,
     *,
     figsize: tuple[float, float] = (12.0, 5.0),
@@ -76,8 +77,8 @@ def plot_depth_distribution(
         ValueError: ``profiles`` is empty.
     """
     try:
-        import matplotlib.pyplot as plt  # type: ignore
         import matplotlib.patches as mpatches  # type: ignore
+        import matplotlib.pyplot as plt  # type: ignore
     except ImportError:
         log.info("matplotlib not installed, skipping soil plot")
         return {
@@ -98,7 +99,6 @@ def plot_depth_distribution(
     # Collect data
     depths = [p.dp_tot for p in profiles]
     layer_counts = [len(p.layers) for p in profiles]
-    colours_depth = [_SRC_COLOURS.get(p.source or "", "grey") for p in profiles]
 
     fig, (ax_depth, ax_layers) = plt.subplots(1, 2, figsize=figsize)
     fig.suptitle(title, fontsize=13, fontweight="bold")

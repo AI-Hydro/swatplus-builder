@@ -25,8 +25,8 @@ Public API
 - :func:`~swatplus_builder.evidence.migration.write_evidence_v1`
 """
 
-from .schema import ClaimRecord, DiagnosticFinding, EvidenceBundleV1, GateResult
 from .migration import migrate_legacy_bundle, write_evidence_v1
+from .schema import ClaimRecord, DiagnosticFinding, EvidenceBundleV1, GateResult
 
 __all__ = [
     "ClaimRecord",

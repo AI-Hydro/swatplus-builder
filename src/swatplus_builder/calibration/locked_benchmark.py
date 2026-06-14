@@ -35,7 +35,6 @@ from ..errors import SwatBuilderInputError, SwatBuilderPipelineError
 from ..output.eval import evaluate_run
 from ..output.metadata import try_git_sha
 
-
 # ---------------------------------------------------------------------------
 # Data models
 # ---------------------------------------------------------------------------
@@ -864,8 +863,8 @@ def screen_parameters_against_lock(
             path=str(alignment_csv),
         )
 
-    from .real_engine import load_observed_from_alignment_csv, make_real_objective
     from ..params import get_parameter
+    from .real_engine import load_observed_from_alignment_csv, make_real_objective
 
     obs_series = load_observed_from_alignment_csv(alignment_csv)
     objective = make_real_objective(

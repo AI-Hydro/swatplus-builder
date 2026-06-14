@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-
 FULL_MODE_CORE_PARAMETERS: tuple[str, ...] = (
     "CN2",
     "PERCO",

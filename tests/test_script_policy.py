@@ -1,16 +1,11 @@
 from __future__ import annotations
 
-from pathlib import Path
 import json
+from pathlib import Path
+
 import pytest
 
 from scripts.audit_production_objective import build_audit
-from scripts.run_objective_10basin import (
-    main,
-    summarize_evidence,
-    summarize_existing_suite,
-    write_outputs,
-)
 from scripts.run_objective_10basin import (
     main,
     summarize_evidence,

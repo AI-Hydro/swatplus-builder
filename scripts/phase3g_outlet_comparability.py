@@ -163,7 +163,7 @@ def evaluate_one(run_key: str, run_def: dict, outlet_id: int, obs: pd.Series) ->
             note = f"WARN: outlet switched to {diag.get('selected_outlet_gis_id')}"
         is_terminal = diag.get("requested_outlet_is_terminal")
         if is_terminal is False:
-            note = f"non-terminal in this topology"
+            note = "non-terminal in this topology"
         return {
             "run": run_key,
             "outlet_gis_id": outlet_id,

@@ -10,9 +10,9 @@ This module provides:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Callable
 
 import pandas as pd
 from pydantic import BaseModel, Field

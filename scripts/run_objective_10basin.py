@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import json
 import argparse
-import warnings
 import csv
-from dataclasses import dataclass, asdict
+import json
+import warnings
+from collections.abc import Sequence
+from dataclasses import asdict, dataclass
 from datetime import date
 from pathlib import Path
-from collections.abc import Sequence
 
+from swatplus_builder.diagnostics import classify_skill_limitation
+from swatplus_builder.evidence.migration import migrate_legacy_bundle
 from swatplus_builder.output.mass_trace import (
     classify_terminal_area_scope,
     classify_terminal_authority_area,
@@ -22,9 +24,7 @@ from swatplus_builder.output.volume_diagnostics import (
     classify_terminal_hydrograph_scope,
 )
 from swatplus_builder.params.registry import registry
-from swatplus_builder.diagnostics import classify_skill_limitation
 from swatplus_builder.workflows.usgs_e2e import terminal_scope_blocked_claim
-from swatplus_builder.evidence.migration import migrate_legacy_bundle
 
 warnings.filterwarnings("ignore", category=FutureWarning, module=r"pygridmet(\.|$)")
 warnings.filterwarnings("ignore", category=FutureWarning, module=r"pygeoutils(\.|$)")

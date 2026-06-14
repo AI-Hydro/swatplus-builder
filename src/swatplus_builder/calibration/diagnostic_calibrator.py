@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import shutil
-from dataclasses import dataclass, asdict, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -85,7 +85,11 @@ def run_diagnostic_calibration(
         _write_result(reports / "diagnostic_calibration.json", res)
         return res
 
-    from .locked_benchmark import calibrate_against_lock, screen_parameters_against_lock, verify_calibration
+    from .locked_benchmark import (
+        calibrate_against_lock,
+        screen_parameters_against_lock,
+        verify_calibration,
+    )
     from .real_engine import params_hash
 
     lock_context = _read_lock_context(lock_path)

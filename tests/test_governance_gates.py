@@ -1,11 +1,7 @@
 """Tests for swatplus_builder.governance — pure gate logic with no hydrology imports."""
 from __future__ import annotations
 
-import importlib
-import tempfile
 from pathlib import Path
-
-import pytest
 
 from swatplus_builder.governance import (
     CLAIM_TIERS,
@@ -19,7 +15,6 @@ from swatplus_builder.governance import (
 )
 from swatplus_builder.governance.gates import sensitivity_gate
 from swatplus_builder.governance.tiers import higher_tier
-
 
 # ---------------------------------------------------------------------------
 # Tier hierarchy

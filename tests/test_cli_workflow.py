@@ -5,8 +5,8 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from swatplus_builder.cli import app
 from swatplus_builder import cli as cli_module
+from swatplus_builder.cli import app
 
 
 def test_workflow_negotiate_needs_input(tmp_path: Path):

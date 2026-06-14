@@ -20,7 +20,6 @@ from swatplus_builder.domains.flood_frequency import (
     stationarity_gate,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -281,6 +280,7 @@ def test_run_gate_details_present_for_all_gates() -> None:
 def test_flood_frequency_only_imports_governance_not_workflows() -> None:
     """Prove the domain module doesn't import from swatplus_builder.workflows."""
     from pathlib import Path
+
     import swatplus_builder.domains.flood_frequency as ff_mod
     src = Path(ff_mod.__file__).read_text(encoding="utf-8")
     import_lines = [ln for ln in src.splitlines() if ln.startswith(("import ", "from "))]

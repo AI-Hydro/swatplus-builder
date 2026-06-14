@@ -14,8 +14,8 @@ Every plot also writes a matching PDF for manuscript submission.
 
 from __future__ import annotations
 
-import logging
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -101,6 +101,7 @@ def generate_all_plots(
         if sub_path.exists():
             try:
                 import geopandas as gpd
+
                 from .spatial import plot_basin_summary
                 sub_gdf = gpd.read_file(sub_path)
                 spatial_files = plot_basin_summary(

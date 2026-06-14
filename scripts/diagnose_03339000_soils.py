@@ -26,13 +26,12 @@ def main(outdir: Path):
     outdir.mkdir(parents=True, exist_ok=True)
 
     # Import after logging is configured
-    from swatplus_builder.gis.delineation import resolve_usgs_outlet
-    from swatplus_builder.gis.soil import fetch_mukey_raster, extract_unique_mukeys
+    import pynhd
+
+    from swatplus_builder.config import Settings
+    from swatplus_builder.gis.soil import extract_unique_mukeys, fetch_mukey_raster
     from swatplus_builder.soil.builder import fetch_soil_profiles_result
     from swatplus_builder.soil.models import SoilConfig
-    from swatplus_builder.config import Settings
-    import geopandas as gpd
-    import pynhd
 
     # 1. Fetch basin boundary
     log.info("Fetching basin boundary for %s...", STATION_ID)
@@ -94,13 +93,12 @@ def main(outdir: Path):
         log.info("\nAttempting fallback: direct Planetary Computer access...")
         try:
             import pystac_client
-            import planetary_computer
 
             # Query the gNATSGO STAC collection directly
             catalog = pystac_client.Client.open(
                 "https://planetarycomputer.microsoft.com/api/stac/v1"
             )
-            collection = catalog.get_collection("gnatsgo-rasters")
+            catalog.get_collection("gnatsgo-rasters")
 
             log.info("gNATSGO rasters collection found")
 

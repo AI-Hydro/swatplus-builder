@@ -28,9 +28,8 @@ import geopandas as gpd
 import numpy as np
 import pytest
 import rasterio
-from rasterio.transform import Affine, from_origin
+from rasterio.transform import from_origin
 from shapely.geometry import LineString, Polygon, box
-
 
 _CRS_UTM = "EPSG:32617"
 

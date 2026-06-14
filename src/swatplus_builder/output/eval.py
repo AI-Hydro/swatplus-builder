@@ -1,14 +1,16 @@
-from __future__ import annotations
 """Performance evaluation by aligning simulated and observed outputs."""
+
+from __future__ import annotations
 
 import hashlib
 import logging
-import pandas as pd
 from pathlib import Path
-from typing import Dict, Any, Literal
+from typing import Any, Literal
 
+import pandas as pd
+
+from swatplus_builder.output.metrics import baseflow_index, kge, log_kge, nse, pbias
 from swatplus_builder.output.reader import read_output_file
-from swatplus_builder.output.metrics import nse, kge, log_kge, pbias, baseflow_index
 
 log = logging.getLogger(__name__)
 _SECONDS_PER_DAY = 86400.0
@@ -20,7 +22,7 @@ def evaluate_run(
     out_alignment_csv: Path | str | None = None,
     outlet_policy: Literal["auto", "strict", "best_terminal_nse", "all_terminal_sum"] = "auto",
     return_diagnostics: bool = False,
-) -> tuple[pd.DataFrame, Dict[str, float]] | tuple[pd.DataFrame, Dict[str, float], Dict[str, Any]]:
+) -> tuple[pd.DataFrame, dict[str, float]] | tuple[pd.DataFrame, dict[str, float], dict[str, Any]]:
     """Align daily simulated discharge with observed discharge and compute metrics.
     
     Args:
@@ -128,7 +130,7 @@ def evaluate_run(
             return df, empty_metrics, diagnostics
         return df, empty_metrics
 
-    metrics: Dict[str, float] = {}
+    metrics: dict[str, float] = {}
     
     # Obs and Sim must be lists for our stdlib metrics
     obs_list = df["obs"].tolist()
@@ -329,12 +331,12 @@ def _candidate_sim_paths(sim_channel_path: Path) -> list[Path]:
 def _read_all_terminal_sum_discharge(
     sim_channel_path: Path,
     outlet_gis_id: int,
-) -> tuple[pd.DataFrame, Dict[str, Any]]:
+) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Read a virtual all-terminal outlet formed by summing terminal flows."""
     txtinout_dir = sim_channel_path.parent
     terminal_ids = sorted(int(gid) for gid in _terminal_ids_from_chandeg_con(txtinout_dir))
     chandeg_path = txtinout_dir / "chandeg.con"
-    diagnostics: Dict[str, Any] = {
+    diagnostics: dict[str, Any] = {
         "requested_outlet_gis_id": int(outlet_gis_id),
         "selected_outlet_gis_id": int(outlet_gis_id),
         "selected_outlet_gis_ids": terminal_ids,
@@ -508,7 +510,7 @@ def _read_sim_discharge(
     outlet_gis_id: int,
     *,
     allow_dry_autodetect: bool,
-) -> tuple[pd.DataFrame, Dict[str, Any]]:
+) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Read daily outlet discharge, with optional dry-outlet fallback."""
     txtinout_dir = sim_channel_path.parent
     candidates = _candidate_sim_paths(sim_channel_path)
@@ -516,7 +518,7 @@ def _read_sim_discharge(
     chandeg_path = txtinout_dir / "chandeg.con"
 
     last_df = pd.DataFrame(columns=["sim"])
-    diagnostics: Dict[str, Any] = {
+    diagnostics: dict[str, Any] = {
         "requested_outlet_gis_id": int(outlet_gis_id),
         "selected_outlet_gis_id": int(outlet_gis_id),
         "outlet_autodetected": False,

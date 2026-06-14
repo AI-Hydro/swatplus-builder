@@ -14,17 +14,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from swatplus_builder.evidence import (
     ClaimRecord,
-    DiagnosticFinding,
     EvidenceBundleV1,
     GateResult,
     migrate_legacy_bundle,
     write_evidence_v1,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

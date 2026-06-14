@@ -5,15 +5,15 @@ from __future__ import annotations
 import json
 import shutil
 import tempfile
+from collections.abc import Callable
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import pandas as pd
 
 from ..output.eval import evaluate_run
 from ..run import run as run_swat
-
 
 RealObjective = Callable[[dict[str, float]], dict[str, Any]]
 

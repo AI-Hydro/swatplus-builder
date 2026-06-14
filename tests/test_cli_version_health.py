@@ -17,11 +17,8 @@ Other commands fixed in PR-3E-02
 from __future__ import annotations
 
 import json
-import sys
-from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 from typer.testing import CliRunner
 
 from swatplus_builder.cli import app

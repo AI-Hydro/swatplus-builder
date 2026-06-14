@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import matplotlib.pyplot as plt
-from pathlib import Path
-from typing import Optional, Any
 import logging
+from pathlib import Path
+from typing import Any
 
-from .style import apply_style, COLORS
+import matplotlib.pyplot as plt
+
+from .style import apply_style
 from .utils import build_figure_title, save_publication_figure
 
 log = logging.getLogger(__name__)
@@ -17,9 +18,9 @@ def plot_spatial_map(
     column: str,
     outpath: Path | str,
     cmap: str = "viridis",
-    title: Optional[str] = None,
-    legend_label: Optional[str] = None,
-    metadata: Optional[dict] = None,
+    title: str | None = None,
+    legend_label: str | None = None,
+    metadata: dict | None = None,
 ) -> None:
     """Plot a GeoDataFrame colored by a specific column.
     
@@ -67,8 +68,8 @@ def plot_spatial_map(
 def plot_basin_summary(
     subbasins_gdf: Any,
     outdir: Path | str,
-    metrics: Optional[dict] = None,
-    metadata: Optional[dict] = None,
+    metrics: dict | None = None,
+    metadata: dict | None = None,
 ) -> list[str]:
     """Generate a standard set of spatial summary maps for the basin.
     

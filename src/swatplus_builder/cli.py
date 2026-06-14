@@ -19,16 +19,17 @@ Subcommands are single short words — no hyphens, no underscores.
 
 from __future__ import annotations
 
-import typer
-from rich import print as rprint
-import json
 import contextlib
+import json
 import os
-
-from . import __version__
 import sys
 
-if sys.version_info < (3, 10):
+import typer
+from rich import print as rprint
+
+from . import __version__
+
+if sys.version_info < (3, 10):  # noqa: UP036  (defensive guard for source runs on <3.10)
     raise RuntimeError("swatplus-builder requires Python >= 3.10. Please upgrade your environment.")
 
 app = typer.Typer(
@@ -324,7 +325,7 @@ def cmd_health(
     pkg_ok = True
     try:
         import swatplus_builder  # noqa: F401
-    except Exception as exc:  # pragma: no cover
+    except Exception:  # pragma: no cover
         pkg_ok = False
     _check("package_import", critical=True, ok=pkg_ok, detail=f"v{__version__}" if pkg_ok else "import failed")
 
@@ -372,8 +373,8 @@ def cmd_health(
 
     # --- optional: GIS stack ---
     try:
-        import rasterio  # noqa: F401
         import geopandas  # noqa: F401
+        import rasterio  # noqa: F401
         gis_ok = True
         gis_detail = "rasterio + geopandas"
     except ImportError as exc:
@@ -422,6 +423,7 @@ def cmd_inspect(
     Looks for ``metadata.json`` under the provided run path and prints it as JSON.
     """
     from pathlib import Path as _P
+
     from .output.metadata import read_metadata
 
     run_path = _P(run_id).expanduser().resolve()
@@ -614,7 +616,6 @@ def cmd_run(
     """Run the SWAT+ engine or automate a full platform execution (--usgs).
     """
     from pathlib import Path as _P
-    import json
 
     # Platform automation branch
     if usgs:
@@ -637,7 +638,7 @@ def cmd_run(
             raise typer.Exit(0)
         except Exception as exc:
             rprint(f"[red]Pipeline failed:[/red] {exc}")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from exc
 
     # Standard engine runner branch
     from .errors import SwatBuilderError
@@ -701,6 +702,7 @@ def cmd_validate(
 ) -> None:
     """Run benchmark validation for a basin suite and write artifacts/reports."""
     from pathlib import Path as _P
+
     from .validation.runner import load_basin_specs, run_validation
 
     basins_path = _P(basins).expanduser().resolve()
@@ -1185,9 +1187,8 @@ def cmd_sensitivity(
     from pathlib import Path as _P
 
     from .errors import SwatBuilderError
-    from .sensitivity import SensitivityAnalyzer, SensitivityRequest
-
     from .params import get_parameter as _gp
+    from .sensitivity import SensitivityAnalyzer, SensitivityRequest
     param_list = [p.strip() for p in parameters.split(",") if p.strip()]
     if not param_list:
         rprint("[red]error:[/red] at least one parameter is required")
@@ -1261,6 +1262,7 @@ def cmd_mcp_check(
     # Check 3: server instantiates and tools register
     try:
         import asyncio
+
         from .mcp.server import create_mcp_server
         srv = create_mcp_server()
         tool_names = [t.name for t in asyncio.run(srv.list_tools())]
@@ -1646,7 +1648,7 @@ def cmd_realism_audit(
     """
     from pathlib import Path as _P
 
-    from .output.realism import audit_realism, run_realism_audit
+    from .output.realism import run_realism_audit
 
     entries = [e.strip() for e in alignment_csvs.split(",") if e.strip()]
     basin_alignments = []

@@ -3,12 +3,10 @@
 Modules
 -------
 delineation  — DEM → subbasins/channels/outlets/routing via WhiteboxTools.
-terrain      — DEM → slope/aspect/elevation-band rasters and per-subbasin stats.
 landuse      — default NLCD → SWAT+ plant code mapping (+ resolver helper).
 soil         — soil raster + SSURGO/gNATSGO tables → SWAT+ soil definitions.
 hru          — LU×Soil×Slope overlay → HRUs (dominant or percent-filtered).
-tables       — WatershedResult + HRUResult → typed :class:`GisTables`.
-topology     — networkx routing graph → gis_routing rows.
+tables       — WatershedResult + HRUResult → typed :class:`GisTables` (incl. routing rows).
 validate     — post-delineation quality check (area, IoU, centroid vs reference).
 """
 

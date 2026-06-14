@@ -53,16 +53,16 @@ from __future__ import annotations
 
 import logging
 import time
-from contextlib import ExitStack
 from collections.abc import Iterable
+from contextlib import ExitStack
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
 import rasterio
 import rasterio.features
-import rasterio.merge
 import rasterio.mask
+import rasterio.merge
 import rasterio.warp
 from shapely.geometry import mapping
 from shapely.geometry.base import BaseGeometry
@@ -440,7 +440,7 @@ def _query_pc_stac_items(
 
 
 def extract_mukeys_for_watershed(
-    watershed: "WatershedResult",
+    watershed: WatershedResult,
     *,
     mukey_raster: Path | str | None = None,
     cache_dir: Path | str | None = None,

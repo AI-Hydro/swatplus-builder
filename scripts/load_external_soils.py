@@ -19,7 +19,6 @@ import logging
 import sqlite3
 import sys
 from pathlib import Path
-from typing import Optional
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,7 +28,7 @@ logging.basicConfig(
 log = logging.getLogger("load_external_soils")
 
 
-def load_soils_json(json_path: Path) -> Optional[dict]:
+def load_soils_json(json_path: Path) -> dict | None:
     """Parse and validate soils JSON from acquisition script."""
     try:
         data = json.loads(json_path.read_text())

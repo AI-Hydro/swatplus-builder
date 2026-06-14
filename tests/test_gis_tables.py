@@ -100,11 +100,11 @@ class TestBuildTables:
         for :func:`validate_tables` to accept the payload."""
         from collections import defaultdict
 
-        from swatplus_builder.gis.hru import create_hrus
-        from swatplus_builder.gis.tables import build_tables
-
         import geopandas as gpd
         from shapely.geometry import Point
+
+        from swatplus_builder.gis.hru import create_hrus
+        from swatplus_builder.gis.tables import build_tables
         ws = mini_watershed["watershed"]
         outlet_path = Path(ws.workdir) / "shapes" / "outlets.gpkg"
         gpd.GeoDataFrame(
@@ -136,11 +136,11 @@ class TestBuildTables:
     def test_terminal_channel_routes_to_exit(self, mini_watershed):
         """Channel 102 is downstream of 101; it should route to
         ``sinkcat='X', sinkid=0`` (the reserved watershed outlet)."""
-        from swatplus_builder.gis.hru import create_hrus
-        from swatplus_builder.gis.tables import build_tables
-
         import geopandas as gpd
         from shapely.geometry import Point
+
+        from swatplus_builder.gis.hru import create_hrus
+        from swatplus_builder.gis.tables import build_tables
         ws = mini_watershed["watershed"]
         outlet_path = Path(ws.workdir) / "shapes" / "outlets.gpkg"
         gpd.GeoDataFrame(
@@ -171,13 +171,13 @@ class TestBuildTables:
     def test_write_all_round_trip_to_sqlite(self, mini_watershed, tmp_path):
         """The end-game proof: synthetic watershed → tables → actual
         ``project.sqlite`` with ``gis_*`` rows populated."""
+        import geopandas as gpd
+        from shapely.geometry import Point
+
         from swatplus_builder.db.project import create_project_db
         from swatplus_builder.db.writer import write_all
         from swatplus_builder.gis.hru import create_hrus
         from swatplus_builder.gis.tables import build_tables
-
-        import geopandas as gpd
-        from shapely.geometry import Point
         ws = mini_watershed["watershed"]
         outlet_path = Path(ws.workdir) / "shapes" / "outlets.gpkg"
         gpd.GeoDataFrame(
@@ -234,11 +234,8 @@ class TestBuildTables:
         """
         from swatplus_builder.gis.tables import _build_routing_rows
         from swatplus_builder.types import (
-            AquiferRow,
             ChannelRow,
-            DeepAquiferRow,
             HruRow,
-            PointRow,
         )
 
         # Chain: ch 1 → ch 2 (DROPPED) → ch 3 → ch 4 (terminal).
@@ -338,11 +335,11 @@ class TestBuildTables:
 
     def test_build_tables_clamps_invalid_outlet_subbasin(self, mini_watershed):
         """If caller/inference yields missing outlet subbasin, clamp to valid id."""
-        from swatplus_builder.gis.hru import create_hrus
-        from swatplus_builder.gis.tables import build_tables
-
         import geopandas as gpd
         from shapely.geometry import Point
+
+        from swatplus_builder.gis.hru import create_hrus
+        from swatplus_builder.gis.tables import build_tables
 
         ws = mini_watershed["watershed"]
         outlet_path = Path(ws.workdir) / "shapes" / "outlets.gpkg"

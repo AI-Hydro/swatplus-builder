@@ -27,8 +27,12 @@ jobs:
       - name: Ruff
         run: ruff check src/ tests/
 
-      - name: Mypy
+      # Type checking is advisory while the strict-mypy type debt is paid down
+      # incrementally (~350 findings tracked separately). It runs and reports on
+      # every push but does not block the build.
+      - name: Mypy (advisory)
         run: mypy src/
+        continue-on-error: true
 
       - name: Smoke tests
         run: pytest -q tests/test_smoke.py

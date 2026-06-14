@@ -35,12 +35,12 @@ function of the station coordinates.
 from __future__ import annotations
 
 import datetime as _dt
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
 
 from ..errors import SwatBuilderInputError, SwatBuilderPipelineError
-from ..types import StationSeries, WeatherBundle, WeatherStation, WeatherVar
+from ..types import StationSeries, WeatherBundle, WeatherVar
 
 __all__ = [
     "WeatherWriteResult",

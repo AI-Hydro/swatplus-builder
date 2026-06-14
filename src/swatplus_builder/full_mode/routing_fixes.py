@@ -185,7 +185,7 @@ def _fix_chandeg_con_outlet(tio: Path) -> None:
     # Parse routing graph — collect ALL channels, not just those with routes
     routes: dict[str, str] = {}
     all_ids: set[str] = set()
-    for i, ln in enumerate(lines[2:], start=2):
+    for _i, ln in enumerate(lines[2:], start=2):
         if not ln.strip():
             continue
         parts = ln.split()

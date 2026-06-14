@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import pandas as pd
-from pathlib import Path
-from typing import Optional
 
-from .style import apply_style, COLORS
+from .style import COLORS, apply_style
 from .utils import align_timeseries, build_figure_title, save_publication_figure
 
 
@@ -15,8 +15,8 @@ def plot_scatter(
     obs: pd.Series,
     sim: pd.Series,
     outpath: Path | str,
-    metrics: Optional[dict] = None,
-    metadata: Optional[dict] = None,
+    metrics: dict | None = None,
+    metadata: dict | None = None,
 ) -> None:
     """Plot Q_obs vs Q_sim with 1:1 reference line.
 

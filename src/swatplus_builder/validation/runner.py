@@ -6,9 +6,10 @@ import csv
 import json
 import math
 import statistics
+from collections.abc import Callable
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from pydantic import BaseModel, Field
 

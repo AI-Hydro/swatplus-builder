@@ -40,8 +40,7 @@ from pyproj import Transformer
 from rasterio.crs import CRS
 from rasterio.features import shapes as rasterio_shapes
 from rasterio.warp import Resampling, calculate_default_transform, reproject
-from shapely.geometry import Point, mapping, shape
-from shapely.ops import unary_union
+from shapely.geometry import Point, shape
 
 from ..config import DEFAULT_SETTINGS, Settings
 from ..errors import SwatBuilderExternalError, SwatBuilderInputError, SwatBuilderPipelineError
@@ -831,7 +830,6 @@ def _polygonize_subbasins(
     with rasterio.open(subbasins_r) as src:
         sub_arr = src.read(1).astype(np.int32)
         transform = src.transform
-        nodata = src.nodata or 0
 
     with rasterio.open(watershed_r) as wsrc:
         ws_arr = wsrc.read(1)
@@ -911,7 +909,7 @@ def _remove_back_edges(G: nx.DiGraph) -> None:
     Removing it breaks the cycle while keeping forward/cross edges intact.
     """
     WHITE, GRAY, BLACK = 0, 1, 2
-    color: dict[int, int] = {n: WHITE for n in G}
+    color: dict[int, int] = dict.fromkeys(G, WHITE)
     back_edges: list[tuple[int, int]] = []
 
     # Iterative DFS to avoid Python recursion limit on large graphs.
@@ -942,7 +940,7 @@ def _remove_back_edges(G: nx.DiGraph) -> None:
         log.info("Removed %d back-edge(s) to make routing graph acyclic.", n_removed)
 
 
-def _augment_topology_from_gpkg(G: "nx.DiGraph", edge_set: set, channels_gdf: "Any") -> None:
+def _augment_topology_from_gpkg(G: nx.DiGraph, edge_set: set, channels_gdf: Any) -> None:
     """Augment *G* with spatial endpoint-snapping edges derived from *channels_gdf*.
 
     Mutates *G* and *edge_set* in-place.  The geometry column must contain

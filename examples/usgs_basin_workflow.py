@@ -42,12 +42,17 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import math
 import os
 import random
 import shutil
 import sys
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from swatplus_builder.types import SoilProfile
 
 logging.basicConfig(
     level=logging.INFO,
@@ -383,7 +388,7 @@ def _load_external_soil_profiles(json_path: Path, mukeys: list[int]):
 def _valid_hyd_group(value: object) -> str:
     if value is None:
         return "D"
-    if isinstance(value, float) and np.isnan(value):
+    if isinstance(value, float) and math.isnan(value):
         return "D"
     code = str(value).strip().upper()
     if code in {"", "NAN", "NONE", "NULL"}:
@@ -398,7 +403,7 @@ def _normalize_soil_profiles_hydgrp(profiles):
         raw = getattr(p, "hyd_grp", None)
         norm = _valid_hyd_group(raw)
         if raw != norm:
-            setattr(p, "hyd_grp", norm)
+            p.hyd_grp = norm
             fixed += 1
     return fixed
 
@@ -584,7 +589,7 @@ def _try_soilgrids_fallback(
     mukeys: list[int],
     outdir: Path,
     boundary_provenance: dict,
-) -> tuple[list["SoilProfile"], int]:
+) -> tuple[list[SoilProfile], int]:
     """Try SoilGrids v2.0 as a coarse soil fallback.
 
     Returns (profiles_list, failed_count).
@@ -727,6 +732,7 @@ def main(
 ):
     import json
 
+    from swatplus_builder.calibration.nwis import fetch_usgs_daily_q
     from swatplus_builder.db.project import create_project_db, upsert_project_metadata
     from swatplus_builder.db.seed import seed_minimal_soils
     from swatplus_builder.db.writer import write_all
@@ -742,12 +748,6 @@ def main(
     from swatplus_builder.gis.soil import extract_unique_mukeys, fetch_mukey_raster
     from swatplus_builder.gis.tables import build_tables
     from swatplus_builder.gis.validate import validate_watershed
-    from swatplus_builder.ref.bootstrap import ensure_datasets_db
-    from swatplus_builder.soil.writer import write_soils
-    from swatplus_builder.weather.daymet import fetch_daymet
-    from swatplus_builder.weather.gridmet import fetch_gridmet
-    from swatplus_builder.weather.writer import write_observed
-    from swatplus_builder.calibration.nwis import fetch_usgs_daily_q
     from swatplus_builder.output.eval import evaluate_run
     from swatplus_builder.output.metadata import (
         RunMetadata,
@@ -758,6 +758,10 @@ def main(
     )
     from swatplus_builder.output.plots.wrapper import generate_all_plots
     from swatplus_builder.soil.sda import fetch_sda_mukeys_for_geometry
+    from swatplus_builder.soil.writer import write_soils
+    from swatplus_builder.weather.daymet import fetch_daymet
+    from swatplus_builder.weather.gridmet import fetch_gridmet
+    from swatplus_builder.weather.writer import write_observed
 
     outdir.mkdir(parents=True, exist_ok=True)
     t_all = time.time()
@@ -1200,7 +1204,7 @@ def main(
     t0 = time.time()
     db_path = create_project_db(f"usgs_{STATION_ID}", project_dir, reference_db=datasets_db, overwrite=True)
     write_all(db_path, tables)
-    _ok(f"project.sqlite created", elapsed=time.time() - t0)
+    _ok("project.sqlite created", elapsed=time.time() - t0)
 
     # 8. Soils
     _section("8/11 Soils (SDA + Hybrid Fallback)")
@@ -1212,7 +1216,6 @@ def main(
     pct_fallback_soils = 0.0
     soil_fallback_warn_threshold = float(os.environ.get("SWATPLUS_SOIL_FALLBACK_WARN_THRESHOLD", "0.25"))
     allow_synthetic_soils = _truthy_env("SWATPLUS_ALLOW_SYNTHETIC_SOILS", default=False)
-    soil_acquired = False
     try:
         external_soils_json = os.environ.get("SWATPLUS_EXTERNAL_SOILS_JSON")
         if external_soils_json:
@@ -1231,7 +1234,6 @@ def main(
             retry_attempts["fetch_soil_profiles_result"] = n
             soil_profiles = soil_res.profiles
             soil_report = soil_res.soil_report
-        soil_acquired = True
         soil_profiles, soilgrids_partial_replacements, soilgrids_partial_failed = (
             _replace_default_profiles_with_soilgrids(
                 list(soil_profiles),
@@ -1347,7 +1349,6 @@ def main(
                 }
             _write_soil_acquisition_report(outdir, soil_report)
             _write_soil_report(outdir, soil_report)
-            soil_acquired = True
             write_soils(soil_profiles, db_path)
             upsert_project_metadata(db_path, "soil_report", json.dumps(soil_report))
             _ok(f"wrote {len(soil_profiles)} profiles (SoilGrids fallback)", elapsed=time.time() - t0)
@@ -1412,7 +1413,7 @@ def main(
     max_weather_stations = max(1, int(os.environ.get("SWATPLUS_MAX_WEATHER_STATIONS", "25")))
     subs_for_weather = list(tables.subbasins)
     subs_for_weather = _sample_evenly(subs_for_weather, max_weather_stations)
-    from datetime import datetime as _dt, timedelta
+    from datetime import datetime as _dt
     eval_start_dt = _dt.strptime(sim_start, "%Y-%m-%d")
     weather_start = (_dt(eval_start_dt.year - warmup_years, eval_start_dt.month, eval_start_dt.day)
                      if warmup_years > 0 else eval_start_dt)
@@ -1548,7 +1549,9 @@ def main(
 
         # Warmup: prepend spin-up years before the evaluation period
         if warmup_years > 0:
-            from swatplus_builder.full_mode.warmup import reset_and_apply_warmup as _reset_and_apply_warmup
+            from swatplus_builder.full_mode.warmup import (
+                reset_and_apply_warmup as _reset_and_apply_warmup,
+            )
             _reset_and_apply_warmup(
                 wf.txtinout_dir,
                 warmup_years=warmup_years,

@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pytest
 
-
 pytestmark = pytest.mark.skipif(
     os.environ.get("SWATPLUS_BUILDER_RUN_ROUTING_REGRESSION") != "1",
     reason="Set SWATPLUS_BUILDER_RUN_ROUTING_REGRESSION=1 to run CI routing regression gate.",

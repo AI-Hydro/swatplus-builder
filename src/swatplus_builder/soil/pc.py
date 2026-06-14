@@ -1,15 +1,13 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from swatplus_builder.config import DEFAULT_SETTINGS, Settings
 from swatplus_builder.errors import (
-    SwatBuilderExternalError,
-    SwatBuilderInputError,
     SwatBuilderPipelineError,
 )
 from swatplus_builder.soil.models import SoilProfile
@@ -111,9 +109,9 @@ def fetch_aggregated_profiles(
     
     # Fast path: try loading muaggatt
     try:
-        import pystac_client # type: ignore
-        import planetary_computer # type: ignore
-        import pandas as pd # type: ignore
+        import pandas as pd  # type: ignore
+        import planetary_computer  # type: ignore
+        import pystac_client  # type: ignore
 
         catalog = pystac_client.Client.open(
             opts.stac_url, modifier=planetary_computer.sign_inplace
@@ -189,14 +187,14 @@ def fetch_aggregated_profiles(
         aws_100 = _num(row.get("aws0100wta"), default=None) if row is not None else None
         aws_150 = _num(row.get("aws0150wta"), default=None) if row is not None else None
         
-        def cum_aws(depth_cm: float) -> float | None:
+        def cum_aws(depth_cm: float, aws_25=aws_25, aws_50=aws_50, aws_100=aws_100, aws_150=aws_150) -> float | None:
             if depth_cm <= 25 and aws_25 is not None: return aws_25
             if depth_cm <= 50 and aws_50 is not None: return aws_50
             if depth_cm <= 100 and aws_100 is not None: return aws_100
             if depth_cm <= 150 and aws_150 is not None: return aws_150
             return None
 
-        def awc_for_segment(top_cm: float, bot_cm: float) -> float:
+        def awc_for_segment(top_cm: float, bot_cm: float, aws_25=aws_25, aws_50=aws_50, aws_100=aws_100, aws_150=aws_150) -> float:
             thickness_cm = max(1e-6, bot_cm - top_cm)
             c_top = cum_aws(top_cm) or 0.0
             c_bot = cum_aws(bot_cm)

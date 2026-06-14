@@ -398,7 +398,7 @@ def fetch_usgs_site_metadata(usgs_id: str, *, timeout_s: float = 3.0) -> dict[st
     )
     url = f"https://waterservices.usgs.gov/nwis/site/?{query}"
     try:
-        with urllib.request.urlopen(url, timeout=timeout_s) as response:
+        with urllib.request.urlopen(url, timeout=timeout_s) as response:  # noqa: S310  (fixed https USGS endpoint)
             text = response.read().decode("utf-8", errors="replace")
     except Exception as exc:
         return {"available": False, "site_no": site, "source": url, "error": str(exc)}

@@ -148,3 +148,5 @@ PLAYBOOK.md
 
 # stray reproduction virtualenv (session artifact)
 .venv-repro/
+outputs/
+swatplus_runs/

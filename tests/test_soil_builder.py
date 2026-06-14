@@ -1,16 +1,20 @@
-import pytest
 from unittest.mock import patch
+
+import pytest
+
 from swatplus_builder.soil.builder import fetch_soil_profiles_result, normalize_profile
 from swatplus_builder.soil.models import SoilConfig, SoilProfile
 from swatplus_builder.soil.params import horizon_from_chorizon
+
 
 def dummy_layer(layer_num, dep):
     return horizon_from_chorizon(layer_num=layer_num, hzdepb_cm=dep, sandtotal_r=40.0, silttotal_r=40.0, claytotal_r=20.0, ksat_umps=5.0, dbthirdbar=1.4, wthirdbar_pct=30.0, wfifteenbar_pct=15.0, om_r=1.0)
 
 @pytest.fixture
 def dummy_settings():
-    from swatplus_builder.config import Settings
     from pathlib import Path
+
+    from swatplus_builder.config import Settings
     return Settings(reference_db_dir=Path("/tmp/ref_db"))
 
 def test_every_mukey_gets_profile(dummy_settings):

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import pandas as pd
-from pathlib import Path
-from typing import Optional
 
-from .style import apply_style, COLORS
+from .style import COLORS, apply_style
 from .utils import align_timeseries, build_figure_title, save_publication_figure
 
 _MONTH_LABELS = ["Jan","Feb","Mar","Apr","May","Jun",
@@ -17,8 +17,8 @@ _MONTH_LABELS = ["Jan","Feb","Mar","Apr","May","Jun",
 def plot_seasonal(
     df: pd.DataFrame,
     outpath: Path | str,
-    metrics: Optional[dict] = None,
-    metadata: Optional[dict] = None,
+    metrics: dict | None = None,
+    metadata: dict | None = None,
 ) -> None:
     """Plot mean monthly discharge — obs vs sim.
 

@@ -23,7 +23,6 @@ from pydantic import BaseModel, Field
 from ..artifacts import ArtifactQuery, LocalArtifactStore
 from ..calibration.calibrator import Calibrator, CalibratorRequest
 from ..calibration.locked_benchmark import (
-    BenchmarkLock,
     build_readiness_table,
     calibrate_against_lock,
     lock_benchmark,

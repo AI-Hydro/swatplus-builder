@@ -4,31 +4,28 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
 
 from swatplus_builder.calibration.locked_benchmark import (
     BenchmarkLock,
-    CalibrationEvidence,
     ReadinessRow,
-    VerificationResult,
     _diagnostic_calibration_phases,
-    _resolve_lock,
     _phase_candidate_points,
+    _resolve_lock,
     _score_candidate,
+    _volume_gate_passed,
     _write_readiness_markdown,
     build_readiness_table,
     calibrate_against_lock,
     lock_benchmark,
     screen_parameters_against_lock,
     verify_calibration,
-    _volume_gate_passed,
 )
 from swatplus_builder.calibration.real_engine import params_hash
 from swatplus_builder.errors import SwatBuilderInputError, SwatBuilderPipelineError
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

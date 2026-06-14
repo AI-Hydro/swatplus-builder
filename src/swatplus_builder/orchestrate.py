@@ -1,15 +1,15 @@
-from __future__ import annotations
 """End-to-End Orchestration Platform.
 
 Automates the entire SWAT+ workflow from a single USGS streamgage ID.
 """
 
-import time
+from __future__ import annotations
+
 import json
 import logging
-from pathlib import Path
-from typing import Dict, Any, Optional
 from datetime import datetime
+from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -25,7 +25,7 @@ def run_pipeline(
     model_family: str = "full",
     warmup_years: int = 3,
     allow_diagnostic_fallbacks: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Execute the full end-to-end validation platform for a basin.
     
     Args:

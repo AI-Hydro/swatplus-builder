@@ -18,7 +18,6 @@ from swatplus_builder.mcp.server import (
     CompareRunsRequest,
     DiagnoseFailureRequest,
     LockBenchmarkRequest,
-    LockedCalibrateRequest,
     ProposeParametersRequest,
     QueryArtifactsRequest,
     ReadinessTableRequest,

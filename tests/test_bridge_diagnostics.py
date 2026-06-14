@@ -15,14 +15,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from swatplus_builder.calibration.bridge_diagnostics import (
     FailureClass,
-    classify_bridge_failure,
     build_bridge_diagnostics_summary,
+    classify_bridge_failure,
 )
-from swatplus_builder.calibration.calibrator import _write_bridge_failure_artifact, BackendRequest
+from swatplus_builder.calibration.calibrator import BackendRequest, _write_bridge_failure_artifact
 
 
 def _make_dummy_request(txtinout_dir: Path, calsim_dir: Path) -> BackendRequest:
@@ -331,6 +329,7 @@ class TestBridgeDiagnoseCLI:
 
     def test_exit_0_when_no_failures(self, tmp_path):
         from typer.testing import CliRunner
+
         from swatplus_builder.cli import app
         runner = CliRunner()
         res = runner.invoke(app, ["bridge-diagnose", "--root", str(tmp_path), "--json"])
@@ -340,6 +339,7 @@ class TestBridgeDiagnoseCLI:
 
     def test_exit_1_when_failures_found(self, tmp_path):
         from typer.testing import CliRunner
+
         from swatplus_builder.cli import app
         # Drop a minimal artifact
         art = tmp_path / "run" / "bridge_failure_diagnostic.json"

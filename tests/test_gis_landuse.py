@@ -34,7 +34,7 @@ class TestNlcdLookup:
         assert set(NLCD_CLASS_DESCRIPTIONS) == set(NLCD_TO_SWATPLUS)
 
     def test_urban_codes_are_a_subset_of_the_lookup(self) -> None:
-        assert NLCD_URBAN_CODES <= set(NLCD_TO_SWATPLUS)
+        assert set(NLCD_TO_SWATPLUS) >= NLCD_URBAN_CODES
 
     def test_urban_codes_map_to_urban_like_names(self) -> None:
         for code in NLCD_URBAN_CODES:

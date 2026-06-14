@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 from typing import Any
+
 from pydantic import BaseModel, Field
 
 # Re-export core types for backward compatibility and internal soil module use.
-from swatplus_builder.types import SoilProfile, SoilHorizon
+from swatplus_builder.types import SoilProfile
+
 
 class SoilConfig(BaseModel):
     """Configuration for rigorous SWAP+ soil generation."""
@@ -15,17 +17,17 @@ class SoilConfig(BaseModel):
     reproducible: bool = Field(default=False, description="Enforce strict cache-only mode/disable dynamic fetching.")
 
     @classmethod
-    def fast(cls) -> "SoilConfig":
+    def fast(cls) -> SoilConfig:
         """PC-only (tier 1), fast generation without calling SDA."""
         return cls(use_sda=False)
         
     @classmethod
-    def high_fidelity(cls) -> "SoilConfig":
+    def high_fidelity(cls) -> SoilConfig:
         """Tier 2 (SDA), fetching from or loading into cache dynamically."""
         return cls(use_sda=True, reproducible=False)
         
     @classmethod
-    def reproducible_mode(cls) -> "SoilConfig":
+    def reproducible_mode(cls) -> SoilConfig:
         """Tier 2 (SDA), but completely bypasses live networking — strict cache-only mode."""
         return cls(use_sda=True, reproducible=True)
 

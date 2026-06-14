@@ -23,7 +23,7 @@ serialize to JSON for MCP / agent use.
 from __future__ import annotations
 
 import math
-from typing import Sequence
+from collections.abc import Sequence
 
 __all__ = [
     "nse",

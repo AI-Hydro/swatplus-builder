@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import matplotlib.pyplot as plt
 from pathlib import Path
 from typing import TypedDict
 
-from .style import apply_style, COLORS
+import matplotlib.pyplot as plt
+
+from .style import COLORS, apply_style
 from .utils import save_publication_figure
 
 

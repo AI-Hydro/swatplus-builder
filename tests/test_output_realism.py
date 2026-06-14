@@ -13,19 +13,14 @@ import pandas as pd
 import pytest
 
 from swatplus_builder.output.realism import (
-    CalValSplit,
-    PeriodMetrics,
-    RealismAudit,
+    _bfi,
+    _kge,
+    _nse,
+    _pbias,
     audit_realism,
     run_realism_audit,
     split_cal_val,
-    _nse,
-    _kge,
-    _pbias,
-    _bfi,
-    _detect_pathologies,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

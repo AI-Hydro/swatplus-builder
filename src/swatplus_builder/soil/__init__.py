@@ -18,9 +18,9 @@ from __future__ import annotations
 from .gnatsgo import (
     DEFAULT_PC_STAC_URL,
     GnatsgoFetchOptions,
+    SoilProfilesResult,
     fetch_gnatsgo_profiles,
     fetch_gnatsgo_profiles_result,
-    SoilProfilesResult,
 )
 from .params import (
     DEFAULT_ALBEDO_BARE,

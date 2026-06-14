@@ -47,9 +47,9 @@ import os
 import subprocess
 import sys
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Sequence
 
 from ..config import DEFAULT_SETTINGS, Settings
 from ..errors import SwatBuilderExternalError, SwatBuilderInputError

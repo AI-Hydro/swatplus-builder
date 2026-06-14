@@ -13,7 +13,6 @@ import sqlite3
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # A tiny synthetic two-subbasin watershed that we reuse across tests.
 #

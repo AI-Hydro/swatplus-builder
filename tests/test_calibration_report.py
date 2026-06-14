@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from swatplus_builder.calibration.report import write_calibration_reports
-from swatplus_builder.calibration.report import write_hydrograph_comparison_from_two_alignments
+from swatplus_builder.calibration.report import (
+    write_calibration_reports,
+    write_hydrograph_comparison_from_two_alignments,
+)
 from swatplus_builder.calibration.spotpy_adapter import CalibrationIterationResult
 
 

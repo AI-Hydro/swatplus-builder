@@ -28,7 +28,7 @@ from ..artifacts import (
 )
 from ..errors import SwatBuilderExternalError, SwatBuilderInputError, SwatBuilderPipelineError
 from ..output.metadata import try_git_sha
-from ..params import get_parameter, validate_value
+from ..params import get_parameter
 from .pyswatplus_runtime import ensure_pyswatplus_runtime
 
 
@@ -122,7 +122,7 @@ class PySwatPlusBackend:
     def run(self, request: BackendRequest) -> BackendResult:
         ensure_pyswatplus_runtime()
         try:
-            import pySWATPlus as mod
+            import pySWATPlus as mod  # noqa: N813  (upstream package name is camelCase)
 
             calibration_cls = getattr(mod, "Calibration", None)
             if calibration_cls is None:
@@ -859,7 +859,7 @@ def _prepare_txtinout_for_pyswatplus(
     binary = Path(binary).expanduser().resolve()
     target = staged / Path(binary).name
     shutil.copy2(binary, target)
-    os.chmod(target, os.stat(target).st_mode | 0o111)
+    os.chmod(target, os.stat(target).st_mode | 0o111)  # noqa: S103  (engine binary needs the exec bit)
     _copy_runtime_companions(binary=Path(binary), target_dir=staged)
     _prepare_txtinout_for_objective(staged)
     return staged
@@ -1095,8 +1095,8 @@ def _apply_platform_compatibility_patches(mod: object) -> None:
                     return False
                 return header in macho_headers
 
-            setattr(utils, "_is_real_executable", _patched_is_real_executable)
-            setattr(utils, "_swatbuilder_macho_patch", True)
+            utils._is_real_executable = _patched_is_real_executable
+            utils._swatbuilder_macho_patch = True
 
     calibration_module = getattr(mod, "calibration", None)
     if calibration_module is None:
@@ -1108,7 +1108,7 @@ def _apply_platform_compatibility_patches(mod: object) -> None:
         from concurrent.futures import ThreadPoolExecutor
 
         futures_mod.futures.ProcessPoolExecutor = ThreadPoolExecutor
-        setattr(calibration_module, "_swatbuilder_threadpool_patch", True)
+        calibration_module._swatbuilder_threadpool_patch = True
 
     cpu_mod = getattr(mod, "cpu", None)
     if cpu_mod is not None and not getattr(cpu_mod, "_swatbuilder_keep_simdirs_patch", False):
@@ -1117,8 +1117,8 @@ def _apply_platform_compatibility_patches(mod: object) -> None:
             def _patched_sim_output(*args: object, **kwargs: object) -> dict[str, object]:
                 kwargs["clean_setup"] = False
                 return original_sim_output(*args, **kwargs)
-            setattr(cpu_mod, "_simulation_output", _patched_sim_output)
-            setattr(cpu_mod, "_swatbuilder_keep_simdirs_patch", True)
+            cpu_mod._simulation_output = _patched_sim_output
+            cpu_mod._swatbuilder_keep_simdirs_patch = True
 
     txt_reader_mod = getattr(mod, "txtinout_reader", None)
     if txt_reader_mod is None:
@@ -1126,7 +1126,7 @@ def _apply_platform_compatibility_patches(mod: object) -> None:
     if not getattr(txt_reader_mod, "_swatbuilder_env_patch", False):
         from ..run.swatplus import run_solver_subprocess
 
-        logger = getattr(txt_reader_mod, "logger")
+        logger = txt_reader_mod.logger
 
         def _patched_run_swat_exe(self: object) -> None:
             # All solver invocations must go through run_solver_subprocess —
@@ -1150,7 +1150,7 @@ def _apply_platform_compatibility_patches(mod: object) -> None:
                 raise
 
         txt_reader_mod.TxtinoutReader._run_swat_exe = _patched_run_swat_exe
-        setattr(txt_reader_mod, "_swatbuilder_env_patch", True)
+        txt_reader_mod._swatbuilder_env_patch = True
 
 
 def _read_best_nse(path: Path) -> float | None:

@@ -15,10 +15,9 @@ The output JSON can be used with load_external_soils.py to update project.sqlite
 import argparse
 import json
 import logging
-from pathlib import Path
-from typing import Optional
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 logging.basicConfig(
     level=logging.INFO,
@@ -72,9 +71,8 @@ def fetch_sda_soils(mukeys: set[int], output_json: Path) -> bool:
     try:
         # Lazy import to handle missing dependencies gracefully
         sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+        from swatplus_builder.soil.models import SoilConfig
         from swatplus_builder.soil.sda import fetch_sda_horizons
-        from swatplus_builder.soil.models import SoilConfig, SoilProfile
-        from swatplus_builder.config import Settings
     except ImportError as e:
         log.error("Failed to import soil modules: %s. Ensure PYTHONPATH includes src/", e)
         return False

@@ -8,15 +8,15 @@ import pytest
 
 from swatplus_builder.full_mode.parameter_bridge import (
     ParameterBridgeError,
+    _apply_alpha_bf,
     _apply_ch_k2,
     _apply_ch_n2,
     _apply_cn2,
     _apply_cn3_swf,
     _apply_esco,
-    _apply_alpha_bf,
     _apply_lat_ttime,
-    _apply_rchg_dp,
     _apply_pet_co,
+    _apply_rchg_dp,
     _apply_sftmp,
     _apply_smtmp,
     _apply_surlag,

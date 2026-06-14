@@ -2,17 +2,15 @@
 
 from __future__ import annotations
 
-import os
 import stat
-import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-from swatplus_builder.run.swatplus import run_solver_subprocess, _build_env
-from swatplus_builder.run import run_solver_subprocess as _imported_from_init
 from swatplus_builder.errors import SwatBuilderExternalError
+from swatplus_builder.run import run_solver_subprocess as _imported_from_init
+from swatplus_builder.run.swatplus import _build_env, run_solver_subprocess
 
 
 def test_run_solver_subprocess_exported_from_run_init():
@@ -78,6 +76,7 @@ def test_build_env_clamps_threads(tmp_path):
 def test_calibrator_patch_uses_run_solver_subprocess():
     """The pySWATPlus monkey-patch must import from run.swatplus, not subprocess."""
     import inspect
+
     from swatplus_builder.calibration.calibrator import _apply_platform_compatibility_patches
 
     src = inspect.getsource(_apply_platform_compatibility_patches)

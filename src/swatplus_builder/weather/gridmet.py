@@ -39,10 +39,9 @@ import datetime as _dt
 import logging
 import os
 import time
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Iterable, Sequence
-
-log = logging.getLogger(__name__)
+from typing import TYPE_CHECKING
 
 from ..config import DEFAULT_SETTINGS, Settings
 from ..errors import (
@@ -55,6 +54,8 @@ from .writer import station_name
 
 if TYPE_CHECKING:
     import pandas as pd
+
+log = logging.getLogger(__name__)
 
 __all__ = [
     "GRIDMET_VARIABLE_MAP",
@@ -91,9 +92,7 @@ _GRIDMET_REALTIME_LAG_DAYS = 7
 # ---------------------------------------------------------------------------
 
 
-from typing import Union
-
-StationLike = Union[WeatherStation, tuple[float, float, float]]
+StationLike = WeatherStation | tuple[float, float, float]
 """What ``fetch_gridmet`` accepts per station.
 
 Either a fully-formed :class:`WeatherStation` (caller provides the name)
@@ -322,7 +321,7 @@ def _fetch_one(
     end: str,
     variables: Sequence[str],
     cache_dir: Path,
-) -> "pd.DataFrame":
+) -> pd.DataFrame:
     """Call pygridmet for a single (lon, lat). Translate errors."""
     last_exc: Exception | None = None
     for attempt in range(1, _GRIDMET_FETCH_ATTEMPTS + 1):
@@ -371,13 +370,13 @@ def _fetch_one(
 
 
 def _repair_bounded_day_gaps(
-    df: "pd.DataFrame",
+    df: pd.DataFrame,
     *,
     station: WeatherStation,
     start: str,
     end: str,
     n_days: int,
-) -> "pd.DataFrame":
+) -> pd.DataFrame:
     """Fill provider-missing days using adjacent or nearest data.
 
     Handles three gap patterns:
@@ -459,7 +458,7 @@ def _repair_bounded_day_gaps(
 
 
 def _validate_response_shape(
-    df: "pd.DataFrame",
+    df: pd.DataFrame,
     *,
     station: WeatherStation,
     n_days: int,
@@ -484,7 +483,7 @@ def _validate_response_shape(
 
 def _build_series(
     *,
-    df: "pd.DataFrame",
+    df: pd.DataFrame,
     station: WeatherStation,
     start: str,
     n_days: int,
@@ -535,7 +534,7 @@ def _build_series(
     )
 
 
-def _normalize_columns(df: "pd.DataFrame") -> dict[str, "pd.Series"]:
+def _normalize_columns(df: pd.DataFrame) -> dict[str, pd.Series]:
     """Flatten pygridmet's column names to their pure variable name.
 
     pygridmet's DataFrames label columns like ``"pr (mm)"`` /
@@ -551,7 +550,7 @@ def _normalize_columns(df: "pd.DataFrame") -> dict[str, "pd.Series"]:
 
 
 def _col(
-    cols: dict[str, "pd.Series"], name: str, station: WeatherStation
+    cols: dict[str, pd.Series], name: str, station: WeatherStation
 ):  # type: ignore[no-untyped-def]
     try:
         return cols[name].to_list()

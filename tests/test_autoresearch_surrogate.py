@@ -17,9 +17,9 @@ from swatplus_builder.artifacts import (
 )
 from swatplus_builder.autoresearch import (
     HoldoutEvaluationRequest,
+    SurrogateTrainingRequest,
     decide_routing_path,
     evaluate_surrogate_holdout,
-    SurrogateTrainingRequest,
     predict_with_surrogate,
     train_surrogate_ensemble,
 )

@@ -8,8 +8,6 @@ this module exists for custom pre-filters and validation.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from pydantic import BaseModel
 
 
@@ -19,14 +17,3 @@ class WgnStation(BaseModel):
     lat: float
     lon: float
     elev: float
-
-
-def nearest_station(
-    wgn_db: Path | str,
-    lat: float,
-    lon: float,
-    *,
-    table: str = "wgn_cfsr_world",
-) -> WgnStation:
-    """Return the nearest WGN station to ``(lat, lon)``."""
-    raise NotImplementedError("wgn.nearest_station is not yet implemented.")

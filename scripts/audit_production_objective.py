@@ -11,7 +11,6 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
-from swatplus_builder.params.governance import FULL_MODE_CORE_PARAMETERS, FULL_MODE_PARAMETER_GOVERNANCE
 from swatplus_builder.evidence.migration import migrate_legacy_bundle
 
 OBJECTIVE_REPORT_JSON = ROOT / "docs" / "objective_basin_validation_report.json"

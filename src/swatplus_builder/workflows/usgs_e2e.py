@@ -9,14 +9,34 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from ..errors import SwatBuilderExternalError
-from ..orchestrate import run_pipeline
 from ..calibration.diagnostic_calibrator import run_diagnostic_calibration
+from ..governance import (
+    benchmark_lock_gate as _benchmark_lock_gate_impl,
+)
+from ..governance import (
+    calibration_improvement_gate as _calibration_improvement_gate_impl,
+)
+from ..governance import (
+    fresh_engine_gate as _fresh_engine_gate_impl,
+)
+from ..governance import (
+    outlet_provenance_gate as _outlet_provenance_gate_impl,
+)
+from ..governance import (
+    research_metric_gate as _research_metric_gate_impl,
+)
+from ..governance import (
+    sensitivity_gate as _sensitivity_gate_impl,
+)
+from ..governance import (
+    soil_fidelity_gate as _soil_fidelity_gate_impl,
+)
+from ..orchestrate import run_pipeline
 from ..output.et_diagnostics import write_et_partition_diagnostics
 from ..output.mass_diagnostics import write_mass_balance_diagnostics
 from ..output.mass_trace import classify_terminal_scope_blocker
@@ -27,15 +47,6 @@ from ..params.governance import (
     FULL_MODE_PARAMETER_GOVERNANCE,
     full_mode_extended_screen_rows,
     full_mode_screen_rows,
-)
-from ..governance import (
-    benchmark_lock_gate as _benchmark_lock_gate_impl,
-    calibration_improvement_gate as _calibration_improvement_gate_impl,
-    fresh_engine_gate as _fresh_engine_gate_impl,
-    outlet_provenance_gate as _outlet_provenance_gate_impl,
-    research_metric_gate as _research_metric_gate_impl,
-    sensitivity_gate as _sensitivity_gate_impl,
-    soil_fidelity_gate as _soil_fidelity_gate_impl,
 )
 
 # SWAT+-specific sensitivity gate parameters (computed once at import time)

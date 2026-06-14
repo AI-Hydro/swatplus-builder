@@ -45,7 +45,6 @@ import geopandas as gpd
 from pydantic import BaseModel, Field
 from shapely.ops import unary_union
 
-from ..errors import SwatBuilderExternalError, SwatBuilderInputError
 from ..types import WatershedResult
 
 log = logging.getLogger(__name__)
@@ -96,7 +95,7 @@ class ValidationResult(BaseModel):
         if self.centroid_distance_km is not None:
             print(f"  Centroid distance : {self.centroid_distance_km:>10.2f} km")
         if self.notes:
-            print(f"\n  Notes:")
+            print("\n  Notes:")
             for note in self.notes:
                 print(f"    • {note}")
         print(sep)

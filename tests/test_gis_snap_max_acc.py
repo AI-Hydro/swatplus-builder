@@ -24,7 +24,6 @@ from rasterio.transform import from_bounds
 
 from swatplus_builder.gis.delineation import _adaptive_snap_dist, _snap_to_max_accumulation
 
-
 # ---------------------------------------------------------------------------
 # Helpers: build synthetic flow-accumulation rasters
 # ---------------------------------------------------------------------------

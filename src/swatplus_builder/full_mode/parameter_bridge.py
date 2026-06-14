@@ -12,8 +12,8 @@ hash changes between LOW and HIGH values for that parameter on a fixed basin.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Callable, Mapping
 
 logger = logging.getLogger(__name__)
 

@@ -12,12 +12,12 @@ import importlib.util
 import json
 import logging
 import os
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Iterator
 
 
 @dataclass(frozen=True)

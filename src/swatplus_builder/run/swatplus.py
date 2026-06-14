@@ -43,14 +43,14 @@ Typical agent flow
 
 from __future__ import annotations
 
+import json
+import logging
 import os
 import re
 import shutil
 import subprocess
 import sys
 import time
-import json
-import logging
 from pathlib import Path
 
 from ..config import DEFAULT_SETTINGS, Settings
@@ -575,11 +575,11 @@ def clean_and_run_solver(
     else:
         try:
             exe_path = locate_binary()
-        except Exception:
+        except Exception as exc:
             raise SwatBuilderExternalError(
                 "SWAT+ engine not found. Set SWATPLUS_EXE or pass exe=<path>.",
                 txtinout_dir=str(txt),
-            )
+            ) from exc
 
     # 1. Delete stale outputs
     _stale_patterns = [
@@ -621,7 +621,7 @@ def clean_and_run_solver(
             if attempt < total_attempts:
                 time.sleep(max(0.0, float(retry_backoff_s)))
                 continue
-            raise last_error
+            raise last_error from exc
 
         # 3. Fail loudly on non-zero exit
         if rc != 0:

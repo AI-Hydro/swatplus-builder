@@ -1,9 +1,10 @@
-from __future__ import annotations
 """Fetch daily discharge data from USGS NWIS via HyRiver (pygeohydro)."""
 
+from __future__ import annotations
+
 import logging
-from typing import Optional
 from pathlib import Path
+
 import pandas as pd
 
 log = logging.getLogger(__name__)
@@ -12,7 +13,7 @@ def fetch_usgs_daily_q(
     usgs_id: str, 
     start_date: str, 
     end_date: str, 
-    out_csv: Optional[Path | str] = None
+    out_csv: Path | str | None = None
 ) -> pd.Series:
     """Fetch daily mean discharge (parameter 00060) from NWIS in m3/s.
     
