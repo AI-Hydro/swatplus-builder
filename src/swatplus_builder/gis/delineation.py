@@ -942,6 +942,48 @@ def _remove_back_edges(G: nx.DiGraph) -> None:
         log.info("Removed %d back-edge(s) to make routing graph acyclic.", n_removed)
 
 
+def _augment_topology_from_gpkg(G: "nx.DiGraph", edge_set: set, channels_gdf: "Any") -> None:
+    """Augment *G* with spatial endpoint-snapping edges derived from *channels_gdf*.
+
+    Mutates *G* and *edge_set* in-place.  The geometry column must contain
+    LineString features with a ``link_id`` attribute.  Connections where the
+    downstream end of channel A is within 150 m of the upstream end of channel B
+    are added as directed edges A → B.
+    """
+    from shapely.geometry import Point as _Point
+
+    if "link_id" not in channels_gdf.columns:
+        return
+
+    ds_pts: dict[int, _Point] = {}
+    us_pts: dict[int, _Point] = {}
+    for _, row in channels_gdf.iterrows():
+        lid = int(row["link_id"])
+        coords = list(row.geometry.coords)
+        if len(coords) >= 2:
+            us_pts[lid] = _Point(coords[0])
+            ds_pts[lid] = _Point(coords[-1])
+
+    snap_tol = 150.0  # metres
+    link_ids_list = list(ds_pts.keys())
+    for a in link_ids_list:
+        best_dist = float("inf")
+        best_b: int | None = None
+        for b in link_ids_list:
+            if b == a or b not in us_pts:
+                continue
+            d = ds_pts[a].distance(us_pts[b])
+            if d < snap_tol and d < best_dist:
+                best_dist = d
+                best_b = b
+        if best_b is not None:
+            edge = (a, best_b)
+            if edge not in edge_set:
+                edge_set.add(edge)
+                G.add_edge(a, best_b)
+                log.debug("topology snap: %d -> %d  (%.1f m)", a, best_b, best_dist)
+
+
 def _build_topology(stream_links: Path, watershed_r: Path, channels_gdf=None) -> nx.DiGraph:
     """Build a DiGraph of channel links.
 
@@ -998,36 +1040,7 @@ def _build_topology(stream_links: Path, watershed_r: Path, channels_gdf=None) ->
     # start (first coordinate).
     if channels_gdf is not None:
         try:
-            from shapely.geometry import Point as _Point
-
-            if "link_id" in channels_gdf.columns:
-                ds_pts: dict[int, _Point] = {}
-                us_pts: dict[int, _Point] = {}
-                for _, row in channels_gdf.iterrows():
-                    lid = int(row["link_id"])
-                    coords = list(row.geometry.coords)
-                    if len(coords) >= 2:
-                        us_pts[lid] = _Point(coords[0])
-                        ds_pts[lid] = _Point(coords[-1])
-
-                snap_tol = 150.0  # metres
-                link_ids_list = list(ds_pts.keys())
-                for a in link_ids_list:
-                    best_dist = float("inf")
-                    best_b: int | None = None
-                    for b in link_ids_list:
-                        if b == a or b not in us_pts:
-                            continue
-                        d = ds_pts[a].distance(us_pts[b])
-                        if d < snap_tol and d < best_dist:
-                            best_dist = d
-                            best_b = b
-                    if best_b is not None:
-                        edge = (a, best_b)
-                        if edge not in edge_set:
-                            edge_set.add(edge)
-                            G.add_edge(a, best_b)
-                            log.debug("topology snap: %d -> %d  (%.1f m)", a, best_b, best_dist)
+            _augment_topology_from_gpkg(G, edge_set, channels_gdf)
         except Exception as exc:
             log.warning("Spatial topology augmentation failed: %s", exc)
     else:
