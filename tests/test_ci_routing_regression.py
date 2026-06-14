@@ -87,25 +87,31 @@ def test_multibasin_routing_regression_gate(tmp_path: Path) -> None:
     # fails. We assert per-site below (FULL_PIPELINE_SITES must pass; the
     # known-limitation basin is allowed to fail at delineation), so we do not
     # gate on the aggregate return code here — but we do require the summary.
+    runner_ctx = (
+        f"\n\nreturn code: {proc.returncode}"
+        f"\n\n--- runner stdout ---\n{proc.stdout[-8000:] if proc.stdout else '(empty)'}"
+        f"\n\n--- runner stderr ---\n{proc.stderr[-2000:] if proc.stderr else '(empty)'}"
+    )
     summary_path = batch_dir / "summary.json"
     assert summary_path.exists(), (
-        "Missing summary.json — batch runner did not complete.\n"
-        f"return code: {proc.returncode}\n"
-        f"stdout:\n{proc.stdout}\n\nstderr:\n{proc.stderr}"
+        f"Missing summary.json — batch runner did not complete.{runner_ctx}"
     )
     results = json.loads(summary_path.read_text(encoding="utf-8"))
     by_id = {r["usgs_id"]: r for r in results}
 
     # --- Regression guard: full-pipeline basins must succeed end-to-end. ---
     for sid in FULL_PIPELINE_SITES:
-        assert sid in by_id, f"Missing site in summary: {sid}"
+        assert sid in by_id, f"Missing site in summary: {sid}{runner_ctx}"
         row = by_id[sid]
-        assert row["status"] == "success", f"{sid} failed: {row.get('error')}"
+        row_json = json.dumps(row, indent=2)
+        assert row["status"] == "success", (
+            f"{sid} failed: {row.get('error')}\n\nrow:\n{row_json}{runner_ctx}"
+        )
         assert (row.get("terminal_channels_with_flow") or 0) > 0, (
-            f"{sid} has zero terminal flow rows."
+            f"{sid} has zero terminal flow rows.\n\nrow:\n{row_json}{runner_ctx}"
         )
         assert (row.get("terminal_channels_total") or 0) > 0, (
-            f"{sid} has zero terminal channel count."
+            f"{sid} has zero terminal channel count.\n\nrow:\n{row_json}{runner_ctx}"
         )
 
         run_dir = REPO_ROOT / row["run_dir"]

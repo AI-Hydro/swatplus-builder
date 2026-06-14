@@ -103,6 +103,7 @@ def parse_terminal_channel_ids(txtinout: Path) -> set[int]:
     """
     p = txtinout / "chandeg.con"
     if not p.exists():
+        print(f"[diag] chandeg.con NOT FOUND at {p}")
         return set()
     terminals: set[int] = set()
     col_idx: dict[str, int] | None = None
@@ -126,13 +127,18 @@ def parse_terminal_channel_ids(txtinout: Path) -> set[int]:
                 terminals.add(int(parts[id_i]))
         except (IndexError, ValueError):
             continue
+    print(f"[diag] chandeg.con parsed from {p}: terminal_ids={terminals}")
     return terminals
 
 
 def parse_terminal_flow_stats(txtinout: Path, terminal_ids: set[int]) -> tuple[int, int, float, float]:
     p = txtinout / "channel_sd_day.txt"
-    if not p.exists() or not terminal_ids:
+    if not terminal_ids:
+        print(f"[diag] terminal_ids empty — skipping channel_sd_day.txt")
         return 0, 0, 0.0, 0.0
+    if not p.exists():
+        print(f"[diag] channel_sd_day.txt NOT FOUND at {p}")
+        return 0, len(terminal_ids), 0.0, 0.0
 
     lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
     if len(lines) < 4:
@@ -140,7 +146,8 @@ def parse_terminal_flow_stats(txtinout: Path, terminal_ids: set[int]) -> tuple[i
 
     header = lines[1].split()
     if "unit" not in header or "flo_out" not in header:
-        return 0, 0, 0.0, 0.0
+        print(f"[diag] channel_sd_day.txt header missing 'unit'/'flo_out': {header[:10]}")
+        return 0, len(terminal_ids), 0.0, 0.0
 
     uidx = header.index("unit")
     fidx = header.index("flo_out")
@@ -157,6 +164,7 @@ def parse_terminal_flow_stats(txtinout: Path, terminal_ids: set[int]) -> tuple[i
         except ValueError:
             continue
 
+    print(f"[diag] channel_sd_day.txt: found {len(vals)} rows for terminal_ids={terminal_ids}")
     if not vals:
         return 0, len(terminal_ids), 0.0, 0.0
     return sum(1 for v in vals if v > 0), len(terminal_ids), max(vals), (sum(vals) / len(vals))
