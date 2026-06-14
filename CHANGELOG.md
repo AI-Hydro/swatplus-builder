@@ -2,6 +2,62 @@
 
 All notable changes to swatplus-builder are documented here.
 
+## [0.6.0] — 2026-06-14
+
+### Added
+- **Governance package** (`swatplus_builder.governance`): 7 pure gate functions
+  (`fresh_engine_gate`, `benchmark_lock_gate`, `outlet_provenance_gate`,
+  `research_metric_gate`, `soil_fidelity_gate`, `calibration_improvement_gate`,
+  `sensitivity_gate`) with zero hydrology imports. `usgs_e2e.py` delegates to
+  these via thin wrappers — governance logic is now separable from the SWAT+ domain.
+- **Flood-frequency toy domain** (`swatplus_builder.domains.flood_frequency`):
+  second-domain reference implementation on the governance core; 4 gates
+  (data adequacy, stationarity, distribution fit, return-period CI), own tier
+  mapping, and 32 tests. Demonstrates that `swatplus_builder.governance` is
+  domain-agnostic.
+- **Per-claim tier matrix** (`claim_tier_matrix`): `run_objective_10basin.py`
+  now reports a basins × assertion-type matrix (readiness / provenance /
+  comparison / metric → highest unblocked tier), replacing the scalar
+  `effective_claim_tier` headline.
+- **Evidence schema v1** (`schema_version: "1.0"`): Pydantic-owned schema with
+  required core fields; `migrate_legacy_bundle()` shim for round-trip
+  compatibility.
+- **`publication_grade` tier reachable** (C3): `_effective_claim_tier()` now
+  returns `publication_grade` when calibration + metric gates pass but
+  sensitivity / soil gates fail, instead of collapsing to `diagnostic`.
+  Decision documented in `docs/DECISIONS.md` as DG-C3.
+- **Audit collapse** (B2): `scripts/audit_production_objective.py` rewritten
+  from 5 259 → 449 lines; 97 named per-row checks replaced by 4 generic
+  structural invariants (I1–I4).
+- **Single-terminal delineation repair** (C1): `_build_topology` now enforces
+  a single-gauge → single-terminal invariant; multi-terminal emission raises
+  at build time.
+- **DDS calibration + split-sample validation** (C4): true Duan Shuffled
+  Complex Evolution optimizer replaces the greedy staged grid search; Klemeš
+  split-sample validation (calibrate / hold-out) gates claims that fail transfer.
+
+### Fixed
+- **GridMET trailing-day gaps**: `_repair_bounded_day_gaps` now correctly
+  forward-fills consecutive trailing days (server real-time coverage clip).
+  Repair cap raised 3 → 7 days. Fixes `weather_provider_data_gap` errors
+  when the requested end date is within GridMET's ~3–5 day real-time lag.
+- **GridMET pre-flight lag warning**: `fetch_gridmet` now emits a `WARNING`
+  before the network call when `end` is within 7 days of today, naming the
+  estimated coverage boundary. When forward-fill fires, a second `WARNING`
+  names the station, the last real observation date, and the synthetic day
+  count — operators know exactly what happened.
+- **`_augment_topology_from_gpkg` NameError**: the disk-fallback path in
+  `_build_topology` called this function but it was never defined. The inline
+  endpoint-snapping logic is now extracted into the named helper shared by
+  both paths.
+
+### Changed
+- `tiers.py` now exports `CLAIM_TIERS`, `tier_rank`, `higher_tier`; tier
+  ordering: `blocked < exploratory < diagnostic < publication_grade < research_grade`.
+- Hygiene (D2+D4): conversational agent-artifact comments removed; "negotiation"
+  framing in `workflows/contracts.py` replaced with typed pre-execution contract
+  language.
+
 ## [0.5.0] — 2026-06-12
 
 ### Added
