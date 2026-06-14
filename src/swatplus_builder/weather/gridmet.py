@@ -36,10 +36,13 @@ does not import ``pygridmet``; the import is deferred until
 from __future__ import annotations
 
 import datetime as _dt
+import logging
 import os
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterable, Sequence
+
+log = logging.getLogger(__name__)
 
 from ..config import DEFAULT_SETTINGS, Settings
 from ..errors import (
@@ -77,6 +80,10 @@ GRIDMET_VARIABLE_MAP: dict[WeatherVar, tuple[str, ...]] = {
 _GRIDMET_FETCH_ATTEMPTS = 3
 _GRIDMET_RETRY_SLEEP_SECONDS = 2.0
 _GRIDMET_CONN_TIMEOUT_SECONDS = 1800
+# GridMET typically lags real-time by 3–5 days; 7 is a conservative buffer.
+# Requests with end dates within this window may receive fewer rows than
+# expected because the THREDDS server silently clips to its coverage boundary.
+_GRIDMET_REALTIME_LAG_DAYS = 7
 
 
 # ---------------------------------------------------------------------------
@@ -148,6 +155,7 @@ def fetch_gridmet(
     """
     start_date, end_date = _parse_date_range(start, end)
     n_days = (end_date - start_date).days + 1
+    _warn_if_end_near_realtime(end_date, end)
 
     stations_typed = [_coerce_station(s) for s in stations]
     if not stations_typed:
@@ -198,6 +206,32 @@ def fetch_gridmet(
 # ---------------------------------------------------------------------------
 # Internals
 # ---------------------------------------------------------------------------
+
+
+def _warn_if_end_near_realtime(end_date: _dt.date, end_str: str) -> None:
+    """Emit a warning when *end_date* falls within GridMET's real-time lag window.
+
+    The THREDDS server silently clips responses to its coverage boundary
+    (~3–5 days behind today).  Requesting data inside that window will cause
+    the server to return fewer rows than asked for; those trailing days will be
+    forward-filled with the last available real observation.
+
+    Warn early so the operator can deliberately choose a safe end date rather
+    than silently receiving synthetic weather data.
+    """
+    today = _dt.date.today()
+    lag_boundary = today - _dt.timedelta(days=_GRIDMET_REALTIME_LAG_DAYS)
+    if end_date > lag_boundary:
+        log.warning(
+            "GridMET end date %s is within the server's real-time lag window "
+            "(estimated coverage boundary: %s). The server may return fewer rows "
+            "than requested; trailing missing days will be forward-filled with the "
+            "last available real observation. Consider using end ≤ %s to avoid "
+            "synthetic weather data.",
+            end_str,
+            lag_boundary.isoformat(),
+            lag_boundary.isoformat(),
+        )
 
 
 def _parse_date_range(start: str, end: str) -> tuple[_dt.date, _dt.date]:
@@ -380,6 +414,18 @@ def _repair_bounded_day_gaps(
 
     first_available = got[0]
     last_available = got[-1]
+
+    trailing_days = sorted(d for d in missing if d > last_available)
+    if trailing_days:
+        log.warning(
+            "GridMET station %r: server returned data through %s but %s was "
+            "requested (%d trailing day(s) missing). Forward-filling from last "
+            "real observation — these days contain synthetic weather data.",
+            station.name,
+            last_available.strftime("%Y-%m-%d"),
+            end,
+            len(trailing_days),
+        )
 
     repaired = df.copy()
     for day in sorted(missing):

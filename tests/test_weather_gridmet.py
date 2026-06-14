@@ -719,6 +719,85 @@ class TestRepairBoundedDayGaps:
         import pandas as pd
         assert result.index.is_monotonic_increasing
 
+    def test_trailing_gap_logs_warning(self, caplog):
+        """Forward-fill must emit a named warning so the user knows data is synthetic."""
+        import logging
+        from swatplus_builder.weather.gridmet import _repair_bounded_day_gaps
+        df = self._make_df("2015-01-01", 4)
+        with caplog.at_level(logging.WARNING, logger="swatplus_builder.weather.gridmet"):
+            _repair_bounded_day_gaps(
+                df, station=self._station(),
+                start="2015-01-01", end="2015-01-05", n_days=5,
+            )
+        assert any("synthetic" in r.message for r in caplog.records), (
+            "Expected a warning mentioning synthetic data; got: "
+            + str([r.message for r in caplog.records])
+        )
+        assert any("test" in r.message for r in caplog.records), (
+            "Warning should name the station"
+        )
+
+    def test_no_gap_does_not_log_warning(self, caplog):
+        """No-op repair must not emit spurious warnings."""
+        import logging
+        from swatplus_builder.weather.gridmet import _repair_bounded_day_gaps
+        df = self._make_df("2015-01-01", 5)
+        with caplog.at_level(logging.WARNING, logger="swatplus_builder.weather.gridmet"):
+            _repair_bounded_day_gaps(
+                df, station=self._station(),
+                start="2015-01-01", end="2015-01-05", n_days=5,
+            )
+        assert caplog.records == []
+
+
+# ---------------------------------------------------------------------------
+# _warn_if_end_near_realtime — unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestWarnIfEndNearRealtime:
+    def test_warns_for_recent_end_date(self, caplog):
+        import datetime
+        import logging
+        from swatplus_builder.weather.gridmet import _warn_if_end_near_realtime
+        yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+        with caplog.at_level(logging.WARNING, logger="swatplus_builder.weather.gridmet"):
+            _warn_if_end_near_realtime(
+                datetime.date.fromisoformat(yesterday), yesterday
+            )
+        assert any("lag" in r.message.lower() or "coverage" in r.message.lower()
+                   for r in caplog.records)
+
+    def test_no_warning_for_safe_historical_date(self, caplog):
+        import datetime
+        import logging
+        from swatplus_builder.weather.gridmet import _warn_if_end_near_realtime
+        safe = "2020-01-01"
+        with caplog.at_level(logging.WARNING, logger="swatplus_builder.weather.gridmet"):
+            _warn_if_end_near_realtime(datetime.date.fromisoformat(safe), safe)
+        assert caplog.records == []
+
+    def test_fetch_gridmet_warns_for_recent_end(self, monkeypatch, tmp_path, caplog):
+        """End-to-end: fetch_gridmet emits the warning before the network call."""
+        import datetime
+        import logging
+        from swatplus_builder.weather import fetch_gridmet
+
+        _install_fake_pygridmet(monkeypatch, _FakeClient(_mk_df))
+        # Use today - 3 days which is within the 7-day lag window
+        recent_end = (datetime.date.today() - datetime.timedelta(days=3)).isoformat()
+        recent_start = (datetime.date.today() - datetime.timedelta(days=5)).isoformat()
+        with caplog.at_level(logging.WARNING, logger="swatplus_builder.weather.gridmet"):
+            fetch_gridmet(
+                stations=[(41.1, -77.5, 300.0)],
+                start=recent_start,
+                end=recent_end,
+                variables=["pcp"],
+                cache_dir=tmp_path,
+            )
+        assert any("lag" in r.message.lower() or "coverage" in r.message.lower()
+                   for r in caplog.records)
+
 
 # ---------------------------------------------------------------------------
 # Cache dir resolution
