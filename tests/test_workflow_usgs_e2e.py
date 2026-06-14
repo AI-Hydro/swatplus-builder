@@ -2764,7 +2764,7 @@ def test_mass_trace_adds_specific_mass_closure_context_flags(tmp_path: Path):
     assert gate["mass_trace_channel_row_count"] == 2
     assert gate["mass_trace_selected_channel_row_count"] == 1
     assert gate["mass_trace_terminal_channel_row_count"] == 2
-    assert gate["ru_outflow_to_basin_wateryld_ratio"] == report.ru_outflow_to_basin_wateryld_ratio
+    assert gate["extended_diagnostics"]["ru_outflow_to_basin_wateryld_ratio"] == report.ru_outflow_to_basin_wateryld_ratio
 
 
 def test_terminal_trace_records_missing_graph_terminals(tmp_path: Path):

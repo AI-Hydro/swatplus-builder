@@ -2044,7 +2044,6 @@ def _evaluate_routing_flow_gate(run_dir: Path, values: dict[str, Any]) -> dict[s
         "closure_reference": getattr(report, "closure_reference", "basin_wateryld_m3"),
         "hru_wateryld_m3": report.hru_wateryld_m3,
         "ru_outflow_m3": report.ru_outflow_m3,
-        "ru_outflow_to_basin_wateryld_ratio": report.ru_outflow_to_basin_wateryld_ratio,
         "channel_inflow_m3": report.channel_inflow_m3,
         "terminal_outflow_m3": report.terminal_outflow_m3,
         "all_terminal_outflow_m3": report.all_terminal_outflow_m3,
@@ -2061,6 +2060,9 @@ def _evaluate_routing_flow_gate(run_dir: Path, values: dict[str, Any]) -> dict[s
         "mass_trace_terminal_channel_years": report.terminal_channel_years,
         "json_path": str(run_dir / "reports" / "mass_trace.json"),
         "markdown_path": str(run_dir / "reports" / "mass_trace.md"),
+        "extended_diagnostics": {
+            "ru_outflow_to_basin_wateryld_ratio": report.ru_outflow_to_basin_wateryld_ratio,
+        },
         "blocked_tiers": {}
         if passed
         else {
