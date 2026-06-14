@@ -344,12 +344,27 @@ def _repair_bounded_day_gaps(
     end: str,
     n_days: int,
 ) -> "pd.DataFrame":
-    """Fill a few isolated provider-missing days using adjacent or nearest data."""
+    """Fill provider-missing days using adjacent or nearest data.
+
+    Handles three gap patterns:
+
+    * **Leading** (missing days before the first returned row): backward-fill
+      from the first available row.
+    * **Trailing** (missing days after the last returned row — the common case
+      when the server clips to its real-time coverage boundary): forward-fill
+      from the last available row.
+    * **Interior** (isolated missing day between two available days): linear
+      average of the flanking days.
+
+    The cap is 7 days, which covers the typical GridMET real-time lag (~3 days)
+    plus a safety margin.  Gaps larger than 7 days are returned unrepaired so
+    that ``_validate_response_shape`` raises a clear error.
+    """
     if len(df) == n_days:
         return df
 
     missing_count = n_days - len(df)
-    if missing_count < 1 or missing_count > 3:
+    if missing_count < 1 or missing_count > 7:
         return df
 
     import pandas as pd
@@ -363,22 +378,34 @@ def _repair_bounded_day_gaps(
     if len(missing) != missing_count:
         return df
 
+    first_available = got[0]
+    last_available = got[-1]
+
     repaired = df.copy()
-    for day in missing:
-        if day == expected[0]:
-            row = repaired.iloc[[0]].copy()
-            row.index = pd.DatetimeIndex([day])
-            repaired = pd.concat([repaired, row])
-        elif day == expected[-1]:
-            row = repaired.iloc[[-1]].copy()
+    for day in sorted(missing):
+        if day < first_available:
+            # Leading gap: backward-fill from first available row
+            row = repaired.loc[[repaired.index.min()]].copy()
             row.index = pd.DatetimeIndex([day])
             repaired = pd.concat([row, repaired])
+        elif day > last_available:
+            # Trailing gap (server clipped end of coverage): forward-fill
+            row = repaired.loc[[repaired.index.max()]].copy()
+            row.index = pd.DatetimeIndex([day])
+            repaired = pd.concat([repaired, row])
         else:
+            # Interior gap: average flanking days from the original data
             prev_day = day - pd.Timedelta(days=1)
             next_day = day + pd.Timedelta(days=1)
             if prev_day not in got or next_day not in got:
                 return df
-            row = ((repaired.loc[[prev_day]].reset_index(drop=True) + repaired.loc[[next_day]].reset_index(drop=True)) / 2.0)
+            row = (
+                (
+                    repaired.loc[[prev_day]].reset_index(drop=True)
+                    + repaired.loc[[next_day]].reset_index(drop=True)
+                )
+                / 2.0
+            )
             row.index = pd.DatetimeIndex([day])
             repaired = pd.concat([repaired, row])
 
