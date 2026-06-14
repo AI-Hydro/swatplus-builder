@@ -933,6 +933,60 @@ def main(
             ",".join(complexity.reasons) or "ok",
         )
 
+    if ws is None:
+        # All threshold attempts raised SwatBuilderPipelineError (typically multi-terminal
+        # on flat terrain). Try once with NHD stream-burned DEM to force D8 connectivity.
+        log.warning(
+            "All delineation thresholds failed for %s — trying NHD stream-burn fallback.",
+            STATION_ID,
+        )
+        _flowlines_gpkg = outdir / "raw" / "nhd_flowlines.gpkg"
+        try:
+            from swatplus_builder.gis.nldi_fallback import fetch_nhd_flowlines
+            _flowlines_path = fetch_nhd_flowlines(STATION_ID, _flowlines_gpkg)
+            if _flowlines_path is not None:
+                _burn_workdir = outdir / "delin_burned"
+                _is_fallback_bnd = boundary_provenance.get("source") not in (
+                    "nldi_authoritative", None
+                )
+                _area_tol_burn = float(os.environ.get("SWATPLUS_AREA_TOLERANCE_PCT", "30.0"))
+                ws_try = delineate(
+                    dem_path=dem_tif,
+                    outlet=outlet,
+                    workdir=_burn_workdir,
+                    stream_threshold_cells=base_threshold,
+                    expected_area_km2=EXPECTED_AREA_KM2 if EXPECTED_AREA_KM2 > 0 else None,
+                    dem_conditioning=dem_conditioning,
+                    stream_burn_vector=_flowlines_path,
+                    stream_burn_depth_m=10.0,
+                )
+                _vr = validate_watershed(
+                    ws_try,
+                    reference_polygon=None if _is_fallback_bnd else basin_gpkg,
+                    area_tolerance_pct=_area_tol_burn,
+                )
+                _burn_complexity = assess_topology_complexity(ws_try.stats, complexity_policy)
+                threshold_attempts.append({
+                    "threshold_cells": base_threshold,
+                    "validation_passed": _vr.passed,
+                    "area_diff_pct": _vr.area_diff_pct,
+                    "iou_pct": _vr.iou_pct,
+                    "n_subbasins": ws_try.stats.get("n_subbasins"),
+                    "n_channels": ws_try.stats.get("n_channels"),
+                    "avg_subbasin_area_km2": _burn_complexity.avg_subbasin_area_km2,
+                    "complexity_acceptable": _burn_complexity.acceptable,
+                    "complexity_reasons": list(_burn_complexity.reasons) + ["stream_burn_fallback"],
+                    "topology_suspicious": _topology_suspicious(ws_try.stats),
+                })
+                ws = ws_try
+                validation = _vr
+                selected_threshold = base_threshold
+                log.info("Stream-burn delineation succeeded for %s.", STATION_ID)
+        except SwatBuilderPipelineError as exc:
+            log.warning("Stream-burn delineation also failed for %s: %s", STATION_ID, exc)
+        except Exception as exc:
+            log.warning("Stream-burn fallback error for %s: %s", STATION_ID, exc)
+
     if ws is None or validation is None:
         raise RuntimeError(
             "Delineation failed to produce a watershed after threshold attempts: "

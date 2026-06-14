@@ -1,4 +1,4 @@
-"""Basin boundary acquisition with explicit provenance.
+"""Basin boundary acquisition and NHD flowline fetch with explicit provenance.
 
 The full fallback cascade is intentionally conservative in package code: use
 authoritative NLDI basins when available, and fail with a typed provenance note
@@ -7,10 +7,13 @@ when no implemented fallback can supply a boundary.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -60,6 +63,34 @@ def fetch_basin_boundary_cascade(usgs_id: str, *, dem_path: Path | None = None):
         "basin_boundary_unavailable: "
         + "; ".join(f"{a['source']}={a['message']}" for a in attempts)
     )
+
+
+def fetch_nhd_flowlines(usgs_id: str, out_gpkg: Path) -> Path | None:
+    """Fetch NHD upstream flowlines for a USGS gauge via NLDI.
+
+    Returns path to saved GPKG, or None when NLDI fails or returns empty.
+    Used as a stream-burn vector input to correct D8 flow direction on flat
+    terrain before WhiteboxTools delineation.
+    """
+    try:
+        from pynhd import NLDI
+        flowlines = NLDI().navigate_byid(
+            "nwissite",
+            f"USGS-{usgs_id}",
+            "upstreamTributaries",
+            "nhdflowline_network",
+            distance=9999,
+        )
+        if flowlines is None or flowlines.empty:
+            log.warning("NLDI returned no NHD flowlines for %s.", usgs_id)
+            return None
+        out_gpkg.parent.mkdir(parents=True, exist_ok=True)
+        flowlines.to_file(out_gpkg, driver="GPKG")
+        log.info("NHD flowlines: %d features saved to %s", len(flowlines), out_gpkg.name)
+        return out_gpkg
+    except Exception as exc:
+        log.warning("NHD flowlines fetch failed for %s: %s", usgs_id, exc)
+        return None
 
 
 def _fetch_nldi_boundary(usgs_id: str):

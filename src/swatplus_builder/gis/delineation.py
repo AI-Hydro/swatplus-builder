@@ -156,6 +156,8 @@ def delineate(
     max_terminals: int = 5,
     max_terminal_rate: float = 0.08,
     dem_conditioning: str = "breach",
+    stream_burn_vector: Path | str | None = None,
+    stream_burn_depth_m: float = 10.0,
     settings: Settings = DEFAULT_SETTINGS,
 ) -> WatershedResult:
     """Delineate subbasins and channels from a DEM and a pour point.
@@ -185,6 +187,13 @@ def delineate(
         max_terminal_rate:      Fraction of subbasins allowed to be terminals. DEM-boundary-
                                 truncated large basins legitimately have boundary terminals.
                                 Default 0.08 (8%).
+        stream_burn_vector:     Optional GeoPackage/Shapefile of river centrelines (e.g. NHD
+                                flowlines) to burn into the DEM before depression conditioning.
+                                Lowers DEM elevation along stream cells by ``stream_burn_depth_m``
+                                so D8 flow direction follows the real channel network on flat
+                                terrain. Effective fix for the multi-terminal C1 failure class.
+        stream_burn_depth_m:    Elevation decrement (metres) applied to stream-vector cells
+                                during DEM burning. Default 10 m.
         settings:               Runtime overrides (backend, verbosity, …).
 
     Returns:
@@ -229,6 +238,15 @@ def delineate(
     log.info("[1/10] Ensuring projected CRS …")
     dem_proj, proj_crs = _ensure_projected_dem(dem_path, rasters, settings)
     log.info("       CRS: %s", proj_crs)
+
+    # ------------------------------------------------------------------
+    # 1b. Optional stream burning — lower DEM along NHD/vector flowlines
+    # ------------------------------------------------------------------
+    if stream_burn_vector is not None:
+        log.info("[1b] Burning stream vector into DEM (depth=%.1f m) …", stream_burn_depth_m)
+        dem_proj = _burn_streams_into_dem(
+            dem_proj, Path(stream_burn_vector), rasters, stream_burn_depth_m
+        )
 
     # ------------------------------------------------------------------
     # 2. Breach/fill depressions (hydrological conditioning)
@@ -527,6 +545,74 @@ def resolve_usgs_outlet(usgs_id: str) -> Outlet:
     sites = nldi.getfeature_byid("nwissite", f"USGS-{usgs_id}")
     geom = sites.geometry.iloc[0]
     return Outlet(lon=float(geom.x), lat=float(geom.y), usgs_id=usgs_id)
+
+
+# ---------------------------------------------------------------------------
+# Private helpers — stream burning
+# ---------------------------------------------------------------------------
+
+def _burn_streams_into_dem(
+    dem_proj: Path,
+    stream_vector: Path,
+    rasters_dir: Path,
+    burn_depth_m: float = 10.0,
+) -> Path:
+    """Lower DEM elevation by burn_depth_m along stream vector cells.
+
+    Returns path to the burned DEM GeoTIFF (rasters/dem_stream_burned.tif).
+    The original DEM is not modified.  On flat terrain the burned channel
+    cells guide D8 flow direction to follow the real river network, avoiding
+    the disconnected-subgraph / multi-terminal failure class.
+    """
+    import geopandas as gpd
+    from rasterio.features import rasterize as _rasterize
+
+    streams = gpd.read_file(stream_vector)
+    if streams.empty:
+        log.warning("Stream burn: no features in %s — skipping.", stream_vector.name)
+        return dem_proj
+
+    with rasterio.open(dem_proj) as src:
+        profile = src.profile.copy()
+        dem_arr = src.read(1)
+        nodata = src.nodata
+
+    dem_crs = CRS.from_user_input(profile["crs"])
+    if streams.crs is None or not streams.crs.equals(dem_crs):
+        streams = streams.to_crs(dem_crs)
+
+    valid_geoms = [g for g in streams.geometry if g is not None and not g.is_empty]
+    if not valid_geoms:
+        log.warning("Stream burn: all geometries invalid/empty — skipping.")
+        return dem_proj
+
+    burn_mask = _rasterize(
+        [(g, 1) for g in valid_geoms],
+        out_shape=(profile["height"], profile["width"]),
+        transform=profile["transform"],
+        fill=0,
+        dtype=np.uint8,
+    )
+
+    dem_f = dem_arr.astype(np.float32)
+    if nodata is not None:
+        stream_cells = (burn_mask > 0) & (dem_f != float(nodata))
+    else:
+        stream_cells = burn_mask > 0
+
+    dem_f[stream_cells] -= burn_depth_m
+
+    burned_path = rasters_dir / "dem_stream_burned.tif"
+    out_profile = profile.copy()
+    out_profile.update(dtype="float32")
+    with rasterio.open(burned_path, "w", **out_profile) as dst:
+        dst.write(dem_f, 1)
+
+    log.info(
+        "Stream burn: lowered %d DEM cells by %.1f m along flowline vector.",
+        int(stream_cells.sum()), burn_depth_m,
+    )
+    return burned_path
 
 
 # ---------------------------------------------------------------------------
