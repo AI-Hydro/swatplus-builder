@@ -15,7 +15,19 @@ an **MCP server** (13 tools available to the agent) and a **registered skill**
 pip install "swatplus-builder[gis,mcp]"
 ```
 
-### 2. Add the MCP server to AI-Hydro
+### 2. Install the engine binary
+
+The SWAT+ engine binary is not a pip dependency. Download from
+[swat.tamu.edu/software/plus](https://swat.tamu.edu/software/plus/) then:
+
+```bash
+swat setup engine --path /path/to/downloaded/swatplus_exe
+```
+
+This installs to `~/.swatplus_builder/bin/` and is picked up automatically.
+Run `swat setup engine` (no args) to check status or get download instructions.
+
+### 3. Add the MCP server to AI-Hydro
 
 Open your AI-Hydro MCP settings (`aihydro_mcp_settings.json`) and add:
 
@@ -24,20 +36,22 @@ Open your AI-Hydro MCP settings (`aihydro_mcp_settings.json`) and add:
   "mcpServers": {
     "swatplus-builder": {
       "command": "swat",
-      "args": ["mcp"],
-      "env": {
-        "SWATPLUS_EXE": "/path/to/swatplus_exe",
-        "SWATPLUS_BUILDER_ARTIFACTS": "/data/artifacts"
-      }
+      "args": ["mcp"]
     }
   }
 }
 ```
 
-`SWATPLUS_EXE` points to the SWAT+ engine binary you supply (not a pip
-dependency). `SWATPLUS_BUILDER_ARTIFACTS` is where run artifacts are persisted.
+No `SWATPLUS_EXE` env var needed if you used `swat setup engine --path`. If you
+installed the engine manually, add it:
 
-### 3. Install from the Marketplace
+```json
+{
+  "env": { "SWATPLUS_EXE": "/path/to/swatplus_exe" }
+}
+```
+
+### 4. Install from the Marketplace
 
 swatplus-builder is listed in the
 [AI-Hydro Marketplace](https://github.com/AI-Hydro/Marketplace). From
@@ -64,22 +78,39 @@ for correct sequencing.
 
 ## Running the full pipeline
 
+### Via MCP tools (hosted/chat agents)
+
 Once the MCP server is connected and the skill is loaded, ask the agent:
 
 ```
 Build and calibrate a SWAT+ model for USGS gauge 01547700.
-Use the canonical workflow: build → run → lock benchmark → locked calibrate → verify.
 Report the evidence tier and calibrated NSE vs baseline.
 ```
 
 The agent will:
 
-1. Call `build_project` to delineate the watershed and generate the SWAT+ project.
-2. Call `run_basin` to execute the base simulation.
-3. Call `lock_benchmark` to snapshot baseline metrics (required before calibration).
-4. Call `locked_calibrate` with `CN2` + `ALPHA_BF` parameters.
-5. Call `validate` to verify the calibrated solution independently.
-6. Return the evidence bundle path and the allowed claim tier.
+1. Call `run_workflow(usgs_id="01547700")` — launches the canonical pipeline
+   (build → run → lock benchmark → calibration → locked verification →
+   evidence bundle) as a **background process** and returns immediately.
+2. Poll `workflow_status(out_dir=...)` roughly every 60 s until `completed`.
+3. On completion, read `evidence_summary_path` and report **only** from the
+   evidence bundle — allowed claims, blocked claims, effective tier.
+
+### Via CLI (shell-native agents, scripts)
+
+Shell-native agents (Claude Code, Cursor) and reproducible scripts should use
+the CLI directly — it is equivalent and often faster to iterate with:
+
+```bash
+swat workflow run --usgs-id 01547700 \
+  --start 2000-01-01 --end 2019-12-31 \
+  --model-family full --warmup-years 3 \
+  --calibrate --claim-tier diagnostic \
+  --out-dir runs/usgs_01547700 --json
+```
+
+The MCP `run_workflow` tool returns an `equivalent_cli` field with this exact
+command for every run — record it for reproducibility.
 
 ---
 

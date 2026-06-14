@@ -85,17 +85,23 @@ not supported.
 | **Source / releases** | [github.com/swat-model](https://github.com/swat-model) |
 
 Download the Linux or macOS binary for a supported revision (rev 60.5.7 –
-61.0.2.61; the latest v2023 release is recommended), mark it executable, and
-place it on `PATH` as `swatplus`:
+61.0.2.61; the latest v2023 release is recommended), then install with the
+built-in setup command — **no `PATH` or env-var configuration needed**:
+
+```bash
+swat setup engine --path /path/to/downloaded/swatplus_exe
+```
+
+This copies the binary to `~/.swatplus_builder/bin/` and is found automatically
+on every subsequent run. Run `swat setup engine` (no args) to check current
+status or get download instructions.
+
+**Alternative — manual placement:**
 
 ```bash
 chmod +x swatplus_exe
-sudo mv swatplus_exe /usr/local/bin/swatplus
-```
-
-Or leave it anywhere and set the env var:
-
-```bash
+sudo mv swatplus_exe /usr/local/bin/swatplus   # name it 'swatplus' on PATH
+# or leave it anywhere:
 export SWATPLUS_EXE=/path/to/swatplus_exe
 ```
 
