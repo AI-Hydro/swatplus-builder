@@ -518,7 +518,7 @@ def main(
             workdir=outdir / "delin",
             stream_threshold_cells=th,
             expected_area_km2=EXPECTED_AREA_KM2 if EXPECTED_AREA_KM2 > 0 else None,
-            dem_conditioning=dem_conditioning,  # type: ignore[arg-type]
+            dem_conditioning=dem_conditioning,
         )
         # Default 30 %: DEM-boundary truncation can legitimately leave 25-30 % of
         # a large basin outside the delineated watershed. Override via env var.

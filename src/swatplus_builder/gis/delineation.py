@@ -155,6 +155,7 @@ def delineate(
     max_channels_per_subbasin: float = 50.0,
     max_terminals: int = 5,
     max_terminal_rate: float = 0.08,
+    dem_conditioning: str = "breach",
     settings: Settings = DEFAULT_SETTINGS,
 ) -> WatershedResult:
     """Delineate subbasins and channels from a DEM and a pour point.
@@ -232,12 +233,17 @@ def delineate(
     # ------------------------------------------------------------------
     # 2. Breach/fill depressions (hydrological conditioning)
     # ------------------------------------------------------------------
-    log.info("[2/10] Conditioning DEM (BreachDepressionsLeastCost) …")
     dem_cond = rasters / "dem_conditioned.tif"
-    rc = wbt.breach_depressions_least_cost(
-        str(dem_proj), str(dem_cond), dist=5, fill=True
-    )
-    _check_wbt_output(rc, "BreachDepressionsLeastCost", dem_cond)
+    if dem_conditioning == "fill":
+        log.info("[2/10] Conditioning DEM (FillDepressions) …")
+        rc = wbt.fill_depressions(str(dem_proj), str(dem_cond))
+        _check_wbt_output(rc, "FillDepressions", dem_cond)
+    else:
+        log.info("[2/10] Conditioning DEM (BreachDepressionsLeastCost) …")
+        rc = wbt.breach_depressions_least_cost(
+            str(dem_proj), str(dem_cond), dist=5, fill=True
+        )
+        _check_wbt_output(rc, "BreachDepressionsLeastCost", dem_cond)
 
     # ------------------------------------------------------------------
     # 3 & 4. D8 flow direction + accumulation

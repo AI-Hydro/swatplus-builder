@@ -1079,7 +1079,7 @@ def _diagnostic_calibration_phases(
             },
             {
                 "phase": "baseflow_subsurface",
-                "parameters": ["LAT_TTIME", "LATQ_CO", "PERCO", "ALPHA_BF", "RCHG_DP", "GW_DELAY"],
+                "parameters": ["LAT_TTIME", "LATQ_CO", "PERCO", "ALPHA_BF", "RCHG_DP"],
                 "objective": "maintain_volume_gate_then_improve_bfi_and_kge",
             },
             {

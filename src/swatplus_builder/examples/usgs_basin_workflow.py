@@ -863,6 +863,7 @@ def main(
                 workdir=outdir / "delin",
                 stream_threshold_cells=th,
                 expected_area_km2=EXPECTED_AREA_KM2 if EXPECTED_AREA_KM2 > 0 else None,
+                dem_conditioning=dem_conditioning,
             )
         except SwatBuilderPipelineError as exc:
             threshold_attempts.append({

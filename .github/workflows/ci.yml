@@ -95,37 +95,54 @@ jobs:
           WBT_EXE="${WBT_PKG_DIR}/whitebox_tools"
 
           if [ -f "${WBT_CACHE}/whitebox_tools" ]; then
-            echo "Using cached WBT binary."
+            echo "Restoring cached WBT binary."
+            mkdir -p "${WBT_PKG_DIR}/WBT"
             cp "${WBT_CACHE}/whitebox_tools" "${WBT_EXE}"
-            chmod +x "${WBT_EXE}"
-            # Restore the WBT/ subdirectory if the whitebox package needs it
-            mkdir -p "${WBT_PKG_DIR}/WBT"
             cp "${WBT_CACHE}/whitebox_tools" "${WBT_PKG_DIR}/WBT/whitebox_tools"
-            chmod +x "${WBT_PKG_DIR}/WBT/whitebox_tools"
+            chmod +x "${WBT_EXE}" "${WBT_PKG_DIR}/WBT/whitebox_tools"
           else
-            echo "Downloading WhiteboxTools Linux binary..."
-            # Use the GitHub backup mirror — whiteboxgeo.com primary frequently
-            # times out in CI (noted in whitebox-python source code).
-            BACKUP_URL="https://github.com/giswqs/whitebox-bin/raw/master/WhiteboxTools_linux_amd64.zip"
-            PRIMARY_URL="https://www.whiteboxgeo.com/WBT_Linux/WhiteboxTools_linux_amd64.zip"
-            curl -fsSL -o /tmp/wbt_linux.zip "${BACKUP_URL}" \
-              || curl -fsSL -o /tmp/wbt_linux.zip "${PRIMARY_URL}"
-            unzip -o /tmp/wbt_linux.zip -d /tmp/wbt_extract
-            # The zip extracts to WhiteboxTools_linux_amd64/WBT/whitebox_tools
-            find /tmp/wbt_extract -name "whitebox_tools" -type f | head -1 \
-              | xargs -I{} cp {} "${WBT_EXE}"
-            chmod +x "${WBT_EXE}"
-            # Also populate WBT/ subdir so whitebox.download_wbt() sees it as done
-            mkdir -p "${WBT_PKG_DIR}/WBT"
-            cp "${WBT_EXE}" "${WBT_PKG_DIR}/WBT/whitebox_tools"
-            chmod +x "${WBT_PKG_DIR}/WBT/whitebox_tools"
-            # Persist to cache
+            echo "Downloading WhiteboxTools Linux binary via whitebox-python's own download logic..."
+            # whitebox.download_wbt() fetches from whiteboxgeo.com (latest, compatible with
+            # whitebox-python 2.3.x). The giswqs/whitebox-bin mirror is stuck at v2.0.0 and
+            # incompatible — avoid it. We retry 3 times at the curl level to handle transient
+            # network issues.
+            python -c "
+import whitebox, os, sys
+try:
+    whitebox.download_wbt(verbose=True)
+    print('download_wbt() completed')
+except Exception as e:
+    print(f'download_wbt() raised: {e}', file=sys.stderr)
+    # Try direct curl as a last resort — same URL, with retry
+    pkg_dir = os.path.dirname(os.path.abspath(whitebox.__file__))
+    url = 'https://www.whiteboxgeo.com/WBT_Linux/WhiteboxTools_linux_amd64.zip'
+    import subprocess, zipfile, shutil, tempfile, pathlib
+    out = pathlib.Path(tempfile.mkdtemp()) / 'wbt.zip'
+    subprocess.run(['curl', '--retry', '3', '--retry-delay', '5', '-L', '-o', str(out), url], check=True)
+    with zipfile.ZipFile(out) as zf:
+        zf.extractall(pkg_dir)
+    # Locate the extracted binary
+    for p in pathlib.Path(pkg_dir).rglob('whitebox_tools'):
+        if p.is_file() and 'WBT' in p.parts:
+            p.chmod(p.stat().st_mode | 0o111)
+            shutil.copy2(p, pkg_dir + '/whitebox_tools')
+            shutil.copy2(p, pkg_dir + '/WBT/whitebox_tools')
+            print(f'Installed from curl fallback: {p}')
+            break
+"
+            # Persist to cache for subsequent runs
             mkdir -p "${WBT_CACHE}"
             cp "${WBT_EXE}" "${WBT_CACHE}/whitebox_tools"
           fi
 
-          # Verify the binary runs
-          "${WBT_EXE}" --version
+          # Verify the binary runs and report version
+          WBT_VERSION=$("${WBT_EXE}" --version 2>&1 | head -1)
+          echo "WBT binary: ${WBT_VERSION}"
+          # Fail if we ended up with the old v2.0.0 backup binary (incompatible)
+          if echo "${WBT_VERSION}" | grep -q "v2\.0\.0"; then
+            echo "ERROR: WBT v2.0.0 is incompatible with whitebox-python 2.3.x. Download from whiteboxgeo.com failed."
+            exit 1
+          fi
 
       - name: Bootstrap SWAT+ Linux engine (pinned release asset)
         run: |
