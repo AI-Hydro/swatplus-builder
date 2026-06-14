@@ -1340,7 +1340,7 @@ def test_degraded_soil_provenance_blocks_research_effective_tier(monkeypatch, tm
     )
     data = json.loads(Path(res.evidence_summary_path).read_text(encoding="utf-8"))
 
-    assert data["effective_claim_tier"] == "diagnostic"
+    assert data["effective_claim_tier"] == "publication_grade"
     assert "soil_fidelity" in data["gates_failed"]
     assert any(
         c["claim"] == "soil_fidelity_gate_passed"
