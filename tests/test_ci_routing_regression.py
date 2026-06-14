@@ -104,14 +104,22 @@ def test_multibasin_routing_regression_gate(tmp_path: Path) -> None:
         assert sid in by_id, f"Missing site in summary: {sid}{runner_ctx}"
         row = by_id[sid]
         row_json = json.dumps(row, indent=2)
+
+        # Read per-site engine diagnostic file (written by runner after engine step).
+        engine_diag = ""
+        if "run_dir" in row:
+            diag_path = REPO_ROOT / row["run_dir"] / "engine_diag.txt"
+            if diag_path.exists():
+                engine_diag = f"\n\n--- engine_diag.txt ---\n{diag_path.read_text(encoding='utf-8')}"
+
         assert row["status"] == "success", (
-            f"{sid} failed: {row.get('error')}\n\nrow:\n{row_json}{runner_ctx}"
+            f"{sid} failed: {row.get('error')}\n\nrow:\n{row_json}{runner_ctx}{engine_diag}"
         )
         assert (row.get("terminal_channels_with_flow") or 0) > 0, (
-            f"{sid} has zero terminal flow rows.\n\nrow:\n{row_json}{runner_ctx}"
+            f"{sid} has zero terminal flow rows.\n\nrow:\n{row_json}{runner_ctx}{engine_diag}"
         )
         assert (row.get("terminal_channels_total") or 0) > 0, (
-            f"{sid} has zero terminal channel count.\n\nrow:\n{row_json}{runner_ctx}"
+            f"{sid} has zero terminal channel count.\n\nrow:\n{row_json}{runner_ctx}{engine_diag}"
         )
 
         run_dir = REPO_ROOT / row["run_dir"]
