@@ -10,26 +10,36 @@
   <img src="assets/images/swatplus-builder-readme-thumbnail.png" alt="swatplus-builder: Claim-governed SWAT+ workflows with auditable evidence" width="100%">
 </p>
 
-> **Calibrated SWAT+ models from a single gauge ID — with evidence you can audit.**
+> **A calibrated SWAT+ model from one gauge ID — and a machine-readable record of exactly what you may, and may not, claim about it.**
 
-`swatplus-builder` builds and calibrates SWAT+ hydrologic models in Python,
-starting from one USGS streamgage ID. It can be driven by a person or by an AI
-agent — and either way, the **software, not the operator, decides what each
-result is allowed to claim**, through runtime gates, provenance, locked reruns,
-and evidence-backed claim tiers.
+`swatplus-builder` turns a single USGS streamgage ID into a built, run, and
+calibrated SWAT+ hydrologic model — entirely in Python, with **no desktop GIS**.
+A person or an AI agent can drive it; either way the **software, not the
+operator, decides what each result is allowed to claim**, through runtime gates,
+provenance hashes, independently verified reruns, and explicit claim tiers.
 
-The whole pipeline runs in Python with **no desktop GIS** — no QGIS, PyQGIS, or
-the QSWATPlus plugin. GIS work uses WhiteboxTools + rasterio + geopandas, and
-the SQLite → `TxtInOut` translation uses the vendored
+### What makes it different
+
+Most modeling tools will happily report a number. This one reports a number
+**and the evidence that authorizes it** — and refuses to label a result
+"research-grade" until every gate (physical realism, soil provenance, routing
+closure, verified calibration) actually passes. A blocked claim is not a crash;
+it is *classified evidence*. That makes both the successes and the limitations
+of an automated build inspectable — the core property you need when an LLM agent,
+not a hydrologist, is at the controls.
+
+### Pipeline at a glance
+
+```
+USGS gauge ID
+   └─▶ delineate ─▶ HRUs ─▶ weather + soils ─▶ SWAT+ project ─▶ engine run
+          └─▶ lock benchmark ─▶ gated calibration ─▶ verified locked rerun
+                 └─▶ evidence bundle  { allowed claims · blocked claims · tier }
+```
+
+No QGIS, PyQGIS, or the QSWATPlus plugin: GIS uses WhiteboxTools + rasterio +
+geopandas, and the SQLite → `TxtInOut` translation uses the vendored
 [SWAT+ Editor Python API](https://github.com/swat-model/swatplus-editor).
-
-> **📚 Full documentation: <https://ai-hydro.github.io/swatplus-builder/>**
-> Concepts (claim governance, locked calibration, the evidence bundle), a user
-> guide, the agent/MCP surface, and a CLI/Python/schema reference.
->
-> **New here? Read [`QUICKSTART.md`](QUICKSTART.md).** It covers requirements,
-> install, engine/reference-DB bootstrap, the canonical one-command workflow,
-> and how to operate the pipeline through an AI agent (MCP).
 
 The canonical end-to-end path is a single command:
 
@@ -43,6 +53,11 @@ It builds the model, runs the engine, locks a benchmark, runs gated diagnostic
 calibration, independently verifies a locked rerun, and writes a machine-readable
 **evidence bundle** with explicit allowed/blocked claims. The package — not the
 agent — decides what may be claimed.
+
+> **📚 Full documentation: <https://ai-hydro.github.io/swatplus-builder/>** —
+> concepts (claim governance, locked calibration, the evidence bundle), a user
+> guide, the agent/MCP surface, and a CLI/Python/schema reference.
+> **New here?** Start with [`QUICKSTART.md`](QUICKSTART.md).
 
 ---
 
@@ -375,4 +390,4 @@ reproducible. See [Citing & references](https://ai-hydro.github.io/swatplus-buil
 
 MIT. See [LICENSE](LICENSE).
 
-Vendored: [`swat-model/swatplus-editor`](https://github.com/swat-model/swatplus-editor) (Apache-2.0). Reference databases downloaded at install time from the `ai-hydro/swatplus-reference-data` mirror. pySWATPlus is GPL-3.0 and is an optional dependency — see `DECISIONS.md` for the licensing posture.
+Vendored: [`swat-model/swatplus-editor`](https://github.com/swat-model/swatplus-editor) (Apache-2.0). The SWAT+ reference databases are **not** bundled or auto-downloaded — you supply them from the SWAT+ Editor desktop app (see [Bootstrap](https://ai-hydro.github.io/swatplus-builder/getting-started/bootstrap/)). pySWATPlus is GPL-3.0 and is an optional dependency — see `DECISIONS.md` for the licensing posture.
