@@ -5,7 +5,7 @@
 Phase 3L — Full-Mode Engine Compatibility & Research-Grade Pipeline  
 *(Phase 3G closed 2026-05-09 — discovery pipeline, experiment suite, agent contracts)*
 
-**Current focus:** The canonical full-mode workflow is implemented and auditable, but the objective-suite target is still scientifically open. The canonical 2026-05-25 objective report has `research_grade_count=1` and marks the >=7 target `not_supported_by_current_evidence` without weakening gates. In the moved checkout, reproducibility packaging is now the active blocker: `demo_runs/` sidecars are absent, the compliance audit reports `69/97`, and the manuscript-sidecar audit reports `0/108` referenced objective-suite sidecars present. Treat older `96/97` audit language as historical unless the artifact tree is restored or the objective suite is regenerated in the current workspace.
+**Current focus:** The canonical full-mode workflow is implemented and auditable, but the objective-suite target is still scientifically open. As of 2026-06-17, the summarize-only objective report has been regenerated from existing evidence with fresher overrides for `01547700`, `01493500`, `03351500`, and `02129000`; it reports `research_grade_count=0/11`, `target_hypothesis_evaluation.status=not_supported_by_current_evidence`, and blocker domains `science=6`, `provenance=3`, `diagnostics=2`. The production compliance audit reports `complete` (`17/17`). Treat older `69/97` or `96/97` audit language as historical unless explicitly tied to an older dated entry.
 
 ### [2026-05-25] — Virtual all-terminal scope no longer re-blocks itself through selected-outlet diagnostics
 
@@ -8849,3 +8849,40 @@ New documentation: `docs/FULL_MODE_QSWAT_REFERENCE_AUDIT.md`.
   - Release prep:
     - PyPI latest verified as `0.7.0`;
     - package metadata bumped to `0.7.1` for this hardening release.
+- [2026-06-17] [Phase E objective report refresh with clean 01547700 evidence]
+  Regenerated the summarize-only objective basin report after the clean
+  20-year `01547700` rerun, without launching new basin workflows.
+  - Command used:
+    `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python scripts/run_objective_10basin.py --summarize-existing --out-root demo_runs/objective_10basin_repro_20260609 --evidence-override 02129000=demo_runs/objective_10basin/02129000/evidence_summary.json --evidence-override 01547700=swatplus_runs/phaseE_01547700_clean_20260616_2000_2019/evidence_summary.json --evidence-override 01493500=swatplus_runs/realtest_01493500_phaseB_subsurface_prior/evidence_summary.json --evidence-override 03351500=swatplus_runs/realtest_03351500_phaseB_subsurface_prior/evidence_summary.json`
+  - Output artifacts are ignored by git but refreshed in the workspace:
+    `docs/OBJECTIVE_BASIN_VALIDATION_REPORT.md` and
+    `docs/objective_basin_validation_report.json`.
+  - Current objective status:
+    - `date=2026-06-17`
+    - `basin_count=11`
+    - `research_grade_count=0`
+    - blocker domains:
+      `science=6`, `provenance=3`, `diagnostics=2`, `engineering=0`,
+      `calibration=0`, `parameter_support=0`
+    - science blockers:
+      `BELOW_RESEARCH_SKILL=4`, `MASS_IMBALANCE=1`,
+      `simulated_volume_deficit=1`
+    - `target_hypothesis_evaluation.status=not_supported_by_current_evidence`
+  - `01547700` now points to the clean evidence summary:
+    `swatplus_runs/phaseE_01547700_clean_20260616_2000_2019/evidence_summary.json`.
+    Its suite row is still `exploratory`, primary blocker
+    `BELOW_RESEARCH_SKILL`, with final locked verification metrics
+    `NSE=0.17421743409229573`, `KGE=0.15378695758241723`,
+    `PBIAS=-16.64514043788412`.
+  - Interpretation: the clean 20-year run strengthens the honest blocker
+    classification. The package now shows that volume partition can be repaired
+    for `01547700`, but the suite still does not support a research-grade
+    pass-count claim; remaining blockers are mainly science skill,
+    provenance, and diagnostics rather than packaging or compliance gaps.
+  - Verification:
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python scripts/audit_production_objective.py`
+      -> `overall_status=complete`.
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m pytest -q tests/test_script_policy.py tests/test_workflow_usgs_e2e.py::test_workflow_promotes_build_diagnostic_artifacts_to_evidence`
+      -> 22 passed.
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m py_compile scripts/run_objective_10basin.py scripts/audit_production_objective.py`
+      -> passed.

@@ -11,7 +11,7 @@ runtime gates, provenance, diagnostics, and machine-readable evidence.
 ## Status
 
 Active hardening toward research-grade production pipeline. Last updated:
-2026-06-16.
+2026-06-17.
 
 ## Where To Read Next
 
@@ -63,6 +63,14 @@ Active hardening toward research-grade production pipeline. Last updated:
   `03351500` and `01493500` remain useful negative controls showing the
   subsurface prior is withheld when the package evidence points to ET-dominated
   deficits rather than excessive percolation.
+- Authoritative objective-suite status as of 2026-06-17:
+  the summarize-only report has been regenerated from existing evidence with
+  the clean `01547700` run and fresher `01493500`/`03351500`/`02129000`
+  overrides. It still reports `research_grade_count=0/11`; blocker domains are
+  `science=6`, `provenance=3`, `diagnostics=2`; the target hypothesis remains
+  `not_supported_by_current_evidence`; and the production compliance audit is
+  `complete` (`17/17`). This is the current suite-level status; older embedded
+  `69/97`, `96/97`, or one-research-grade statements are historical context.
 - Phase C decision evidence now exists for the same real `01547700` F6
   artifact at
   `swatplus_runs/realtest_01547700_phaseF6_landuse_composition/reports/phaseC_full_overlay_threshold_probe_nodata_fixed.json`.
