@@ -90,15 +90,20 @@ Active hardening toward research-grade production pipeline. Last updated:
   The run completed with `--hru-mode full_overlay --min-hru-fraction 0.001`
   and `--no-calibrate`, producing `1876` HRUs across `31` subbasins and
   retaining `14/15` source land-use classes (`retention_fraction=0.9333`;
-  missing `UCOM`). This validates the workflow control path, but it does not
-  validate a research-grade claim. Basin water partition improved after the
-  subsurface prior (`WYLD/P 0.159 -> 0.408`, observed `Q/P=0.465`), while
-  outlet performance remained poor (`NSE=-0.256`, `KGE=-0.491`,
-  `PBIAS=-98.3%`) and terminal outflow was only about `1.89%` of basin water
-  yield. Treat this as a sharper diagnostic blocker: full-overlay HRUs are
-  available and auditable, but the remaining `01547700` issue is
-  outlet/channel mass-transfer interpretation and skill, not missing output
-  tables or absent HRU controls.
+  missing `UCOM`). The first generated run exposed a package construction bug:
+  `rout_unit.def` referenced only one positive HRU element per routing unit,
+  so most full-overlay HRU elements in `rout_unit.ele` were disconnected from
+  the routing network. That bug produced the near-zero outlet hydrograph
+  (`PBIAS=-98.3%`) while still using the correct terminal outlet GIS `29`.
+  The routing fix now expands each routing unit to all owned HRU elements and
+  validates that every `rout_unit.ele` HRU appears exactly once in
+  `rout_unit.def`. A fixed-copy SWAT+ probe on the same full-overlay
+  `01547700` TxtInOut raised strict outlet GIS `29` simulated volume from
+  `217.8` to `10795.9` m3/s-days over the benchmark alignment and improved
+  baseline metrics to `NSE=0.0997`, `KGE=0.0772`, `PBIAS=-17.4%`. This
+  supersedes the earlier interpretation that the blocker was outlet/channel
+  mass-transfer alone. Full-overlay remains exploratory until the canonical
+  workflow is rerun and locked through the normal evidence path.
 - Full-overlay `01547700` calibration has been attempted against the locked
   full-overlay benchmark. Direct `locked-calibrate` probes failed honestly in
   the `volume` phase: baseline outlet metrics were about `NSE=-0.2556`,

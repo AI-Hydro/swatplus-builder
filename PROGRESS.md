@@ -9016,3 +9016,48 @@ New documentation: `docs/FULL_MODE_QSWAT_REFERENCE_AUDIT.md`.
       -> 22 passed.
     - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m py_compile scripts/run_objective_10basin.py scripts/audit_production_objective.py`
       -> passed.
+- [2026-06-17] [Full-overlay routing-unit definition bug fixed]
+  Investigated the near-zero full-overlay `01547700` hydrograph after comparing
+  it against the earlier non-zero dominant-HRU run. The outlet selection was not
+  the cause: both runs used terminal outlet GIS `29` under strict outlet
+  scoring. The root cause was package construction of `rout_unit.def` for
+  full-overlay HRUs.
+  - Evidence:
+    - Earlier non-zero run:
+      `swatplus_runs/realtest_01547700/` scored outlet GIS `29` with
+      `NSE=-0.0346`, `KGE=-0.2419`, `PBIAS=-67.9%`, simulated sum
+      `1206.9` m3/s-days over its shorter alignment.
+    - Broken full-overlay run:
+      `swatplus_runs/phaseC_01547700_full_overlay_20260617_2000_2019_nocal/`
+      scored the same outlet GIS `29` with `NSE=-0.2557`, `KGE=-0.4909`,
+      `PBIAS=-98.3%`, simulated sum `217.8` m3/s-days over the 2000-2019
+      alignment.
+    - The full-overlay TxtInOut had `1876` HRU elements in `rout_unit.ele`,
+      but `rout_unit.def` referenced only `31` positive elements, one per
+      routing unit. The remaining HRU elements were generated but not routed
+      through the routing-unit definitions.
+  - Fix:
+    - `src/swatplus_builder/full_mode/routing_fixes.py` now expands
+      `rout_unit.def` so each routing unit includes the contiguous owned HRU
+      element range from `rout_unit.ele`, followed by its own negative
+      sdc/channel element.
+    - Validation now requires every HRU element in `rout_unit.ele` to appear
+      exactly once as a positive element in `rout_unit.def`; duplicate,
+      missing, extra, or wrong negative elements fail the routing fix.
+  - Fixed-copy engine probe:
+    - Copied the broken full-overlay TxtInOut to
+      `/tmp/swatplus_full_overlay_fix_probe/TxtInOut`, applied the routing
+      fix, and ran the real SWAT+ engine to completion.
+    - Structural verification after the fix: `31` routing units,
+      `1876` unique positive HRU elements, first row `elem_tot=82`, last row
+      `elem_tot=102`.
+    - Strict outlet GIS `29` evaluation on the same full-overlay benchmark
+      alignment improved to `NSE=0.0997`, `KGE=0.0772`, `PBIAS=-17.4%`,
+      simulated sum `10795.9` m3/s-days.
+  - Interpretation:
+    - This supersedes the earlier statement that the full-overlay blocker was
+      mainly outlet/channel mass-transfer interpretation. The immediate
+      near-zero hydrograph was a routing-unit definition bug in the package.
+    - Full-overlay evidence is still exploratory until a fresh canonical
+      workflow rerun writes a locked benchmark/evidence bundle with the fixed
+      code.
