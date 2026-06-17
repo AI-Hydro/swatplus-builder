@@ -42,9 +42,9 @@ from ..governance import (
 from ..orchestrate import run_pipeline
 from ..output.et_diagnostics import write_et_partition_diagnostics
 from ..output.landuse_fidelity import build_landuse_fidelity_block
-from ..output.terrain_climate_defaults import build_terrain_climate_defaults_block
 from ..output.mass_diagnostics import write_mass_balance_diagnostics
 from ..output.mass_trace import classify_terminal_scope_blocker
+from ..output.terrain_climate_defaults import build_terrain_climate_defaults_block
 from ..output.volume_diagnostics import write_volume_bias_diagnostics
 from ..params.governance import (
     FULL_MODE_CORE_PARAMETERS,

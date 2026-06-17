@@ -6,8 +6,6 @@ from pathlib import Path
 import geopandas as gpd
 from shapely.geometry import Polygon
 
-import pytest
-
 from swatplus_builder.gis.nldi_fallback import (
     BoundaryProvenance,
     fetch_basin_boundary_cascade,

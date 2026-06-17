@@ -43,7 +43,9 @@ def _write_d3_artifacts(run: Path) -> None:
 
 
 def test_build_terrain_climate_defaults_block_discloses_defaults(tmp_path: Path) -> None:
-    from swatplus_builder.output.terrain_climate_defaults import build_terrain_climate_defaults_block
+    from swatplus_builder.output.terrain_climate_defaults import (
+        build_terrain_climate_defaults_block,
+    )
 
     run = tmp_path / "run"
     _write_d3_artifacts(run)

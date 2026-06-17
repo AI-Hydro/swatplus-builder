@@ -14,7 +14,12 @@ from .residuals import plot_residuals
 from .scatter import plot_scatter
 from .seasonal import plot_seasonal
 from .soil import plot_soil_sources
-from .spatial import plot_basin_spatial_overview, plot_basin_summary, plot_spatial_map, read_masked_raster
+from .spatial import (
+    plot_basin_spatial_overview,
+    plot_basin_summary,
+    plot_spatial_map,
+    read_masked_raster,
+)
 from .style import COLORS, apply_style
 from .utils import align_timeseries, build_figure_title, save_publication_figure
 from .water_balance import plot_water_balance, summarize_water_balance

@@ -9,9 +9,9 @@ from typing import Any
 import matplotlib.pyplot as plt
 import numpy as np
 
+from ..landuse_fidelity import find_nlcd_raster
 from .style import apply_style
 from .utils import build_figure_title, save_publication_figure
-from ..landuse_fidelity import find_nlcd_raster
 
 log = logging.getLogger(__name__)
 

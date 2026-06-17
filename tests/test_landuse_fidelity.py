@@ -71,7 +71,10 @@ def test_build_landuse_fidelity_block_reports_present_vs_retained_classes(tmp_pa
 
 
 def test_build_landuse_fidelity_block_prefers_recorded_nlcd_selection(tmp_path: Path) -> None:
-    from swatplus_builder.output.landuse_fidelity import build_landuse_fidelity_block, find_nlcd_raster
+    from swatplus_builder.output.landuse_fidelity import (
+        build_landuse_fidelity_block,
+        find_nlcd_raster,
+    )
 
     run = tmp_path / "run"
     _write_nlcd(
