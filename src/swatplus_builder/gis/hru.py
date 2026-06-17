@@ -219,11 +219,14 @@ def create_hrus(
 
     # --- 3. Load + align the three overlay rasters ---
     lu_arr = _align_raster_to_ref(lu_path, ref_profile)
+    lu_nodata_values = _nodata_values(lu_path, _LU_NODATA_SENTINELS)
     if soil_path is not None:
         soil_arr = _align_raster_to_ref(soil_path, ref_profile)
+        soil_nodata_values = _nodata_values(soil_path, _MUKEY_NODATA_SENTINELS)
         soil_source_mode = "raster"
     else:
         soil_arr = np.full(ref_shape, int(constant_soil_mukey), dtype=np.int64)
+        soil_nodata_values = _MUKEY_NODATA_SENTINELS
         soil_source_mode = "constant"
 
     # Slope: read-and-align or derive from DEM.
@@ -279,7 +282,7 @@ def create_hrus(
             all_touched=True,
         )
         if not sub_mask.any():
-            if fallback_mask.any() and _has_valid_overlay_pixels(fallback_mask, lu_arr, soil_arr, slope_cls_arr):
+            if fallback_mask.any() and _has_valid_overlay_pixels(fallback_mask, lu_arr, soil_arr, slope_cls_arr, lu_nodata_values, soil_nodata_values):
                 sub_mask = fallback_mask
                 all_touched_fallback_subbasins.append(sub_id)
                 log.warning(
@@ -290,8 +293,8 @@ def create_hrus(
                 log.warning("subbasin %s has zero raster pixels after rasterization; skipping", sub_id)
                 missing_hru_subbasins.append(sub_id)
                 continue
-        elif not _has_valid_overlay_pixels(sub_mask, lu_arr, soil_arr, slope_cls_arr):
-            if fallback_mask.any() and _has_valid_overlay_pixels(fallback_mask, lu_arr, soil_arr, slope_cls_arr):
+        elif not _has_valid_overlay_pixels(sub_mask, lu_arr, soil_arr, slope_cls_arr, lu_nodata_values, soil_nodata_values):
+            if fallback_mask.any() and _has_valid_overlay_pixels(fallback_mask, lu_arr, soil_arr, slope_cls_arr, lu_nodata_values, soil_nodata_values):
                 sub_mask = fallback_mask
                 all_touched_fallback_subbasins.append(sub_id)
                 log.warning(
@@ -343,8 +346,8 @@ def create_hrus(
         soil_flat = soil_arr[lsu_mask]
         slope_flat = slope_cls_arr[lsu_mask]
         valid = (
-            np.isin(lu_flat, list(_LU_NODATA_SENTINELS), invert=True)
-            & np.isin(soil_flat, list(_MUKEY_NODATA_SENTINELS), invert=True)
+            np.isin(lu_flat, list(lu_nodata_values), invert=True)
+            & np.isin(soil_flat, list(soil_nodata_values), invert=True)
             & (slope_flat > 0)
         )
         if not valid.any():
@@ -496,6 +499,8 @@ def create_hrus(
             "slope_labels": list(slope_labels),
             "soil_source_mode": soil_source_mode,
             "constant_soil_mukey": constant_soil_mukey,
+            "landuse_nodata_values": sorted(lu_nodata_values),
+            "soil_nodata_values": sorted(soil_nodata_values),
             "overlay_all_touched_fallback_subbasins": all_touched_fallback_subbasins,
             "overlay_missing_hru_subbasins": missing_hru_subbasins,
             "overlay_all_touched_fallback_count": len(all_touched_fallback_subbasins),
@@ -627,24 +632,92 @@ def _align_raster_to_ref(
     return dst
 
 
+def _nodata_values(path: Path, sentinels: frozenset[int]) -> frozenset[int]:
+    """Return hard-coded plus raster-declared integer nodata values."""
+    values = set(sentinels)
+    with rasterio.open(path) as src:
+        if src.nodata is not None and np.isfinite(src.nodata):
+            values.add(int(src.nodata))
+    return frozenset(values)
+
+
 def _slope_percent_from_dem(
     dem: np.ndarray, transform: rasterio.Affine
 ) -> np.ndarray:
-    """Percent slope from a filled DEM via 2D finite differences.
+    """Percent slope from a DEM via nodata-aware finite differences.
 
-    Uses ``np.gradient`` (central differences in the interior, forward
-    / backward at the edges) which matches rasterio's slope module to
-    within machine epsilon for typical DEMs. Output is float64 percent
-    slope; ``NaN`` pixels are promoted to ``0`` so downstream
-    classification places them in the "0-5" band rather than in the
-    nodata class.
+    Slopes are computed only where the current cell and both opposite
+    neighbors are finite along an axis. Cells touching DEM nodata remain
+    ``NaN`` instead of being differenced against an artificial zero value.
+    This avoids creating edge cliffs at the watershed/DEM boundary.
     """
     dx = abs(transform.a)
     dy = abs(transform.e)
-    dzdy, dzdx = np.gradient(np.nan_to_num(dem, nan=0.0), dy, dx)
+    dem_arr = np.asarray(dem, dtype="float64")
+    dzdx = _central_gradient_where_finite(dem_arr, dx, axis=1)
+    dzdy = _central_gradient_where_finite(dem_arr, dy, axis=0)
     slope = np.sqrt(dzdx**2 + dzdy**2) * 100.0
-    slope = np.where(np.isfinite(slope), slope, 0.0)
     return slope.astype("float64")
+
+
+def _central_gradient_where_finite(
+    arr: np.ndarray,
+    spacing: float,
+    *,
+    axis: int,
+) -> np.ndarray:
+    """Finite difference that preserves nodata edges as ``NaN``.
+
+    Interior cells require finite opposite neighbors. The outer raster frame
+    uses ordinary one-sided differences when the adjacent cell is finite; this
+    avoids creating artificial slope classes on otherwise complete rasters.
+    """
+    out = np.full(arr.shape, np.nan, dtype="float64")
+    if spacing <= 0 or arr.shape[axis] < 2:
+        return out
+
+    first = [slice(None)] * arr.ndim
+    second = [slice(None)] * arr.ndim
+    first[axis] = 0
+    second[axis] = 1
+    first_vals = arr[tuple(first)]
+    second_vals = arr[tuple(second)]
+    valid_first = np.isfinite(first_vals) & np.isfinite(second_vals)
+    first_gradient = np.full(first_vals.shape, np.nan, dtype="float64")
+    first_gradient[valid_first] = (second_vals[valid_first] - first_vals[valid_first]) / spacing
+    out[tuple(first)] = first_gradient
+
+    last = [slice(None)] * arr.ndim
+    penultimate = [slice(None)] * arr.ndim
+    last[axis] = -1
+    penultimate[axis] = -2
+    last_vals = arr[tuple(last)]
+    penultimate_vals = arr[tuple(penultimate)]
+    valid_last = np.isfinite(last_vals) & np.isfinite(penultimate_vals)
+    last_gradient = np.full(last_vals.shape, np.nan, dtype="float64")
+    last_gradient[valid_last] = (last_vals[valid_last] - penultimate_vals[valid_last]) / spacing
+    out[tuple(last)] = last_gradient
+
+    if arr.shape[axis] >= 3:
+        core = [slice(None)] * arr.ndim
+        before = [slice(None)] * arr.ndim
+        after = [slice(None)] * arr.ndim
+        core[axis] = slice(1, -1)
+        before[axis] = slice(0, -2)
+        after[axis] = slice(2, None)
+
+        center_vals = arr[tuple(core)]
+        before_vals = arr[tuple(before)]
+        after_vals = arr[tuple(after)]
+        valid = (
+            np.isfinite(center_vals)
+            & np.isfinite(before_vals)
+            & np.isfinite(after_vals)
+        )
+        gradient = np.full(center_vals.shape, np.nan, dtype="float64")
+        gradient[valid] = (after_vals[valid] - before_vals[valid]) / (2.0 * spacing)
+        out[tuple(core)] = gradient
+    return out
 
 
 def _classify_slope(
@@ -672,6 +745,8 @@ def _has_valid_overlay_pixels(
     lu_arr: np.ndarray,
     soil_arr: np.ndarray,
     slope_cls_arr: np.ndarray,
+    lu_nodata_values: frozenset[int],
+    soil_nodata_values: frozenset[int],
 ) -> bool:
     """Return true when a candidate LSU mask contains usable HRU overlay cells."""
     if not mask.any():
@@ -680,8 +755,8 @@ def _has_valid_overlay_pixels(
     soil_flat = soil_arr[mask]
     slope_flat = slope_cls_arr[mask]
     valid = (
-        np.isin(lu_flat, list(_LU_NODATA_SENTINELS), invert=True)
-        & np.isin(soil_flat, list(_MUKEY_NODATA_SENTINELS), invert=True)
+        np.isin(lu_flat, list(lu_nodata_values), invert=True)
+        & np.isin(soil_flat, list(soil_nodata_values), invert=True)
         & (slope_flat > 0)
     )
     return bool(valid.any())

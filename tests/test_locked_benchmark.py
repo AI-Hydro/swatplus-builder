@@ -475,6 +475,8 @@ def test_default_diagnostic_phases_include_soft_surface_runoff_lat_ttime_channel
             "ESCO",
             "EPCO",
             "LAT_TTIME",
+            "ALPHA_BF",
+            "RCHG_DP",
             "SURLAG",
             "CH_N2",
             "CH_K2",
@@ -489,7 +491,7 @@ def test_default_diagnostic_phases_include_soft_surface_runoff_lat_ttime_channel
     baseflow = next(row for row in phases if row["phase"] == "baseflow_subsurface")
     peaks = next(row for row in phases if row["phase"] == "peaks_timing")
     assert volume["parameters"] == ["PET_CO", "ESCO", "EPCO", "CN3_SWF", "CN2", "LATQ_CO", "PERCO"]
-    assert baseflow["parameters"] == ["LAT_TTIME", "LATQ_CO", "PERCO"]
+    assert baseflow["parameters"] == ["LAT_TTIME", "LATQ_CO", "PERCO", "ALPHA_BF", "RCHG_DP"]
     assert peaks["parameters"] == ["SURLAG", "CH_N2", "CH_K2", "SFTMP", "SMTMP"]
 
 

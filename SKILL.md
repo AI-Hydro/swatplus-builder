@@ -229,8 +229,15 @@ reported calibration metrics**.
 The `lock_benchmark → locked_calibrate → verify` chain is the authoritative
 path. These rules are **enforced by the toolchain**, not advisory:
 
-- Effective calibration parameters default to **CN2 and ALPHA_BF only** — no
-  silent scope expansion. Widening scope is an explicit, recorded decision.
+- Standalone `locked_calibrate` defaults to the historical `CN2,ALPHA_BF`
+  scope unless a caller supplies `parameters`.
+- The governed end-to-end workflow uses the locked benchmark plus a
+  basin-specific sensitivity screen over calibration-eligible full-mode
+  parameters. Retained controls are then passed into staged diagnostic phases:
+  volume/process partition, baseflow/subsurface, peaks/timing, and final
+  NSE/KGE finetuning.
+- No silent scope expansion: candidate parameters must be declared, screened,
+  recorded in artifacts, and independently verified before claim use.
 - Calibrated metrics are always **delta-reported against the locked baseline**,
   never as standalone absolute numbers without their baseline.
 - **verify_calibration is mandatory** (`verify_calibration`): the best solution is re-run
@@ -355,7 +362,9 @@ Interpretation guardrails:
 
 ### Workflow B — Authoritative locked calibration
 1. `lock_benchmark` to seal the baseline (records baseline NSE/KGE + alignment hash).
-2. `locked_calibrate` with `CN2, ALPHA_BF` (verification runs automatically).
+2. For the standalone command, call `locked_calibrate` with declared parameters
+   such as `CN2, ALPHA_BF`; for the governed workflow, use the basin-screened
+   full-mode parameter set retained by the package.
 3. Report **delta** NSE/KGE vs the locked baseline, verified — never the
    optimizer-loop metric.
 4. `readiness_table` to summarize across basins.

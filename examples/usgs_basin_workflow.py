@@ -744,6 +744,7 @@ def main(
     from swatplus_builder.errors import SwatBuilderPipelineError
     from swatplus_builder.gis.delineation import delineate, resolve_usgs_outlet
     from swatplus_builder.gis.hru import create_hrus
+    from swatplus_builder.gis.landuse import select_nlcd_year_for_simulation
     from swatplus_builder.gis.overlay_repair import repair_overlay_inputs
     from swatplus_builder.gis.soil import extract_unique_mukeys, fetch_mukey_raster
     from swatplus_builder.gis.tables import build_tables
@@ -801,12 +802,29 @@ def main(
         elapsed=time.time() - t0)
 
     # 3. NLCD landuse
-    _section("3/11 NLCD 2021 landuse from MRLC")
-    nlcd_tif = outdir / "raw" / "nlcd_2021.tif"
+    nlcd_selection = select_nlcd_year_for_simulation(sim_start, sim_end)
+    nlcd_year = int(nlcd_selection["selected_year"])
+    _section(f"3/11 NLCD {nlcd_year} landuse from MRLC")
+    nlcd_tif = outdir / "raw" / f"nlcd_{nlcd_year}.tif"
+    nlcd_selection_path = outdir / "raw" / "nlcd_selection.json"
+    nlcd_selection_path.parent.mkdir(parents=True, exist_ok=True)
+    nlcd_selection_path.write_text(
+        json.dumps(
+            {
+                **nlcd_selection,
+                "source": "MRLC_NLCD_via_pygeohydro.nlcd_bygeom",
+                "raster_path": str(nlcd_tif),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     t0 = time.time()
-    _, n = _with_retries("fetch_nlcd", fetch_nlcd, basin, nlcd_tif, year=2021)
+    _, n = _with_retries("fetch_nlcd", fetch_nlcd, basin, nlcd_tif, year=nlcd_year)
     retry_attempts["fetch_nlcd"] = n
-    _ok(f"nlcd_2021.tif  ({nlcd_tif.stat().st_size / 1e6:.1f} MB)",
+    _ok(f"{nlcd_tif.name}  ({nlcd_tif.stat().st_size / 1e6:.1f} MB)",
         elapsed=time.time() - t0)
 
     # 4. Delineation (WhiteboxTools)
@@ -1870,6 +1888,10 @@ def main(
         notes.append(msg)
     if weather_provider_fallback_reason is not None:
         notes.append(f"weather_provider_fallback={weather_provider_fallback_reason}")
+    notes.append(
+        f"nlcd_year={nlcd_year}; sim_midpoint_year={nlcd_selection['sim_midpoint_year']}; "
+        f"landuse_vintage_mismatch_years={nlcd_selection['landuse_vintage_mismatch_years']}"
+    )
 
     md = RunMetadata(
         timestamp_utc=utc_now_iso(),

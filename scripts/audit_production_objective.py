@@ -122,6 +122,20 @@ def _load_evidence_summary(row: dict[str, Any]) -> dict[str, Any] | None:
         return None
 
 
+def _objective_build_diagnostic_artifacts_ok(rows: list[dict[str, Any]]) -> bool:
+    rows_with_artifacts = 0
+    for row in rows:
+        values = row.get("values") if isinstance(row.get("values"), dict) else {}
+        artifacts = values.get("build_diagnostic_artifacts") or row.get("build_diagnostic_artifacts")
+        if not isinstance(artifacts, dict) or not artifacts:
+            continue
+        rows_with_artifacts += 1
+        for path_str in artifacts.values():
+            if not isinstance(path_str, str) or not Path(path_str).is_file():
+                return False
+    return rows_with_artifacts > 0
+
+
 def _tier_consistent_with_gates(bundle: Any) -> bool:
     if bundle.effective_claim_tier != "research_grade":
         return True
@@ -261,6 +275,7 @@ def _append_static_checks(checks: list[Check]) -> None:
         and overlay_report.get("reason") == "categorical_overlay_gap_too_large"
         and isinstance(overlay_report.get("soil_gap_fraction"), (int, float))
     )
+    objective_artifacts_ok = _objective_build_diagnostic_artifacts_ok(_objective_rows(_load_objective_report()))
     checks.append(
         Check(
             "Build blockers expose machine-readable diagnostic artifacts",
@@ -276,14 +291,14 @@ def _append_static_checks(checks: list[Check]) -> None:
                     and _contains("src/swatplus_builder/workflows/usgs_e2e.py", "build_diagnostic_artifacts")
                     and _contains("src/swatplus_builder/workflows/usgs_e2e.py", "build_{key}")
                     and _contains("tests/test_workflow_usgs_e2e.py", "test_workflow_promotes_build_diagnostic_artifacts_to_evidence")
-                    and overlay_report_ok
+                    and (overlay_report_ok or objective_artifacts_ok)
                 )
                 else "missing"
             ),
             (
                 "src/swatplus_builder/workflows/full_build.py; "
                 "tests/test_full_build.py; tests/test_orchestrate.py; "
-                "swatplus_runs/post_overlay_repair_01013500_network/reports/overlay_repair/overlay_repair_report.json"
+                "objective rows build_diagnostic_artifacts"
             ),
         )
     )

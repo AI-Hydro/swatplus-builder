@@ -8,6 +8,7 @@ from swatplus_builder.governance import (
     benchmark_lock_gate,
     calibration_improvement_gate,
     fresh_engine_gate,
+    landuse_fidelity_gate,
     outlet_provenance_gate,
     research_metric_gate,
     soil_fidelity_gate,
@@ -116,6 +117,39 @@ def test_soil_fidelity_gate_fails_non_authoritative_provenance() -> None:
         "pct_fallback_soils": 0.0,
     })
     assert result["passed"] is False
+
+
+# ---------------------------------------------------------------------------
+# landuse_fidelity_gate
+# ---------------------------------------------------------------------------
+
+def test_landuse_fidelity_gate_passes_full_overlay_complete_current_vintage() -> None:
+    result = landuse_fidelity_gate({
+        "landuse_fidelity": {
+            "status": "evaluated",
+            "hru_mode": "full_overlay",
+            "landuse_class_retention_fraction": 1.0,
+            "landuse_vintage_mismatch_years": 2,
+        }
+    })
+
+    assert result["passed"] is True
+
+
+def test_landuse_fidelity_gate_fails_dominant_only_and_old_vintage() -> None:
+    result = landuse_fidelity_gate({
+        "landuse_fidelity": {
+            "status": "evaluated",
+            "hru_mode": "dominant_only",
+            "landuse_class_retention_fraction": 0.2,
+            "landuse_vintage_mismatch_years": 14,
+        }
+    })
+
+    assert result["passed"] is False
+    assert "hru_mode=dominant_only" in result["reason"]
+    assert "landuse_class_retention_fraction=0.20" in result["reason"]
+    assert "landuse_vintage_mismatch_years=14.0" in result["reason"]
 
 
 # ---------------------------------------------------------------------------

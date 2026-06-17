@@ -10,6 +10,6 @@ tables       — WatershedResult + HRUResult → typed :class:`GisTables` (incl.
 validate     — post-delineation quality check (area, IoU, centroid vs reference).
 """
 
-from .landuse import NLCD_TO_SWATPLUS, resolve_landuse
+from .landuse import NLCD_TO_SWATPLUS, resolve_landuse, select_nlcd_year_for_simulation
 
-__all__ = ["NLCD_TO_SWATPLUS", "resolve_landuse"]
+__all__ = ["NLCD_TO_SWATPLUS", "resolve_landuse", "select_nlcd_year_for_simulation"]

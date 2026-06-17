@@ -2,6 +2,39 @@
 
 All notable changes to swatplus-builder are documented here.
 
+## [0.7.1] — 2026-06-17
+
+### Added
+- Land-use fidelity evidence and claim gating: workflow evidence now records
+  source NLCD classes, retained HRU classes, class-retention fraction, NLCD
+  vintage selection, and research-grade blockers when dominant-only HRUs
+  collapse source land-use diversity.
+- Terrain and climate-default disclosure evidence: workflow summaries now
+  expose topographic length defaults, lapse settings, DEM relief, weather
+  station context, diagnostic flags, and claim impact.
+- Diagnostic plot suite additions for spatial overview, forcing context,
+  water balance, and HRU/land-use composition.
+- Subsurface-prior water-balance correction with guardrails and fresh-engine
+  rerun enforcement for humid runoff-deficit cases.
+
+### Fixed
+- Declared raster nodata values, including NLCD-style `127`, are masked before
+  full-overlay HRU combinations are emitted.
+- Timestamped observed-flow CSV rows are preserved when normalized to dates,
+  avoiding all-NaN observed series after index normalization.
+- Objective compliance audit now accepts current build diagnostic artifacts
+  when legacy overlay-repair reports are absent, while still requiring every
+  referenced artifact path to exist.
+- Package version metadata is synchronized between `pyproject.toml`,
+  `swatplus_builder.__version__`, README, and citation metadata.
+
+### Evidence
+- A clean 20-year `01547700` run (`2000-01-01` to `2019-12-31`) completed build,
+  engine execution, benchmark lock, gated calibration, locked verification,
+  and plot generation. The package allowed diagnostic/reproducibility claims
+  but kept the effective claim tier exploratory because research skill,
+  land-use fidelity, and terrain/lapse audit gates still block promotion.
+
 ## [0.6.1] — 2026-06-14
 
 ### Fixed

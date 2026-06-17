@@ -5,7 +5,7 @@ Drives the full ``swatplus-builder`` pipeline against **real data**:
 
 1. **Basin boundary** — USGS NLDI via ``pynhd``.
 2. **DEM** — USGS 3DEP 30 m via ``py3dep``.
-3. **Landuse** — NLCD 2021 via ``pygeohydro``.
+3. **Landuse** — nearest supported NLCD vintage via ``pygeohydro``.
 4. **Delineation** — WhiteboxTools D8 → subbasins/channels/routing.
 5. **Soils** — gNATSGO mukey raster via Planetary Computer, then
    horizon-resolved ``Soils_sol`` via
@@ -409,6 +409,7 @@ def main(
     from swatplus_builder.errors import SwatBuilderPipelineError
     from swatplus_builder.gis.delineation import delineate, resolve_usgs_outlet
     from swatplus_builder.gis.hru import create_hrus
+    from swatplus_builder.gis.landuse import select_nlcd_year_for_simulation
     from swatplus_builder.gis.soil import fetch_mukey_raster
     from swatplus_builder.gis.tables import build_tables
     from swatplus_builder.gis.validate import validate_watershed
@@ -458,12 +459,29 @@ def main(
         elapsed=time.time() - t0)
 
     # 3. NLCD landuse
-    _section("3/11 NLCD 2021 landuse from MRLC")
-    nlcd_tif = outdir / "raw" / "nlcd_2021.tif"
+    nlcd_selection = select_nlcd_year_for_simulation(sim_start, sim_end)
+    nlcd_year = int(nlcd_selection["selected_year"])
+    _section(f"3/11 NLCD {nlcd_year} landuse from MRLC")
+    nlcd_tif = outdir / "raw" / f"nlcd_{nlcd_year}.tif"
+    nlcd_selection_path = outdir / "raw" / "nlcd_selection.json"
+    nlcd_selection_path.parent.mkdir(parents=True, exist_ok=True)
+    nlcd_selection_path.write_text(
+        json.dumps(
+            {
+                **nlcd_selection,
+                "source": "MRLC_NLCD_via_pygeohydro.nlcd_bygeom",
+                "raster_path": str(nlcd_tif),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     t0 = time.time()
-    _, n = _with_retries("fetch_nlcd", fetch_nlcd, basin, nlcd_tif, year=2021)
+    _, n = _with_retries("fetch_nlcd", fetch_nlcd, basin, nlcd_tif, year=nlcd_year)
     retry_attempts["fetch_nlcd"] = n
-    _ok(f"nlcd_2021.tif  ({nlcd_tif.stat().st_size / 1e6:.1f} MB)",
+    _ok(f"{nlcd_tif.name}  ({nlcd_tif.stat().st_size / 1e6:.1f} MB)",
         elapsed=time.time() - t0)
 
     # 4. Delineation (WhiteboxTools)
@@ -1099,6 +1117,10 @@ def main(
             input_hashes[name] = sha256_file(p)
 
     notes: list[str] = []
+    notes.append(
+        f"nlcd_year={nlcd_year}; sim_midpoint_year={nlcd_selection['sim_midpoint_year']}; "
+        f"landuse_vintage_mismatch_years={nlcd_selection['landuse_vintage_mismatch_years']}"
+    )
     if abs(float(lte_scon_scale) - 1.0) > 1e-9:
         notes.append(
             f"lte_scon_scale_applied={float(lte_scon_scale):.3f} (rows={int(scon_rows)})"

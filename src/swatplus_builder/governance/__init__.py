@@ -8,6 +8,7 @@ from .gates import (
     benchmark_lock_gate,
     calibration_improvement_gate,
     fresh_engine_gate,
+    landuse_fidelity_gate,
     outlet_provenance_gate,
     research_metric_gate,
     sensitivity_gate,
@@ -24,6 +25,7 @@ __all__ = [
     "outlet_provenance_gate",
     "research_metric_gate",
     "soil_fidelity_gate",
+    "landuse_fidelity_gate",
     "calibration_improvement_gate",
     "sensitivity_gate",
 ]

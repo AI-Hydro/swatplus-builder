@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from swatplus_builder.orchestrate import run_pipeline
+from swatplus_builder.orchestrate import _load_observed_series, run_pipeline
 
 
 def _write_prepared_run(root: Path) -> Path:
@@ -46,6 +46,22 @@ def _write_prepared_run(root: Path) -> Path:
     )
     obs.to_csv(outputs / "obs_q.csv", index_label="date")
     return txt
+
+
+def test_load_observed_series_preserves_values_when_normalizing_times(tmp_path: Path) -> None:
+    obs_csv = tmp_path / "obs_q.csv"
+    obs_csv.write_text(
+        "date,obs\n"
+        "2010-01-01 05:00:00,1.25\n"
+        "2010-01-02 05:00:00,2.50\n",
+        encoding="utf-8",
+    )
+
+    series = _load_observed_series(obs_csv)
+
+    assert series is not None
+    assert list(series.index.strftime("%Y-%m-%d")) == ["2010-01-01", "2010-01-02"]
+    assert series.tolist() == [1.25, 2.50]
 
 
 def test_run_pipeline_blocks_when_package_build_fails(monkeypatch, tmp_path: Path) -> None:

@@ -25,6 +25,9 @@ from ..governance import (
     fresh_engine_gate as _fresh_engine_gate_impl,
 )
 from ..governance import (
+    landuse_fidelity_gate as _landuse_fidelity_gate_impl,
+)
+from ..governance import (
     outlet_provenance_gate as _outlet_provenance_gate_impl,
 )
 from ..governance import (
@@ -38,6 +41,8 @@ from ..governance import (
 )
 from ..orchestrate import run_pipeline
 from ..output.et_diagnostics import write_et_partition_diagnostics
+from ..output.landuse_fidelity import build_landuse_fidelity_block
+from ..output.terrain_climate_defaults import build_terrain_climate_defaults_block
 from ..output.mass_diagnostics import write_mass_balance_diagnostics
 from ..output.mass_trace import classify_terminal_scope_blocker
 from ..output.volume_diagnostics import write_volume_bias_diagnostics
@@ -581,12 +586,43 @@ def _claim_lists(
             }
         )
 
+    landuse_gate = _landuse_fidelity_gate(values)
+    if landuse_gate["passed"]:
+        allowed.append(
+            {
+                "claim": "landuse_fidelity_gate_passed",
+                "tier": "research_grade",
+                "basis": landuse_gate["reason"],
+            }
+        )
+    else:
+        blocked.append(
+            {
+                "claim": "landuse_fidelity_gate_passed",
+                "tier": "research_grade",
+                "reason": landuse_gate["reason"],
+            }
+        )
+
     if policy_notes:
         blocked.append(
             {
                 "claim": "higher_tier_time_window_claim",
                 "tier": requested_tier,
                 "reason": ",".join(policy_notes),
+            }
+        )
+
+    terrain_climate = values.get("terrain_climate_defaults")
+    if isinstance(terrain_climate, dict) and terrain_climate.get("diagnostic_flags"):
+        blocked.append(
+            {
+                "claim": "terrain_length_or_lapse_derived_claim",
+                "tier": "research_grade",
+                "reason": (
+                    f"{terrain_climate.get('claim_impact')}: "
+                    + ",".join(str(flag) for flag in terrain_climate.get("diagnostic_flags") or [])
+                ),
             }
         )
 
@@ -658,12 +694,13 @@ def _effective_claim_tier(
     ):
         return "diagnostic"
 
-    # Calibration and metric gates passed — now check sensitivity + soil fidelity.
-    # publication_grade requires calibration evidence only (no sensitivity/soil requirement).
-    # research_grade additionally requires basin-specific sensitivity screen + soil fidelity.
+    # Calibration and metric gates passed — now check sensitivity + soil + land-use fidelity.
+    # publication_grade requires calibration evidence only (no sensitivity/fidelity requirement).
+    # research_grade additionally requires basin-specific sensitivity, soil, and land-use fidelity.
     # (C3 decision — documented in DECISIONS.md)
     soil = _soil_fidelity_gate(values)
-    if _sensitivity_gate(values)["passed"] and soil["passed"]:
+    landuse = _landuse_fidelity_gate(values)
+    if _sensitivity_gate(values)["passed"] and soil["passed"] and landuse["passed"]:
         return "research_grade"
     return "publication_grade"
 
@@ -674,6 +711,10 @@ def _research_metric_gate(values: dict[str, Any]) -> dict[str, Any]:
 
 def _soil_fidelity_gate(values: dict[str, Any]) -> dict[str, Any]:
     return _soil_fidelity_gate_impl(values)
+
+
+def _landuse_fidelity_gate(values: dict[str, Any]) -> dict[str, Any]:
+    return _landuse_fidelity_gate_impl(values)
 
 
 def _metadata_note_value(metadata: dict[str, Any], key: str) -> str | None:
@@ -1229,6 +1270,44 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
     outlet_path.write_text(json.dumps(outlet_prov, indent=2) + "\n", encoding="utf-8")
     values["outlet_provenance_path"] = str(outlet_path)
 
+    try:
+        values["landuse_fidelity"] = build_landuse_fidelity_block(
+            out,
+            sim_start=request.start,
+            sim_end=request.end,
+        )
+        _event(
+            "landuse_fidelity",
+            values["landuse_fidelity"].get("status", "unknown"),
+            hru_mode=values["landuse_fidelity"].get("hru_mode"),
+            landuse_classes_present_count=values["landuse_fidelity"].get(
+                "landuse_classes_present_count"
+            ),
+            landuse_classes_retained_count=values["landuse_fidelity"].get(
+                "landuse_classes_retained_count"
+            ),
+        )
+    except Exception as exc:
+        values["landuse_fidelity"] = {"status": "failed", "reason": str(exc)}
+        _event("landuse_fidelity", "failed", error=str(exc)[-500:])
+
+    try:
+        values["terrain_climate_defaults"] = build_terrain_climate_defaults_block(out)
+        terrain_climate_path = _write_json(
+            out / "terrain_climate_defaults.json",
+            values["terrain_climate_defaults"],
+        )
+        values["terrain_climate_defaults_path"] = str(terrain_climate_path)
+        _event(
+            "terrain_climate_defaults",
+            values["terrain_climate_defaults"].get("status", "unknown"),
+            flags=",".join(values["terrain_climate_defaults"].get("diagnostic_flags") or []),
+            claim_impact=values["terrain_climate_defaults"].get("claim_impact"),
+        )
+    except Exception as exc:
+        values["terrain_climate_defaults"] = {"status": "failed", "reason": str(exc)}
+        _event("terrain_climate_defaults", "failed", error=str(exc)[-500:])
+
     volume_diag_payload: dict[str, Any] | None = None
     physical_context_updates = _annotate_parameter_screen_for_physical_context(
         parameter_screen_payload,
@@ -1418,6 +1497,83 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
             values["volume_bias_diagnostics_error"] = str(exc)
             _event("volume_bias_diagnostics", "failed", error=str(exc)[-500:])
 
+    try:
+        from ..output.plots.forcing_context import plot_forcing_context
+        from ..output.plots.landuse_composition import plot_landuse_composition
+        from ..output.plots.spatial import plot_basin_spatial_overview
+        from ..output.plots.water_balance import plot_water_balance
+
+        plots_dir = out / "plots"
+        plots_dir.mkdir(parents=True, exist_ok=True)
+        plot_metadata = {
+            "usgs_id": request.usgs_id,
+            "basin_name": f"USGS {request.usgs_id}",
+            "time_range": f"{request.start[:4]}-{request.end[:4]}",
+            "model_family": request.model_family,
+            "soil_mode": values.get("soil_mode"),
+            "pct_fallback_soils": values.get("pct_fallback_soils"),
+        }
+        generated_plots: list[str] = []
+        generated_plots.extend(
+            plot_basin_spatial_overview(
+                out,
+                plots_dir / "fig_08_basin_spatial_overview",
+                metadata=plot_metadata,
+            )
+        )
+        try:
+            plot_forcing_context(
+                out,
+                plots_dir / "fig_09_forcing_context",
+                metadata=plot_metadata,
+            )
+            generated_plots.extend(["fig_09_forcing_context.png", "fig_09_forcing_context.pdf"])
+        except Exception as exc:
+            values["forcing_context_plot_error"] = str(exc)
+        try:
+            plot_water_balance(
+                out,
+                plots_dir / "fig_10_water_balance",
+                metadata=plot_metadata,
+            )
+            generated_plots.extend(["fig_10_water_balance.png", "fig_10_water_balance.pdf"])
+        except Exception as exc:
+            values["water_balance_plot_error"] = str(exc)
+        try:
+            plot_landuse_composition(
+                out,
+                plots_dir / "fig_11_landuse_composition",
+                metadata=plot_metadata,
+                sim_start=request.start,
+                sim_end=request.end,
+            )
+            generated_plots.extend(["fig_11_landuse_composition.png", "fig_11_landuse_composition.pdf"])
+        except Exception as exc:
+            values["landuse_composition_plot_error"] = str(exc)
+        values["plot_suite"] = {
+            "plots_generated": bool(generated_plots),
+            "n_plots": len(generated_plots),
+            "path": str(plots_dir),
+            "files": generated_plots,
+        }
+        for key, filename in {
+            "basin_spatial_overview_plot": "fig_08_basin_spatial_overview.png",
+            "basin_spatial_overview_plot_pdf": "fig_08_basin_spatial_overview.pdf",
+            "forcing_context_plot": "fig_09_forcing_context.png",
+            "forcing_context_plot_pdf": "fig_09_forcing_context.pdf",
+            "water_balance_plot": "fig_10_water_balance.png",
+            "water_balance_plot_pdf": "fig_10_water_balance.pdf",
+            "landuse_composition_plot": "fig_11_landuse_composition.png",
+            "landuse_composition_plot_pdf": "fig_11_landuse_composition.pdf",
+        }.items():
+            candidate = plots_dir / filename
+            if candidate.is_file():
+                values[key] = str(candidate)
+        _event("plots", "completed", n_plots=len(generated_plots), path=str(plots_dir))
+    except Exception as exc:
+        values["plot_suite"] = {"plots_generated": False, "reason": str(exc)}
+        _event("plots", "failed", error=str(exc)[-500:])
+
     allowed_claims, blocked_claims = _claim_lists(
         requested_tier=request.claim_tier,
         allowed_tier=allowed_tier,
@@ -1473,6 +1629,10 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
         gates_passed.append("soil_fidelity")
     else:
         gates_failed.append("soil_fidelity")
+    if _landuse_fidelity_gate(values)["passed"]:
+        gates_passed.append("landuse_fidelity")
+    else:
+        gates_failed.append("landuse_fidelity")
     if _calibration_improvement_gate(values)["passed"]:
         gates_passed.append("calibration_verification")
     elif values.get("calibration_attempted") or str(values.get("calibration_status") or "").startswith("blocked_by_"):
@@ -1574,6 +1734,56 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
             **(
                 {"volume_bias_diagnostics": str(volume_diag_payload.get("json_path"))}
                 if volume_diag_payload and volume_diag_payload.get("json_path")
+                else {}
+            ),
+            **(
+                {"basin_spatial_overview_plot": str(values.get("basin_spatial_overview_plot"))}
+                if values.get("basin_spatial_overview_plot")
+                else {}
+            ),
+            **(
+                {"basin_spatial_overview_plot_pdf": str(values.get("basin_spatial_overview_plot_pdf"))}
+                if values.get("basin_spatial_overview_plot_pdf")
+                else {}
+            ),
+            **(
+                {"forcing_context_plot": str(values.get("forcing_context_plot"))}
+                if values.get("forcing_context_plot")
+                else {}
+            ),
+            **(
+                {"forcing_context_plot_pdf": str(values.get("forcing_context_plot_pdf"))}
+                if values.get("forcing_context_plot_pdf")
+                else {}
+            ),
+            **(
+                {"water_balance_plot": str(values.get("water_balance_plot"))}
+                if values.get("water_balance_plot")
+                else {}
+            ),
+            **(
+                {"water_balance_plot_pdf": str(values.get("water_balance_plot_pdf"))}
+                if values.get("water_balance_plot_pdf")
+                else {}
+            ),
+            **(
+                {"landuse_composition_plot": str(values.get("landuse_composition_plot"))}
+                if values.get("landuse_composition_plot")
+                else {}
+            ),
+            **(
+                {"landuse_composition_plot_pdf": str(values.get("landuse_composition_plot_pdf"))}
+                if values.get("landuse_composition_plot_pdf")
+                else {}
+            ),
+            **(
+                {"terrain_climate_defaults": str(values.get("terrain_climate_defaults_path"))}
+                if values.get("terrain_climate_defaults_path")
+                else {}
+            ),
+            **(
+                {"subsurface_prior_correction": str(values.get("subsurface_prior_correction_path"))}
+                if values.get("subsurface_prior_correction_path")
                 else {}
             ),
             **{

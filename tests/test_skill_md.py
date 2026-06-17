@@ -10,7 +10,7 @@ def test_skill_md_exists_and_has_required_appendix_c_sections() -> None:
 
     required_headers = [
         "## When to use this skill",
-        "## Tool catalog",
+        "## MCP tool catalog",
         "## Parameter registry",
         "## Diagnostic heuristics",
         "## Basin taxonomy",
@@ -50,7 +50,9 @@ def test_skill_md_locked_benchmark_protocol_documented() -> None:
         "lock_benchmark",
         "locked_calibrate",
         "readiness_table",
-        "CN2 and ALPHA_BF only",
+        "Standalone `locked_calibrate` defaults to the historical `CN2,ALPHA_BF`",
+        "basin-specific sensitivity screen",
+        "calibration-eligible full-mode",
         "verify_calibration is mandatory",
     ]
     for item in required_sections:

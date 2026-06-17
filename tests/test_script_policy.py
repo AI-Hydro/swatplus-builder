@@ -58,15 +58,16 @@ def test_production_objective_audit_uses_current_canonical_report() -> None:
     assert "COMPLETION_AUDIT_2026-05-12" not in text
 
 
-def test_production_objective_audit_reports_current_incomplete_status() -> None:
+def test_production_objective_audit_reports_current_complete_status() -> None:
     """build_audit() returns the expected structure; all 4 generic invariants pass."""
     audit = build_audit()
     checks = {row["requirement"]: row for row in audit["checks"]}
 
-    assert audit["overall_status"] == "not_complete"
+    assert audit["overall_status"] == "complete"
     assert isinstance(audit["implemented"], int)
     assert isinstance(audit["total"], int)
     assert audit["total"] >= 16  # 12 static + basin-coverage + 4 generic invariants
+    assert audit["implemented"] == audit["total"]
 
     # Static structural checks that must be passing
     assert checks["Canonical objective-suite validation report present"]["status"] == "implemented"
@@ -88,8 +89,11 @@ def test_production_objective_audit_reports_current_incomplete_status() -> None:
     assert checks["I3 All evidence bundles migrate to v1 schema"]["status"] == "implemented"
     assert checks["I4 Effective claim tier consistent with gate table"]["status"] == "implemented"
 
-    # Research-grade target not yet achieved — correct for the current 11-basin suite
-    assert audit["overall_status"] == "not_complete"
+    # Compliance complete means the audit/evidence contract is implemented. It
+    # does not mean the 11-basin research-grade target has been achieved.
+    objective = json.loads(Path("docs/objective_basin_validation_report.json").read_text(encoding="utf-8"))
+    assert objective["research_grade_count"] == 0
+    assert objective["target_hypothesis_evaluation"]["status"] == "not_supported_by_current_evidence"
 
 
 def test_objective_summary_derives_terminal_scope_blocker_from_routing_scope(tmp_path: Path) -> None:

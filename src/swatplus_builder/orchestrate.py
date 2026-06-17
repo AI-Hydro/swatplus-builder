@@ -117,6 +117,10 @@ def run_pipeline(
         from .calibration.locked_benchmark import lock_benchmark
         from .calibration.nwis import fetch_usgs_daily_q
         from .full_mode.routing_fixes import apply_full_routing_fixes
+        from .full_mode.subsurface_priors import (
+            apply_subsurface_prior_correction,
+            finalize_subsurface_prior_correction,
+        )
         from .run.swatplus import clean_and_run_solver
 
         if model_family == "full":
@@ -150,6 +154,29 @@ def run_pipeline(
         obs_series = _load_observed_series(obs_csv)
         if obs_series is None:
             obs_series = fetch_usgs_daily_q(usgs_id, start_date, end_date, obs_csv)
+
+        if model_family == "full":
+            subsurface_prior = apply_subsurface_prior_correction(
+                outdir,
+                txtinout,
+                obs_series=obs_series,
+            )
+            run_config["subsurface_prior_correction"] = subsurface_prior
+            run_config["subsurface_prior_correction_path"] = subsurface_prior.get("report_path")
+            run_config["subsurface_prior_correction_status"] = subsurface_prior.get("status")
+            if subsurface_prior.get("status") == "applied":
+                rc, stdout_tail, stderr_tail = clean_and_run_solver(
+                    txtinout,
+                    threads=threads,
+                    timeout_s=engine_timeout_s,
+                )
+                subsurface_prior = finalize_subsurface_prior_correction(
+                    outdir,
+                    txtinout,
+                    subsurface_prior,
+                )
+                run_config["subsurface_prior_correction"] = subsurface_prior
+                run_config["subsurface_prior_correction_status"] = subsurface_prior.get("status")
 
         sim_source = _find_sim_source_file(txtinout)
         if sim_source is None:
@@ -275,6 +302,10 @@ def _load_observed_series(obs_csv: Path) -> pd.Series | None:
     if df.empty:
         return None
     column = "obs" if "obs" in df.columns else "discharge" if "discharge" in df.columns else df.columns[0]
-    series = pd.Series(df[column].astype(float), index=pd.to_datetime(df.index).normalize(), name="obs")
+    series = pd.Series(
+        df[column].astype(float).to_numpy(),
+        index=pd.to_datetime(df.index).normalize(),
+        name="obs",
+    )
     series = series.dropna()
     return series if not series.empty else None

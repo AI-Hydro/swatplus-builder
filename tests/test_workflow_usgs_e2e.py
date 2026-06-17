@@ -52,11 +52,28 @@ def _core_sensitivity_classes() -> dict[str, str]:
     }
 
 
+def _passing_landuse_fidelity() -> dict[str, object]:
+    return {
+        "status": "evaluated",
+        "hru_mode": "full_overlay",
+        "dominant_only": False,
+        "n_hrus": 120,
+        "n_subbasins": 31,
+        "landuse_classes_present": ["AGRL", "FRSD"],
+        "landuse_classes_retained": ["AGRL", "FRSD"],
+        "landuse_class_retention_fraction": 1.0,
+        "landuse_vintage_year": 2011,
+        "sim_midpoint_year": 2014,
+        "landuse_vintage_mismatch_years": -3,
+    }
+
+
 def _core_sensitivity_values(**overrides) -> dict[str, object]:
     values: dict[str, object] = {
         "sensitivity_screen_basis": "basin_specific",
         "sensitivity_screen_activity_classes": _core_sensitivity_classes(),
         "calibration_provenance": {"blocked_parameters": ["GW_DELAY"]},
+        "landuse_fidelity": _passing_landuse_fidelity(),
     }
     values.update(overrides)
     return values
@@ -401,6 +418,36 @@ def test_soil_fidelity_gate_allows_authoritative_gnatsgo_provenance() -> None:
 
     assert gate["passed"] is True
     assert "gnatsgo_raster" in gate["reason"]
+
+
+def test_claim_lists_block_terrain_lapse_derived_claim_when_defaults_flagged(tmp_path: Path) -> None:
+    values = _research_grade_single_channel_values(tmp_path)
+    values["terrain_climate_defaults"] = {
+        "status": "evaluated",
+        "diagnostic_flags": [
+            "constant_slp_len",
+            "constant_lat_len",
+            "constant_dist_cha",
+            "lapse_disabled",
+        ],
+        "claim_impact": "diagnostic_context_disclosed",
+    }
+
+    _allowed, blocked = _claim_lists(
+        requested_tier="research_grade",
+        allowed_tier="research_grade",
+        blocker=None,
+        calibration_success=False,
+        policy_notes=[],
+        values=values,
+        physical_gates={"status": "passed"},
+        routing_gates=_passed_routing_gate(),
+    )
+
+    terrain_claims = [c for c in blocked if c["claim"] == "terrain_length_or_lapse_derived_claim"]
+    assert terrain_claims
+    assert "constant_slp_len" in terrain_claims[0]["reason"]
+    assert "lapse_disabled" in terrain_claims[0]["reason"]
 
 
 def test_soil_fidelity_gate_blocks_missing_authoritative_provenance() -> None:
@@ -1066,6 +1113,22 @@ def test_effective_claim_tier_reaches_research_only_with_complete_evidence(monke
     monkeypatch.setattr("swatplus_builder.workflows.usgs_e2e.run_pipeline", fake_run_pipeline)
     monkeypatch.setattr("swatplus_builder.workflows.usgs_e2e.run_diagnostic_calibration", fake_calibration)
     monkeypatch.setattr("swatplus_builder.workflows.usgs_e2e._evaluate_routing_flow_gate", _passed_routing_gate)
+    monkeypatch.setattr(
+        "swatplus_builder.workflows.usgs_e2e.build_landuse_fidelity_block",
+        lambda *args, **kwargs: {
+            "status": "evaluated",
+            "hru_mode": "full_overlay",
+            "dominant_only": False,
+            "n_hrus": 120,
+            "n_subbasins": 31,
+            "landuse_classes_present": ["AGRL", "FRSD"],
+            "landuse_classes_retained": ["AGRL", "FRSD"],
+            "landuse_class_retention_fraction": 1.0,
+            "landuse_vintage_year": 2011,
+            "sim_midpoint_year": 2014,
+            "landuse_vintage_mismatch_years": -3,
+        },
+    )
     req = RunUSGSWorkflowRequest(
         usgs_id="01654000",
         out_dir=tmp_path / "run_research",
@@ -1109,6 +1172,7 @@ def test_effective_claim_tier_reaches_research_only_with_complete_evidence(monke
     assert "benchmark_lock" in data["gates_passed"]
     assert "fresh_engine_output" in data["gates_passed"]
     assert "sensitivity_screen" in data["gates_passed"]
+    assert "landuse_fidelity" in data["gates_passed"]
     assert "calibration_verification" in data["gates_passed"]
 
 
@@ -1742,6 +1806,10 @@ def test_research_metric_gate_requires_timing_documentation_for_negative_nse(mon
     monkeypatch.setattr("swatplus_builder.workflows.usgs_e2e.run_pipeline", fake_run_pipeline)
     monkeypatch.setattr("swatplus_builder.workflows.usgs_e2e.run_diagnostic_calibration", fake_calibration)
     monkeypatch.setattr("swatplus_builder.workflows.usgs_e2e._evaluate_routing_flow_gate", _passed_routing_gate)
+    monkeypatch.setattr(
+        "swatplus_builder.workflows.usgs_e2e.build_landuse_fidelity_block",
+        lambda *args, **kwargs: _passing_landuse_fidelity(),
+    )
     req = RunUSGSWorkflowRequest(
         usgs_id="01654000",
         out_dir=tmp_path / "run_negative_nse",

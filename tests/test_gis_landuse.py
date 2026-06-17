@@ -11,6 +11,7 @@ from swatplus_builder.gis.landuse import (
     is_urban,
     is_water,
     resolve_landuse,
+    select_nlcd_year_for_simulation,
 )
 
 
@@ -122,3 +123,28 @@ class TestIntegrationWithHru:
         from swatplus_builder.gis.hru import _landuse_name
 
         assert _landuse_name(82, {82: "CORN"}) == "CORN"
+
+
+class TestNlcdVintageSelection:
+    def test_selects_epoch_closest_to_simulation_midpoint(self) -> None:
+        selected = select_nlcd_year_for_simulation("2007-01-01", "2012-12-31")
+
+        assert selected["sim_midpoint_year"] == 2010
+        assert selected["selected_year"] == 2011
+        assert selected["landuse_vintage_mismatch_years"] == 1
+
+    def test_selects_oldest_epoch_for_early_window(self) -> None:
+        selected = select_nlcd_year_for_simulation("2000-01-01", "2002-12-31")
+
+        assert selected["selected_year"] == 2001
+        assert selected["landuse_vintage_mismatch_years"] == 0
+
+    def test_selects_latest_supported_epoch_for_recent_window(self) -> None:
+        selected = select_nlcd_year_for_simulation("2020-01-01", "2022-12-31")
+
+        assert selected["selected_year"] == 2021
+        assert selected["landuse_vintage_mismatch_years"] == 0
+
+    def test_rejects_reversed_simulation_window(self) -> None:
+        with pytest.raises(ValueError, match="earlier than sim_start"):
+            select_nlcd_year_for_simulation("2012-01-01", "2007-12-31")

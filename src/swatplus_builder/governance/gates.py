@@ -133,6 +133,52 @@ def soil_fidelity_gate(values: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def landuse_fidelity_gate(values: dict[str, Any]) -> dict[str, Any]:
+    block = values.get("landuse_fidelity")
+    if not isinstance(block, dict):
+        return {"passed": False, "reason": "landuse_fidelity block missing"}
+
+    status = str(block.get("status") or "")
+    if status != "evaluated":
+        return {"passed": False, "reason": f"landuse_fidelity status={status or 'missing'}"}
+
+    hru_mode = str(block.get("hru_mode") or "")
+    try:
+        retention = float(block.get("landuse_class_retention_fraction"))
+    except (TypeError, ValueError):
+        retention = None
+    try:
+        mismatch = abs(float(block.get("landuse_vintage_mismatch_years")))
+    except (TypeError, ValueError):
+        mismatch = None
+
+    failures: list[str] = []
+    if hru_mode != "full_overlay":
+        failures.append(f"hru_mode={hru_mode or 'missing'}")
+    if retention is None:
+        failures.append("landuse_class_retention_fraction missing")
+    elif retention < 0.999:
+        failures.append(f"landuse_class_retention_fraction={retention:.2f}")
+    if mismatch is None:
+        failures.append("landuse_vintage_mismatch_years missing")
+    elif mismatch > 5.0:
+        failures.append(f"landuse_vintage_mismatch_years={mismatch:.1f}")
+
+    if failures:
+        return {
+            "passed": False,
+            "reason": "land-use fidelity degraded: " + "; ".join(failures),
+        }
+    return {
+        "passed": True,
+        "reason": (
+            f"hru_mode={hru_mode}; "
+            f"landuse_class_retention_fraction={retention:.2f}; "
+            f"landuse_vintage_mismatch_years={mismatch:.1f}"
+        ),
+    }
+
+
 def calibration_improvement_gate(values: dict[str, Any]) -> dict[str, Any]:
     if values.get("calibration_success") is not True and values.get(
         "calibration_locked_verification_succeeded"

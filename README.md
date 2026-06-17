@@ -63,7 +63,7 @@ agent — decides what may be claimed.
 
 ## Status
 
-**Alpha, v0.7.0** — locked-benchmark calibration, 13-tool agent (MCP) surface, container baseline.
+**Alpha, v0.7.1** — locked-benchmark calibration, 13-tool agent (MCP) surface, container baseline.
 
 - [x] Pure-Python GIS (WhiteboxTools, rasterio, geopandas)
 - [x] Automated SWAT+ project generation
@@ -97,13 +97,22 @@ The **lock → calibrate → verify** chain is the only scientifically defensibl
 ```
 1. swat lock-benchmark     # snapshot baseline metrics + alignment CSV
        ↓
-2. swat locked-calibrate   # real-engine DDS on CN2 + ALPHA_BF only
+2. swat locked-calibrate   # real-engine DDS against declared parameters
        ↓                   # (calls verify automatically unless --skip-verify)
 3. metrics reported        # delta NSE/KGE vs locked baseline, independently verified
 ```
 
 **Rules** (enforced by the toolchain):
-- Parameters are restricted to `CN2` and `ALPHA_BF` — no silent scope expansion.
+- Standalone `swat locked-calibrate` defaults to the historical `CN2,ALPHA_BF`
+  scope unless `--parameters` is supplied.
+- The governed end-to-end workflow uses basin-screened full-mode parameters
+  before calibration. Eligible controls currently include volume/process
+  partition parameters (`PET_CO`, `ESCO`, `EPCO`, `CN3_SWF`, `CN2`, `LATQ_CO`,
+  `PERCO`), baseflow/subsurface parameters (`LAT_TTIME`, `ALPHA_BF`,
+  `RCHG_DP`), and timing/channel/snow parameters (`SURLAG`, `CH_N2`, `CH_K2`,
+  `SFTMP`, `SMTMP`), with dead controls excluded.
+- No silent scope expansion: candidate parameters must be declared, screened,
+  recorded, and independently verified before claim use.
 - Calibrated metrics are always delta-reported against the locked baseline.
 - `verify_calibration` is mandatory — it re-runs the best solution independently to confirm reproducibility.
 - `evaluate_run` is the authoritative metric source for all reporting.
@@ -336,7 +345,10 @@ rows = build_readiness_table(locks_root)
 
 ## Phase 3E calibration evidence baseline
 
-As of 2026-04-25, the locked real-engine calibration protocol has been run and independently verified on two USGS basins (CN2 + ALPHA_BF only, real-engine DDS):
+As of 2026-04-25, the historical locked real-engine calibration protocol had
+been run and independently verified on two USGS basins using the two-parameter
+`CN2,ALPHA_BF` scope. These rows are retained as a historical baseline, not as
+the current governed full-mode calibration claim:
 
 | Basin | Baseline NSE | Calibrated NSE | ΔNSE | Baseline KGE | Calibrated KGE | ΔKGE | Status |
 |-------|-------------|----------------|------|-------------|----------------|------|--------|
@@ -374,7 +386,7 @@ If you use swatplus-builder in your research, please cite:
                    modeling from a USGS gauge ID}},
   year         = {2026},
   publisher    = {Zenodo},
-  version      = {0.7.0},
+  version      = {0.7.1},
   doi          = {10.5281/zenodo.20650908},
   url          = {https://doi.org/10.5281/zenodo.20650908}
 }
