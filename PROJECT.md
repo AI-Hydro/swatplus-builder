@@ -99,6 +99,15 @@ Active hardening toward research-grade production pipeline. Last updated:
   available and auditable, but the remaining `01547700` issue is
   outlet/channel mass-transfer interpretation and skill, not missing output
   tables or absent HRU controls.
+- Full-overlay `01547700` calibration has been attempted against the locked
+  full-overlay benchmark. Direct `locked-calibrate` probes failed honestly in
+  the `volume` phase: baseline outlet metrics were about `NSE=-0.2556`,
+  `KGE=-0.4902`, `PBIAS=-98.33%`; no tested candidate passed the promotion
+  gate `abs(pbias) <= 30`. This means the package is calibrating, but claim
+  governance correctly refuses to promote a calibration while the outlet volume
+  evidence is invalid. The `locked-calibrate --json` failure path now returns
+  structured JSON errors, and locked sensitivity screening now writes live
+  `sensitivity_screen_progress.json` progress artifacts during long screens.
 - New clean builds now select the supported NLCD epoch nearest the simulation
   midpoint and write `raw/nlcd_selection.json`; land-use fidelity, spatial
   overview, and volume diagnostics read that selection instead of assuming

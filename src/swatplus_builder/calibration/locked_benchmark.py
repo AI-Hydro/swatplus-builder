@@ -886,6 +886,26 @@ def screen_parameters_against_lock(
     baseline_metrics = objective(defaults)
     rows: list[dict[str, Any]] = []
     warnings: list[str] = []
+
+    progress_path = screen_dir / "sensitivity_screen_progress.json"
+
+    def _write_progress(*, status: str, current_parameter: str | None = None) -> None:
+        progress = {
+            "basin_id": lock.basin_id,
+            "basis": "basin_specific",
+            "status": status,
+            "current_parameter": current_parameter,
+            "completed_parameters": len(rows),
+            "total_parameters": len(parameters),
+            "baseline_parameters": defaults,
+            "baseline_metrics": baseline_metrics,
+            "parameters": rows,
+            "warnings": warnings,
+            "updated_at_utc": datetime.now(timezone.utc).isoformat(),
+        }
+        progress_path.write_text(json.dumps(progress, indent=2, default=str) + "\n", encoding="utf-8")
+
+    _write_progress(status="running")
     for name in parameters:
         spec = get_parameter(name)
         lo, hi = spec.range
@@ -983,6 +1003,7 @@ def screen_parameters_against_lock(
                     },
                 }
             )
+            _write_progress(status="running", current_parameter=name)
         except Exception as exc:
             warnings.append(f"{name}: {exc}")
             rows.append(
@@ -998,6 +1019,7 @@ def screen_parameters_against_lock(
                     },
                 }
             )
+            _write_progress(status="running", current_parameter=name)
 
     payload = {
         "basin_id": lock.basin_id,
@@ -1009,6 +1031,7 @@ def screen_parameters_against_lock(
     json_path = screen_dir / "sensitivity_screen.json"
     md_path = screen_dir / "sensitivity_screen.md"
     json_path.write_text(json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8")
+    _write_progress(status="complete")
     lines = [
         "# Locked Sensitivity Screen",
         "",

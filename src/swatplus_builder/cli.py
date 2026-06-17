@@ -1532,7 +1532,19 @@ def cmd_locked_calibrate(
             timeout_s=timeout_s,
         )
     except SwatBuilderError as exc:
-        if not json_output:
+        if json_output:
+            print(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "error": str(exc),
+                        "error_type": exc.__class__.__name__,
+                        "context": exc.context,
+                    },
+                    default=str,
+                )
+            )
+        else:
             rprint(f"[red]error:[/red] {exc}")
         raise typer.Exit(1) from exc
 

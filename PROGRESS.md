@@ -8862,6 +8862,43 @@ New documentation: `docs/FULL_MODE_QSWAT_REFERENCE_AUDIT.md`.
       -> `overall_status=complete`.
     - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m py_compile scripts/run_objective_10basin.py scripts/audit_production_objective.py`
       -> passed.
+- [2026-06-17] [Full-overlay 01547700 calibration attempt exposed volume-gate blocker]
+  Ran direct locked-calibration probes against the full-overlay `01547700`
+  benchmark created from
+  `swatplus_runs/phaseC_01547700_full_overlay_20260617_2000_2019_cal/`.
+  - Non-JSON probe command:
+    `PYTHONPATH=src SWATPLUS_EXE="$PWD/bin/swatplus_exe" /opt/miniconda3/bin/python -m swatplus_builder.cli locked-calibrate --benchmark-dir swatplus_runs/phaseC_01547700_full_overlay_20260617_2000_2019_cal/benchmark --base-txtinout swatplus_runs/phaseC_01547700_full_overlay_20260617_2000_2019_cal/project/Scenarios/Default/TxtInOut --out-dir swatplus_runs/phaseC_01547700_full_overlay_20260617_2000_2019_cal/direct_locked_cal_probe_nonjson --parameters CN2,PERCO,LATQ_CO,CN3_SWF,CH_N2,CH_K2 --n-evals 8 --binary bin/swatplus_exe`
+  - Result: the calibrator exited with
+    `No calibration candidate passed the promotion gates during phase 'volume'`.
+    Candidate history was written to
+    `swatplus_runs/phaseC_01547700_full_overlay_20260617_2000_2019_cal/direct_locked_cal_probe_nonjson/calibration_reports_locked/history.csv`.
+  - Evidence from the reduced direct probe:
+    - baseline evaluation: `NSE=-0.25557830920925273`,
+      `KGE=-0.49020486199895896`, `PBIAS=-98.32937001425233`;
+    - selected outlet GIS `29`, selected/all-terminal fraction `1.0`;
+    - all-terminal diagnostic volume gate remained failed
+      (`all_terminal_volume_gate_passes_diagnostic=0.0`);
+    - one random volume-phase candidate returned NaN metrics; a
+      `CN3_SWF`-only candidate reproduced the same baseline metrics;
+    - no candidate satisfied the promotion gate `abs(pbias) <= 30`.
+  - Interpretation: calibration is not being skipped. For this full-overlay
+    build, the governed calibrator refuses to promote candidates because the
+    outlet/channel volume evidence remains invalid. The immediate blocker is
+    still outlet/channel mass-transfer interpretation or model construction,
+    not the absence of calibration.
+  - Package hardening:
+    - fixed `swat locked-calibrate --json` so `SwatBuilderError` failures emit
+      structured JSON (`status`, `error`, `error_type`, `context`) instead of
+      exiting silently;
+    - added live
+      `calibration/sensitivity_screen_locked/sensitivity_screen_progress.json`
+      emission during locked sensitivity screening so long full-overlay
+      calibration screens expose baseline metrics, completed parameter count,
+      current parameter, warnings, and partial rows while running.
+    - bumped package metadata and runtime `__version__` to `0.7.5` for the
+      calibration-visibility release.
+  - Live JSON probe after the patch returned:
+    `{"status": "error", "error": "No calibration candidate passed the promotion gates during phase 'volume'.", "error_type": "SwatBuilderPipelineError", "context": {"phase": "volume", "history_csv": ".../direct_locked_cal_probe_json_after_patch/calibration_reports_locked/history.csv", "n_evaluations": 2, "promotion_gate": "abs(pbias) <= 30"}}`.
 - [2026-06-17] [Phase C full-overlay HRU workflow surface]
   Made the Phase C full-overlay HRU path user-actionable from the canonical
   workflow instead of only detectable after a dominant-only run.
