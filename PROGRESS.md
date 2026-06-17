@@ -7,6 +7,75 @@ Phase 3L — Full-Mode Engine Compatibility & Research-Grade Pipeline
 
 **Current focus:** The canonical full-mode workflow is implemented and auditable, but the objective-suite target is still scientifically open. As of 2026-06-17, the summarize-only objective report has been regenerated from existing evidence with fresher overrides for `01547700`, `01493500`, `03351500`, and `02129000`; it reports `research_grade_count=0/11`, `target_hypothesis_evaluation.status=not_supported_by_current_evidence`, and blocker domains `science=6`, `provenance=3`, `diagnostics=2`. The production compliance audit reports `complete` (`17/17`). Treat older `69/97` or `96/97` audit language as historical unless explicitly tied to an older dated entry.
 
+### [2026-06-17] — Full-overlay `01547700` workflow validates the surface, not the claim
+
+Ran the canonical `01547700` workflow through the newly released Phase C
+surface with explicit full-overlay HRUs and no calibration:
+
+```bash
+PYTHONPATH=src \
+SWATPLUS_EXE="$PWD/bin/swatplus_exe" \
+SWATPLUS_BUILDER_ARTIFACTS="$PWD/swatplus_runs" \
+SWATPLUS_DATASETS_DB="$PWD/bin/swatplus_datasets.sqlite" \
+/opt/miniconda3/bin/python -m swatplus_builder.cli workflow run \
+  --usgs-id 01547700 \
+  --model-family full \
+  --start 2000-01-01 \
+  --end 2019-12-31 \
+  --warmup-years 3 \
+  --hru-mode full_overlay \
+  --min-hru-fraction 0.001 \
+  --no-calibrate \
+  --claim-tier research_grade \
+  --contract-status accepted \
+  --accepted-by user \
+  --out-dir swatplus_runs/phaseC_01547700_full_overlay_20260617_2000_2019_nocal \
+  --json
+```
+
+The command completed successfully and wrote evidence at
+`swatplus_runs/phaseC_01547700_full_overlay_20260617_2000_2019_nocal/evidence_summary.json`.
+The package correctly retained `effective_claim_tier=exploratory`.
+
+Verified Phase C evidence:
+- requested HRU mode was `full_overlay` with `min_hru_fraction=0.001`;
+- actual HRU catalog reports `dominant_only=false`, `n_subbasins=31`,
+  `n_lsus=31`, `n_hrus=1876`, and no all-touched overlay fallback;
+- land-use fidelity improved strongly over dominant-only but did not pass the
+  research-grade gate: 15 source classes present, 14 retained,
+  `retention_fraction=0.9333333333333333`, missing class `UCOM`;
+- NLCD vintage selection is transparent: NLCD 2011 for a 2010 simulation
+  midpoint.
+
+The run also sharpened the remaining physical/routing issue instead of hiding
+it. The subsurface prior was applied and repaired the basin-scale water
+partition (`WYLD/P` from `0.159` to `0.408`, observed `Q/P=0.465`), but outlet
+performance remained poor: `NSE=-0.25566917093307473`,
+`KGE=-0.49091357398269153`, and `PBIAS=-98.33427603655196`. Physical gates
+failed on volume bias and negative skill. Routing diagnostics found selected
+outlet GIS `29`, a single terminal, selected-terminal fraction `1.0`, and
+selected/terminal channel rows for all 7305 days, but terminal outflow was only
+about `1.89%` of basin water yield (`mass_closure_ratio=0.01889771304447358`).
+The routed-to-channel reference ratio was much closer
+(`all_terminal_routed_to_channel_closure_ratio=0.9395150923905525`), so the
+next scientific blocker is outlet/channel mass-transfer interpretation rather
+than missing SWAT+ output tables.
+
+Visual QA:
+- opened `fig_01_hydrograph.png`: simulated outlet flow is near zero against
+  observed peaks, matching the failed physical metrics;
+- opened `fig_03_fdc.png`: simulated flow remains orders of magnitude lower
+  than observed across the flow-duration curve;
+- opened `fig_08_basin_spatial_overview.png`, `fig_09_forcing_context.png`,
+  `fig_10_water_balance.png`, and `fig_11_landuse_composition.png`; all are
+  readable diagnostic artifacts. The land-use plot is useful evidence, but tiny
+  minority classes are not a conference centerpiece.
+
+Interpretation: the Phase C CLI/MCP full-overlay surface works in a real
+canonical run. It does not make `01547700` research-grade. The honest result is
+a better-resolved build, a substantially improved basin water balance, and a
+clearer unresolved outlet/channel mass-closure and skill blocker.
+
 ### [2026-05-25] — Virtual all-terminal scope no longer re-blocks itself through selected-outlet diagnostics
 
 Ran the canonical `02129000` virtual all-terminal experiment through

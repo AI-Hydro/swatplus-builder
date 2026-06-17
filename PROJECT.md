@@ -85,6 +85,20 @@ Active hardening toward research-grade production pipeline. Last updated:
   `--hru-mode full_overlay --min-hru-fraction <fraction>` option for
   research-grade land-use fidelity probes; the default HRU mode has not been
   changed.
+- A real canonical full-overlay workflow has now been run through that surface:
+  `swatplus_runs/phaseC_01547700_full_overlay_20260617_2000_2019_nocal/`.
+  The run completed with `--hru-mode full_overlay --min-hru-fraction 0.001`
+  and `--no-calibrate`, producing `1876` HRUs across `31` subbasins and
+  retaining `14/15` source land-use classes (`retention_fraction=0.9333`;
+  missing `UCOM`). This validates the workflow control path, but it does not
+  validate a research-grade claim. Basin water partition improved after the
+  subsurface prior (`WYLD/P 0.159 -> 0.408`, observed `Q/P=0.465`), while
+  outlet performance remained poor (`NSE=-0.256`, `KGE=-0.491`,
+  `PBIAS=-98.3%`) and terminal outflow was only about `1.89%` of basin water
+  yield. Treat this as a sharper diagnostic blocker: full-overlay HRUs are
+  available and auditable, but the remaining `01547700` issue is
+  outlet/channel mass-transfer interpretation and skill, not missing output
+  tables or absent HRU controls.
 - New clean builds now select the supported NLCD epoch nearest the simulation
   midpoint and write `raw/nlcd_selection.json`; land-use fidelity, spatial
   overview, and volume diagnostics read that selection instead of assuming
