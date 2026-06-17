@@ -80,8 +80,11 @@ Active hardening toward research-grade production pipeline. Last updated:
   `lu_127` retained class. For this basin, `min_hru_fraction=0.001` retains all
   15 source land-use classes with `1871` HRUs in about `19.8 s`; no-filter
   full overlay retains all 15 classes with `3320` HRUs in about `32.4 s`;
-  `0.005` is smaller (`858` HRUs) but retains only `11/15` classes. This is
-  decision evidence only; the default HRU mode has not been changed.
+  `0.005` is smaller (`858` HRUs) but retains only `11/15` classes. The
+  canonical workflow and MCP launcher now expose this as an explicit
+  `--hru-mode full_overlay --min-hru-fraction <fraction>` option for
+  research-grade land-use fidelity probes; the default HRU mode has not been
+  changed.
 - New clean builds now select the supported NLCD epoch nearest the simulation
   midpoint and write `raw/nlcd_selection.json`; land-use fidelity, spatial
   overview, and volume diagnostics read that selection instead of assuming

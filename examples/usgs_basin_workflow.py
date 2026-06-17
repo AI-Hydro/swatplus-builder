@@ -1116,13 +1116,22 @@ def main(
     )
 
     # 6. HRUs
-    _section("6/11 HRU overlay (dominant per LSU)")
+    hru_mode = os.environ.get("SWATPLUS_HRU_MODE", "dominant_only").strip().lower()
+    if hru_mode not in {"dominant_only", "full_overlay"}:
+        raise ValueError("SWATPLUS_HRU_MODE must be one of: dominant_only, full_overlay")
+    hru_dominant_only = hru_mode == "dominant_only"
+    min_hru_fraction = float(os.environ.get("SWATPLUS_MIN_HRU_FRACTION", "0.0"))
+    if min_hru_fraction < 0.0:
+        raise ValueError("SWATPLUS_MIN_HRU_FRACTION must be non-negative")
+    _section(f"6/11 HRU overlay ({hru_mode})")
     t0 = time.time()
     hru = create_hrus(
         watershed=ws,
         landuse_raster=nlcd_tif,
         soil_raster=hru_soil_raster,
         constant_soil_mukey=constant_soil_mukey,
+        dominant_only=hru_dominant_only,
+        min_hru_fraction=min_hru_fraction,
     )
     n_sub, n_hru, hru_coverage_ratio = _hru_coverage(hru, ws.stats)
     min_hru_coverage_ratio = float(os.environ.get("SWATPLUS_MIN_HRU_COVERAGE_RATIO", "0.90"))
@@ -1154,6 +1163,8 @@ def main(
                 landuse_raster=repaired_landuse,
                 soil_raster=repaired_soil,
                 constant_soil_mukey=constant_soil_mukey,
+                dominant_only=hru_dominant_only,
+                min_hru_fraction=min_hru_fraction,
             )
             n_sub, n_hru, hru_coverage_ratio = _hru_coverage(hru, ws.stats)
         if hru_coverage_ratio < min_hru_coverage_ratio and hru_soil_raster is not None:
@@ -1191,6 +1202,8 @@ def main(
                 soil_raster=None,
                 constant_soil_mukey=constant_soil_mukey,
                 workdir_subdir="hrus_constant_soil_representative",
+                dominant_only=hru_dominant_only,
+                min_hru_fraction=min_hru_fraction,
             )
             n_sub, n_hru, hru_coverage_ratio = _hru_coverage(hru, ws.stats)
         if hru_coverage_ratio < min_hru_coverage_ratio:

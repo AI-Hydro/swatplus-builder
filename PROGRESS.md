@@ -8793,6 +8793,30 @@ New documentation: `docs/FULL_MODE_QSWAT_REFERENCE_AUDIT.md`.
       -> `overall_status=complete`.
     - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m py_compile scripts/run_objective_10basin.py scripts/audit_production_objective.py`
       -> passed.
+- [2026-06-17] [Phase C full-overlay HRU workflow surface]
+  Made the Phase C full-overlay HRU path user-actionable from the canonical
+  workflow instead of only detectable after a dominant-only run.
+  - Added `swat workflow run --hru-mode dominant_only|full_overlay` and
+    `--min-hru-fraction <fraction>`.
+  - Plumbed the options through `RunUSGSWorkflowRequest`, `run_pipeline()`,
+    the full-build wrapper, and the bundled `usgs_basin_workflow` builder.
+  - Added the same HRU controls to MCP `run_workflow`, so agent launches and
+    CLI launches have the same claim-fidelity surface.
+  - The default remains `dominant_only`; this does not rewrite prior evidence
+    or silently increase build cost. Research-grade land-use fidelity probes
+    can now explicitly request `full_overlay`, and the existing land-use gate
+    still decides whether the resulting evidence supports promotion.
+  - Version metadata was bumped to `0.7.2` for release after this workflow
+    surface change.
+  - Verification:
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m py_compile src/swatplus_builder/cli.py src/swatplus_builder/orchestrate.py src/swatplus_builder/workflows/usgs_e2e.py src/swatplus_builder/workflows/full_build.py src/swatplus_builder/mcp/server.py examples/usgs_basin_workflow.py src/swatplus_builder/examples/usgs_basin_workflow.py`
+      -> passed.
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m pytest -q tests/test_cli_workflow.py tests/test_mcp_server.py tests/test_full_build.py tests/test_orchestrate.py tests/test_workflow_usgs_e2e.py::test_contract_policy_blocks_research_without_acceptance tests/test_workflow_usgs_e2e.py::test_virtual_outlet_workflow_requires_authority`
+      -> 51 passed.
+    - `PYTHONPATH=src /opt/miniconda3/bin/python -m swatplus_builder.cli workflow run --help | rg -n "hru-mode|min-hru-fraction|claim-tier"`
+      -> help lists `--hru-mode` and `--min-hru-fraction`.
+    - `git diff --check`
+      -> passed.
     - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m pytest -q tests/test_script_policy.py tests/test_workflow_usgs_e2e.py::test_workflow_promotes_build_diagnostic_artifacts_to_evidence tests/test_skill_md.py`
       -> 26 passed.
     - `git diff --check`

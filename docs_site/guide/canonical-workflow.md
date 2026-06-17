@@ -34,6 +34,8 @@ swat workflow run \
   --start 2000-01-01 --end 2019-12-31 \
   --warmup-years 3 \
   --calibrate \
+  --hru-mode full_overlay \
+  --min-hru-fraction 0.001 \
   --claim-tier research_grade \
   --contract workflow_contract.json \
   --out-dir demo_runs/workflow/02177000 \
@@ -44,6 +46,11 @@ Passing the accepted `--contract` (optionally with `--contract-status` and
 `--accepted-by`) lets a research-grade run carry its accepted contract metadata
 directly. Without it, a high-tier *request* still only yields a high-tier
 *grant* if the gates pass.
+
+`--hru-mode full_overlay` is the claim-conservative land-use fidelity path for
+research-grade probes. The default `dominant_only` mode remains useful for
+first-pass builds, but the land-use fidelity gate will not promote a
+research-grade land-use claim from dominant-only HRUs.
 
 ### The stages a run executes
 

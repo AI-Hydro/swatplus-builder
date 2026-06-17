@@ -45,6 +45,8 @@ def build_full_model(
     end_date: str,
     warmup_years: int,
     allow_diagnostic_fallbacks: bool = False,
+    hru_mode: str = "dominant_only",
+    min_hru_fraction: float = 0.0,
 ) -> FullModelBuildResult:
     """Build and initially execute a full SWAT+ model for one USGS basin.
 
@@ -55,15 +57,23 @@ def build_full_model(
     evidence.
     """
     out = Path(outdir).expanduser().resolve()
+    normalized_hru_mode = hru_mode.strip().lower()
+    if normalized_hru_mode not in {"dominant_only", "full_overlay"}:
+        raise ValueError("--hru-mode must be one of: dominant_only, full_overlay")
+    if float(min_hru_fraction) < 0.0:
+        raise ValueError("--min-hru-fraction must be non-negative")
     try:
-        env_overrides = (
-            {
+        env_overrides = {
+            "SWATPLUS_HRU_MODE": normalized_hru_mode,
+            "SWATPLUS_MIN_HRU_FRACTION": str(float(min_hru_fraction)),
+        }
+        if allow_diagnostic_fallbacks:
+            env_overrides.update(
+                {
                 "SWATPLUS_ALLOW_SYNTHETIC_SOILS": "1",
                 "SWATPLUS_MAX_SOIL_FALLBACK_RATIO": "1.0",
-            }
-            if allow_diagnostic_fallbacks
-            else {}
-        )
+                }
+            )
         with _temporary_usgs_id(usgs_id), _temporary_env(env_overrides):
             module = _load_example_builder()
             # usgs_basin_workflow.main reads a CLI-created global args object

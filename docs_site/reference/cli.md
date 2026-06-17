@@ -15,10 +15,12 @@ option list. The tables below reflect the commands registered in
 | `swat workflow negotiate --task "..."` | validate a request, emit `workflow_contract.json` |
 | `swat workflow run --usgs-id <id> --model-family <full\|lte> ...` | the end-to-end governed pipeline |
 
-Key `workflow run` options: `--usgs-id` (required), `--model-family` (required:
-`full` or `lte`), `--start`, `--end`, `--warmup-years`, `--calibrate /
---no-calibrate`, `--claim-tier` (default `diagnostic`), `--contract`,
-`--contract-status`, `--accepted-by`, `--out-dir`, `--json`. See
+Key `workflow run` options: `--usgs-id` (required), `--model-family`
+(`full` or `lte`), `--start`, `--end`, `--warmup-years`,
+`--calibrate/--no-calibrate`, `--claim-tier` (default `diagnostic`),
+`--hru-mode` (`dominant_only` default or `full_overlay`),
+`--min-hru-fraction`, `--contract`, `--contract-status`, `--accepted-by`,
+`--out-dir`, `--json`. See
 [The canonical workflow](../guide/canonical-workflow.md).
 
 ## Run, inspect, health

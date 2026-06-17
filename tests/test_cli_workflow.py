@@ -133,6 +133,50 @@ def test_workflow_run_acceptance_flags_reach_contract_policy(tmp_path: Path):
     assert ev["blocker_class"] == "contract_policy_blocked"
 
 
+def test_workflow_run_hru_options_reach_request(monkeypatch, tmp_path: Path):
+    from swatplus_builder.workflows import usgs_e2e
+
+    seen = {}
+
+    def fake_run(req):
+        seen["hru_mode"] = req.hru_mode
+        seen["min_hru_fraction"] = req.min_hru_fraction
+        evidence = Path(req.out_dir) / "evidence_summary.json"
+        evidence.parent.mkdir(parents=True, exist_ok=True)
+        evidence.write_text('{"ok": true}\n', encoding="utf-8")
+        return usgs_e2e.RunUSGSWorkflowResult(
+            success=True,
+            run_id="fake",
+            artifact_dir=str(req.out_dir),
+            evidence_summary_path=str(evidence),
+            blocker_class=None,
+            values={"effective_claim_tier": "diagnostic"},
+        )
+
+    monkeypatch.setattr(usgs_e2e, "run_usgs_workflow", fake_run)
+
+    runner = CliRunner()
+    res = runner.invoke(
+        app,
+        [
+            "workflow",
+            "run",
+            "--usgs-id",
+            "01654000",
+            "--hru-mode",
+            "full_overlay",
+            "--min-hru-fraction",
+            "0.001",
+            "--out-dir",
+            str(tmp_path / "run_hru"),
+            "--json",
+        ],
+    )
+
+    assert res.exit_code == 0, res.stdout
+    assert seen == {"hru_mode": "full_overlay", "min_hru_fraction": 0.001}
+
+
 def test_workflow_run_json_stdout_suppresses_internal_progress(monkeypatch, tmp_path: Path):
     import sys
 

@@ -1752,6 +1752,16 @@ def cmd_workflow_run(
     warmup_years: int = typer.Option(3, "--warmup-years"),
     calibrate: bool = typer.Option(True, "--calibrate/--no-calibrate"),
     claim_tier: str = typer.Option("diagnostic", "--claim-tier"),
+    hru_mode: str = typer.Option(
+        "dominant_only",
+        "--hru-mode",
+        help="HRU construction mode: dominant_only or full_overlay.",
+    ),
+    min_hru_fraction: float = typer.Option(
+        0.0,
+        "--min-hru-fraction",
+        help="Minimum LSU-area fraction retained for full-overlay HRU combinations.",
+    ),
     contract: str = typer.Option(None, "--contract", help="Path to workflow_contract.json."),
     contract_status: str | None = typer.Option(
         None,
@@ -1784,6 +1794,13 @@ def cmd_workflow_run(
     if family not in {"full", "lte"}:
         rprint("[red]error:[/red] --model-family must be one of: full, lte")
         raise typer.Exit(2)
+    normalized_hru_mode = hru_mode.strip().lower()
+    if normalized_hru_mode not in {"dominant_only", "full_overlay"}:
+        rprint("[red]error:[/red] --hru-mode must be one of: dominant_only, full_overlay")
+        raise typer.Exit(2)
+    if min_hru_fraction < 0.0:
+        rprint("[red]error:[/red] --min-hru-fraction must be non-negative")
+        raise typer.Exit(2)
 
     contract_path = None
     if contract:
@@ -1807,6 +1824,8 @@ def cmd_workflow_run(
         accepted_by=accepted_by,
         contract_path=contract_path,
         calibrate=calibrate,
+        hru_mode=normalized_hru_mode,
+        min_hru_fraction=min_hru_fraction,
         virtual_all_terminal_outlet=virtual_all_terminal_outlet,
         virtual_outlet_authority=virtual_outlet_authority,
     )

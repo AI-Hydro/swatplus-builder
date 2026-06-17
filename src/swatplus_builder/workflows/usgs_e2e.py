@@ -78,6 +78,8 @@ class RunUSGSWorkflowRequest:
     accepted_by: str | None = None
     contract_path: str | None = None
     calibrate: bool = True
+    hru_mode: str = "dominant_only"
+    min_hru_fraction: float = 0.0
     virtual_all_terminal_outlet: bool = False
     virtual_outlet_authority: str | None = None
 
@@ -951,6 +953,8 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
         "claim_tier_allowed": allowed_tier,
         "model_family": request.model_family,
         "warmup_years": int(request.warmup_years),
+        "hru_mode_requested": request.hru_mode,
+        "min_hru_fraction_requested": float(request.min_hru_fraction),
         "start": request.start,
         "end": request.end,
         "window_years": datetime.fromisoformat(request.end).year - datetime.fromisoformat(request.start).year + 1,
@@ -976,6 +980,8 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
                 model_family=request.model_family,
                 warmup_years=request.warmup_years,
                 allow_diagnostic_fallbacks=True,
+                hru_mode=request.hru_mode,
+                min_hru_fraction=request.min_hru_fraction,
             )
             values.update(summary if isinstance(summary, dict) else {"pipeline_summary": str(summary)})
             _promote_soil_provenance_from_metadata(values, out)

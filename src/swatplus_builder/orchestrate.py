@@ -25,6 +25,8 @@ def run_pipeline(
     model_family: str = "full",
     warmup_years: int = 3,
     allow_diagnostic_fallbacks: bool = False,
+    hru_mode: str = "dominant_only",
+    min_hru_fraction: float = 0.0,
 ) -> dict[str, Any]:
     """Execute the full end-to-end validation platform for a basin.
     
@@ -58,6 +60,8 @@ def run_pipeline(
         "threads": threads,
         "model_family": model_family,
         "warmup_years": int(warmup_years),
+        "hru_mode_requested": hru_mode,
+        "min_hru_fraction_requested": float(min_hru_fraction),
         "status": "FAILED"
     }
 
@@ -74,6 +78,8 @@ def run_pipeline(
                 end_date=end_date,
                 warmup_years=warmup_years,
                 allow_diagnostic_fallbacks=allow_diagnostic_fallbacks,
+                hru_mode=hru_mode,
+                min_hru_fraction=min_hru_fraction,
             )
             run_config["build"] = build_result.to_dict()
             if not build_result.success:

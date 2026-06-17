@@ -16,7 +16,7 @@ When you report a result produced with swatplus-builder, cite the software
                    modeling from a USGS gauge ID}},
   year         = {2026},
   publisher    = {Zenodo},
-  version      = {0.4.0},
+  version      = {0.7.2},
   doi          = {10.5281/zenodo.20650908},
   url          = {https://doi.org/10.5281/zenodo.20650908}
 }

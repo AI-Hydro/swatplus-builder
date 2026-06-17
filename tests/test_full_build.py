@@ -200,6 +200,8 @@ def test_build_full_model_allows_diagnostic_fallbacks_with_scoped_env(monkeypatc
         def main(outdir, **kwargs):
             seen["allow_synthetic"] = os.environ.get("SWATPLUS_ALLOW_SYNTHETIC_SOILS")
             seen["max_fallback"] = os.environ.get("SWATPLUS_MAX_SOIL_FALLBACK_RATIO")
+            seen["hru_mode"] = os.environ.get("SWATPLUS_HRU_MODE")
+            seen["min_hru_fraction"] = os.environ.get("SWATPLUS_MIN_HRU_FRACTION")
             txt = Path(outdir) / "project" / "Scenarios" / "Default" / "TxtInOut"
             txt.mkdir(parents=True)
             (txt / "file.cio").write_text("file.cio\n", encoding="utf-8")
@@ -208,6 +210,8 @@ def test_build_full_model_allows_diagnostic_fallbacks_with_scoped_env(monkeypatc
 
     monkeypatch.delenv("SWATPLUS_ALLOW_SYNTHETIC_SOILS", raising=False)
     monkeypatch.delenv("SWATPLUS_MAX_SOIL_FALLBACK_RATIO", raising=False)
+    monkeypatch.delenv("SWATPLUS_HRU_MODE", raising=False)
+    monkeypatch.delenv("SWATPLUS_MIN_HRU_FRACTION", raising=False)
     monkeypatch.setattr(full_build, "_load_example_builder", fake_load_builder)
 
     result = full_build.build_full_model(
@@ -217,15 +221,21 @@ def test_build_full_model_allows_diagnostic_fallbacks_with_scoped_env(monkeypatc
         end_date="2010-01-10",
         warmup_years=3,
         allow_diagnostic_fallbacks=True,
+        hru_mode="full_overlay",
+        min_hru_fraction=0.001,
     )
 
     assert result.success is True
     assert seen == {
         "allow_synthetic": "1",
         "max_fallback": "1.0",
+        "hru_mode": "full_overlay",
+        "min_hru_fraction": "0.001",
     }
     assert os.environ.get("SWATPLUS_ALLOW_SYNTHETIC_SOILS") is None
     assert os.environ.get("SWATPLUS_MAX_SOIL_FALLBACK_RATIO") is None
+    assert os.environ.get("SWATPLUS_HRU_MODE") is None
+    assert os.environ.get("SWATPLUS_MIN_HRU_FRACTION") is None
 
 
 def test_classify_dem_dns_failure_as_provider_unreachable() -> None:

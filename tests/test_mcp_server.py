@@ -131,11 +131,18 @@ def test_run_workflow_launches_detached_process_and_status_roundtrips(
 
     out_dir = tmp_path / "wf"
     res = tools["run_workflow"].fn(
-        req=RunWorkflowRequest(usgs_id="01547700", out_dir=str(out_dir))
+        req=RunWorkflowRequest(
+            usgs_id="01547700",
+            out_dir=str(out_dir),
+            hru_mode="full_overlay",
+            min_hru_fraction=0.001,
+        )
     )
     assert res.status == "started"
     assert res.pid == 99999999
     assert "--usgs-id" in captured["argv"] and "01547700" in captured["argv"]
+    assert "--hru-mode" in captured["argv"] and "full_overlay" in captured["argv"]
+    assert "--min-hru-fraction" in captured["argv"] and "0.001" in captured["argv"]
     assert captured["kwargs"]["start_new_session"] is True
     assert (out_dir / "workflow_launch.json").exists()
     assert "swat workflow run" in res.equivalent_cli

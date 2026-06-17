@@ -201,6 +201,18 @@ class RunWorkflowRequest(BaseModel):
     end: str = Field("2019-12-31", description="Simulation end date (YYYY-MM-DD).")
     model_family: Literal["full", "lte"] = Field("full", description="SWAT+ model family.")
     warmup_years: int = Field(3, description="Warm-up years excluded from evaluation.")
+    hru_mode: Literal["dominant_only", "full_overlay"] = Field(
+        "dominant_only",
+        description=(
+            "HRU construction mode. Use full_overlay for research-grade land-use fidelity probes; "
+            "dominant_only remains the default first-run mode."
+        ),
+    )
+    min_hru_fraction: float = Field(
+        0.0,
+        ge=0.0,
+        description="Minimum LSU-area fraction retained for full-overlay HRU combinations.",
+    )
     calibrate: bool = Field(True, description="Run gated locked calibration after the base run.")
     claim_tier: str = Field(
         "diagnostic",
@@ -315,6 +327,10 @@ def create_mcp_server() -> FastMCP:
             req.end,
             "--warmup-years",
             str(req.warmup_years),
+            "--hru-mode",
+            req.hru_mode,
+            "--min-hru-fraction",
+            str(req.min_hru_fraction),
             "--out-dir",
             str(out_dir),
             "--calibrate" if req.calibrate else "--no-calibrate",

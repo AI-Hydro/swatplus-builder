@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "swatplus-builder"
-version = "0.7.1"
+version = "0.7.2"
 description = "Build and calibrate SWAT+ hydrologic models from a USGS gauge ID — with evidence-backed, claim-governed results."
 readme = "README.md"
 license = { text = "MIT" }
