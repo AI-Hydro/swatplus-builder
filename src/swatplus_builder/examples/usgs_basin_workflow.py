@@ -70,6 +70,7 @@ EXPECTED_AREA_KM2 = float(
 SIM_START = "2015-01-01"
 SIM_END = "2015-12-31"
 DEM_RESOLUTION_M = 30
+DEM_BUFFER_M = float(os.environ.get("SWATPLUS_DEM_BUFFER_M", "5000"))
 
 # Resolve binary location
 BIN_DIR = Path(__file__).parent.parent / "bin"
@@ -457,13 +458,37 @@ def fetch_basin_boundary(usgs_id: str, out_gpkg: Path, *, dem_path: Path | None 
     return basin, provenance_dict
 
 
-def fetch_dem(basin, out_tif: Path, resolution_m: int = 30):
-    """Fetch 3DEP DEM over ``basin`` polygon as a GeoTIFF."""
+def fetch_dem(
+    basin,
+    out_tif: Path,
+    resolution_m: int = 30,
+    *,
+    buffer_m: float = 5000.0,
+):
+    """Fetch a 3DEP DEM over a buffered rectangular basin extent.
+
+    D8 delineation needs terrain beyond the reference polygon so cells near a
+    clipped edge can follow their natural drainage path. The authoritative
+    basin polygon remains unchanged and is used later for area/IoU validation.
+    """
     import py3dep
 
-    geom = basin.geometry.iloc[0]
     out_tif.parent.mkdir(parents=True, exist_ok=True)
     try:
+        import geopandas as gpd
+        from shapely.geometry import box
+
+        basin_projected = basin.to_crs("EPSG:5070")
+        minx, miny, maxx, maxy = basin_projected.total_bounds
+        request_box = box(
+            minx - buffer_m,
+            miny - buffer_m,
+            maxx + buffer_m,
+            maxy + buffer_m,
+        )
+        geom = gpd.GeoSeries([request_box], crs="EPSG:5070").to_crs("EPSG:4326").iloc[0]
+        reference_area_km2 = float(basin_projected.geometry.area.sum() / 1e6)
+        request_area_km2 = float(request_box.area / 1e6)
         dem = py3dep.get_dem(geom, resolution=resolution_m, crs="EPSG:4326")
     except Exception as exc:
         cached = _find_cached_dem(out_tif)
@@ -477,6 +502,9 @@ def fetch_dem(basin, out_tif: Path, resolution_m: int = 30):
                     "source": "local_authoritative_3dep_cache",
                     "cached_dem": str(cached),
                     "resolution_m": resolution_m,
+                    "dem_buffer_m_requested": buffer_m,
+                    "request_shape": "buffered_bounding_box",
+                    "cache_buffer_verified": False,
                     "reason": f"py3dep_3dep_fetch_failed: {exc}",
                 },
                 indent=2,
@@ -496,6 +524,10 @@ def fetch_dem(basin, out_tif: Path, resolution_m: int = 30):
             {
                 "source": "usgs_3dep_py3dep",
                 "resolution_m": resolution_m,
+                "dem_buffer_m": buffer_m,
+                "request_shape": "buffered_bounding_box",
+                "reference_area_km2": reference_area_km2,
+                "request_area_km2": request_area_km2,
             },
             indent=2,
         )
@@ -729,8 +761,16 @@ def main(
     sim_start: str = SIM_START,
     sim_end: str = SIM_END,
     warmup_years: int = 0,
+    build_config: object = None,
 ):
     import json
+
+    from swatplus_builder.workflows.full_build import FullBuildConfig
+
+    if isinstance(build_config, FullBuildConfig):
+        cfg = build_config
+    else:
+        cfg = None
 
     from swatplus_builder.calibration.nwis import fetch_usgs_daily_q
     from swatplus_builder.db.project import create_project_db, upsert_project_metadata
@@ -796,7 +836,14 @@ def main(
     _section(f"2/11 DEM {DEM_RESOLUTION_M} m from USGS 3DEP")
     dem_tif = outdir / "raw" / "dem.tif"
     t0 = time.time()
-    _, n = _with_retries("fetch_dem", fetch_dem, basin, dem_tif, resolution_m=DEM_RESOLUTION_M)
+    _, n = _with_retries(
+        "fetch_dem",
+        fetch_dem,
+        basin,
+        dem_tif,
+        resolution_m=DEM_RESOLUTION_M,
+        buffer_m=DEM_BUFFER_M,
+    )
     retry_attempts["fetch_dem"] = n
     _ok(f"dem.tif  ({dem_tif.stat().st_size / 1e6:.1f} MB)",
         elapsed=time.time() - t0)
@@ -880,8 +927,9 @@ def main(
                 outlet=outlet,
                 workdir=outdir / "delin",
                 stream_threshold_cells=th,
-                expected_area_km2=EXPECTED_AREA_KM2 if EXPECTED_AREA_KM2 > 0 else None,
+                expected_area_km2=actual_area_km2,
                 dem_conditioning=dem_conditioning,
+                require_domain_margin=True,
             )
         except SwatBuilderPipelineError as exc:
             threshold_attempts.append({
@@ -973,10 +1021,11 @@ def main(
                     outlet=outlet,
                     workdir=_burn_workdir,
                     stream_threshold_cells=base_threshold,
-                    expected_area_km2=EXPECTED_AREA_KM2 if EXPECTED_AREA_KM2 > 0 else None,
+                    expected_area_km2=actual_area_km2,
                     dem_conditioning=dem_conditioning,
                     stream_burn_vector=_flowlines_path,
                     stream_burn_depth_m=10.0,
+                    require_domain_margin=True,
                 )
                 _vr = validate_watershed(
                     ws_try,
@@ -1171,11 +1220,11 @@ def main(
     )
 
     # 6. HRUs
-    hru_mode = os.environ.get("SWATPLUS_HRU_MODE", "dominant_only").strip().lower()
+    hru_mode = (cfg.hru_mode if cfg else None) or os.environ.get("SWATPLUS_HRU_MODE", "dominant_only").strip().lower()
     if hru_mode not in {"dominant_only", "full_overlay"}:
         raise ValueError("SWATPLUS_HRU_MODE must be one of: dominant_only, full_overlay")
     hru_dominant_only = hru_mode == "dominant_only"
-    min_hru_fraction = float(os.environ.get("SWATPLUS_MIN_HRU_FRACTION", "0.0"))
+    min_hru_fraction = float(cfg.min_hru_fraction if cfg else os.environ.get("SWATPLUS_MIN_HRU_FRACTION", "0.0"))
     if min_hru_fraction < 0.0:
         raise ValueError("SWATPLUS_MIN_HRU_FRACTION must be non-negative")
     _section(f"6/11 HRU overlay ({hru_mode})")
@@ -1301,7 +1350,9 @@ def main(
     soil_mode = "high_fidelity"
     pct_fallback_soils = 0.0
     soil_fallback_warn_threshold = float(os.environ.get("SWATPLUS_SOIL_FALLBACK_WARN_THRESHOLD", "0.25"))
-    allow_synthetic_soils = _truthy_env("SWATPLUS_ALLOW_SYNTHETIC_SOILS", default=False)
+    allow_synthetic_soils = (
+        cfg.allow_diagnostic_fallbacks if cfg else _truthy_env("SWATPLUS_ALLOW_SYNTHETIC_SOILS", default=False)
+    )
     try:
         external_soils_json = os.environ.get("SWATPLUS_EXTERNAL_SOILS_JSON")
         if external_soils_json:
@@ -1484,7 +1535,10 @@ def main(
             pct_fallback_soils = 1.0
             _ok("seed_minimal_soils (fallback)")
 
-    max_soil_fallback_ratio = float(os.environ.get("SWATPLUS_MAX_SOIL_FALLBACK_RATIO", "0.00"))
+    max_soil_fallback_ratio = float(
+        (1.0 if cfg and cfg.allow_diagnostic_fallbacks else None)
+        or os.environ.get("SWATPLUS_MAX_SOIL_FALLBACK_RATIO", "0.00")
+    )
     if (soil_mode == "synthetic" or pct_fallback_soils > max_soil_fallback_ratio) and not allow_synthetic_soils:
         raise RuntimeError(
             "Soil realism gate failed: "
@@ -1947,7 +2001,9 @@ def main(
             dem_source = {"source": "unknown"}
         notes.append(
             f"dem_source={dem_source.get('source', 'unknown')}; "
-            f"resolution_m={dem_source.get('resolution_m', DEM_RESOLUTION_M)}"
+            f"resolution_m={dem_source.get('resolution_m', DEM_RESOLUTION_M)}; "
+            f"buffer_m={dem_source.get('dem_buffer_m', dem_source.get('dem_buffer_m_requested', 0))}; "
+            f"request_shape={dem_source.get('request_shape', 'unknown')}"
         )
     datasets_source_path = outdir / "reference_dbs" / "swatplus_datasets.source.json"
     if datasets_source_path.exists():

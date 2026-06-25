@@ -122,6 +122,7 @@ def run_pipeline(
 
         from .calibration.locked_benchmark import lock_benchmark
         from .calibration.nwis import fetch_usgs_daily_q
+        from .output.eval import _terminal_ids_from_chandeg_con
         from .full_mode.routing_fixes import apply_full_routing_fixes
         from .full_mode.subsurface_priors import (
             apply_subsurface_prior_correction,
@@ -199,12 +200,19 @@ def run_pipeline(
                 json.dump(run_config, f, indent=2)
             return run_config
 
+        # Derive the terminal outlet from generated topology (chandeg.con)
+        # rather than hardcoding a possibly-invalid GIS ID.  Fall back to 1 if
+        # the file doesn't exist yet — lock_benchmark with outlet_policy="auto"
+        # will still discover the correct terminal.
+        terminal_ids = sorted(_terminal_ids_from_chandeg_con(txtinout))
+        outlet_gis_id = terminal_ids[0] if terminal_ids else 1
+
         lock = lock_benchmark(
             txtinout_dir=txtinout,
             obs_series=obs_series,
             out_dir=outdir,
             basin_id=f"usgs_{usgs_id}",
-            outlet_gis_id=1,
+            outlet_gis_id=outlet_gis_id,
             sim_source_file=sim_source.name,
         )
         metrics_path = Path(lock.benchmark_dir) / "metrics.json"

@@ -78,7 +78,7 @@ mcp = [
 swatplus = [
     # pySWATPlus: calibration parameter editing + sensitivity analysis
     # (optional; our run/swatplus.py handles direct subprocess execution)
-    "pySWATPlus>=1.3.0",
+    "pySWATPlus>=1.3.0,<1.4.0",
     # Verified companion dependencies used by pySWATPlus calibration/sensitivity.
     "pymoo>=0.6.1",
     "SALib>=1.5.0",

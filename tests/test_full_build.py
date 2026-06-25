@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib.util
 import json
 import os
 import sys
@@ -13,13 +12,9 @@ from swatplus_builder.workflows import full_build
 
 
 def _load_basin_workflow_module():
-    path = Path(__file__).resolve().parents[1] / "examples" / "usgs_basin_workflow.py"
-    spec = importlib.util.spec_from_file_location("usgs_basin_workflow_under_test", path)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    # Exercise the same packaged builder selected by the production wrapper;
+    # the repository-level example may lag during package development.
+    return full_build._load_example_builder()
 
 
 def test_weather_station_sampling_is_even_and_bounded() -> None:
@@ -130,6 +125,46 @@ def test_fetch_dem_reuses_same_gauge_authoritative_cache(monkeypatch, tmp_path: 
     assert "local_authoritative_3dep_cache" in sidecar.read_text(encoding="utf-8")
 
 
+def test_fetch_dem_requests_buffered_bounding_box(monkeypatch, tmp_path: Path) -> None:
+    import geopandas as gpd
+    from shapely.geometry import box
+
+    module = _load_basin_workflow_module()
+    captured: dict[str, object] = {}
+
+    class _Rio:
+        def to_raster(self, path, **_kwargs):
+            Path(path).write_bytes(b"dem")
+
+    class _Dem:
+        rio = _Rio()
+
+    class _Py3dep(types.ModuleType):
+        def get_dem(self, geom, **kwargs):
+            captured["geom"] = geom
+            captured["kwargs"] = kwargs
+            return _Dem()
+
+    monkeypatch.setitem(sys.modules, "py3dep", _Py3dep("py3dep"))
+    basin = gpd.GeoDataFrame(
+        {"id": [1]},
+        geometry=[box(-86.1, 40.0, -86.0, 40.1)],
+        crs="EPSG:4326",
+    )
+    out = tmp_path / "dem.tif"
+
+    module.fetch_dem(basin, out, resolution_m=30, buffer_m=5000)
+
+    assert out.read_bytes() == b"dem"
+    request_geom = captured["geom"]
+    assert request_geom.bounds[0] < basin.total_bounds[0]
+    assert request_geom.bounds[2] > basin.total_bounds[2]
+    source = json.loads(out.with_suffix(".source.json").read_text(encoding="utf-8"))
+    assert source["dem_buffer_m"] == 5000
+    assert source["request_shape"] == "buffered_bounding_box"
+    assert source["request_area_km2"] > source["reference_area_km2"]
+
+
 def test_datasets_db_reuses_local_authoritative_cache(monkeypatch, tmp_path: Path) -> None:
     module = _load_basin_workflow_module()
     monkeypatch.setattr(module, "STATION_ID", "01013500")
@@ -162,21 +197,21 @@ def test_datasets_db_reuses_local_authoritative_cache(monkeypatch, tmp_path: Pat
     assert "local_authoritative_swatplus_datasets_cache" in sidecar.read_text(encoding="utf-8")
 
 
-def test_build_full_model_sets_usgs_id_before_loading_builder(monkeypatch, tmp_path: Path) -> None:
-    seen: dict[str, str | None] = {}
+def test_build_full_model_passes_config_via_build_config_argument(monkeypatch, tmp_path: Path) -> None:
+    from swatplus_builder.workflows.full_build import FullBuildConfig
+
+    seen_config: object = None
 
     def fake_load_builder():
-        seen["during_load"] = os.environ.get("USGS_ID")
-
         def main(outdir, **kwargs):
-            seen["during_main"] = os.environ.get("USGS_ID")
+            nonlocal seen_config
+            seen_config = kwargs.get("build_config")
             txt = Path(outdir) / "project" / "Scenarios" / "Default" / "TxtInOut"
             txt.mkdir(parents=True)
             (txt / "file.cio").write_text("file.cio\n", encoding="utf-8")
 
         return SimpleNamespace(main=main)
 
-    monkeypatch.delenv("USGS_ID", raising=False)
     monkeypatch.setattr(full_build, "_load_example_builder", fake_load_builder)
 
     result = full_build.build_full_model(
@@ -188,30 +223,25 @@ def test_build_full_model_sets_usgs_id_before_loading_builder(monkeypatch, tmp_p
     )
 
     assert result.success is True
-    assert seen["during_load"] == "01654000"
-    assert seen["during_main"] == "01654000"
-    assert os.environ.get("USGS_ID") is None
+    assert isinstance(seen_config, FullBuildConfig)
+    assert seen_config.usgs_id == "01654000"
 
 
-def test_build_full_model_allows_diagnostic_fallbacks_with_scoped_env(monkeypatch, tmp_path: Path) -> None:
-    seen: dict[str, str | None] = {}
+def test_build_full_model_passes_diagnostic_fallbacks_in_config(monkeypatch, tmp_path: Path) -> None:
+    from swatplus_builder.workflows.full_build import FullBuildConfig
+
+    seen_config: object = None
 
     def fake_load_builder():
         def main(outdir, **kwargs):
-            seen["allow_synthetic"] = os.environ.get("SWATPLUS_ALLOW_SYNTHETIC_SOILS")
-            seen["max_fallback"] = os.environ.get("SWATPLUS_MAX_SOIL_FALLBACK_RATIO")
-            seen["hru_mode"] = os.environ.get("SWATPLUS_HRU_MODE")
-            seen["min_hru_fraction"] = os.environ.get("SWATPLUS_MIN_HRU_FRACTION")
+            nonlocal seen_config
+            seen_config = kwargs.get("build_config")
             txt = Path(outdir) / "project" / "Scenarios" / "Default" / "TxtInOut"
             txt.mkdir(parents=True)
             (txt / "file.cio").write_text("file.cio\n", encoding="utf-8")
 
         return SimpleNamespace(main=main)
 
-    monkeypatch.delenv("SWATPLUS_ALLOW_SYNTHETIC_SOILS", raising=False)
-    monkeypatch.delenv("SWATPLUS_MAX_SOIL_FALLBACK_RATIO", raising=False)
-    monkeypatch.delenv("SWATPLUS_HRU_MODE", raising=False)
-    monkeypatch.delenv("SWATPLUS_MIN_HRU_FRACTION", raising=False)
     monkeypatch.setattr(full_build, "_load_example_builder", fake_load_builder)
 
     result = full_build.build_full_model(
@@ -226,16 +256,10 @@ def test_build_full_model_allows_diagnostic_fallbacks_with_scoped_env(monkeypatc
     )
 
     assert result.success is True
-    assert seen == {
-        "allow_synthetic": "1",
-        "max_fallback": "1.0",
-        "hru_mode": "full_overlay",
-        "min_hru_fraction": "0.001",
-    }
-    assert os.environ.get("SWATPLUS_ALLOW_SYNTHETIC_SOILS") is None
-    assert os.environ.get("SWATPLUS_MAX_SOIL_FALLBACK_RATIO") is None
-    assert os.environ.get("SWATPLUS_HRU_MODE") is None
-    assert os.environ.get("SWATPLUS_MIN_HRU_FRACTION") is None
+    assert isinstance(seen_config, FullBuildConfig)
+    assert seen_config.hru_mode == "full_overlay"
+    assert seen_config.min_hru_fraction == 0.001
+    assert seen_config.allow_diagnostic_fallbacks is True
 
 
 def test_classify_dem_dns_failure_as_provider_unreachable() -> None:

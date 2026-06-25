@@ -11,13 +11,36 @@ from __future__ import annotations
 import importlib.util
 import json
 import logging
-import os
-from collections.abc import Iterator
-from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
+
+
+@dataclass(frozen=True)
+class FullBuildConfig:
+    """Typed configuration for a full-mode SWAT+ model build.
+
+    Replaces the environment-variable/global-mutation interface that the
+    example builder historically relied on.  Every field has a documented
+    default so callers only need to specify what differs from the standard
+    pipeline.
+    """
+
+    usgs_id: str
+    outdir: Path
+    start_date: str = "2015-01-01"
+    end_date: str = "2015-12-31"
+    warmup_years: int = 0
+    # HRU construction
+    hru_mode: str = "dominant_only"
+    min_hru_fraction: float = 0.0
+    # Soil fallback controls
+    allow_diagnostic_fallbacks: bool = False
+    # Delineation defaults (optional — example builder reads most from env)
+    dem_buffer_m: float = 5000.0
+    stream_threshold_cells: int = 2000
+    dem_conditioning: str = "breach"
 
 
 @dataclass(frozen=True)
@@ -47,6 +70,7 @@ def build_full_model(
     allow_diagnostic_fallbacks: bool = False,
     hru_mode: str = "dominant_only",
     min_hru_fraction: float = 0.0,
+    config: FullBuildConfig | None = None,
 ) -> FullModelBuildResult:
     """Build and initially execute a full SWAT+ model for one USGS basin.
 
@@ -55,44 +79,49 @@ def build_full_model(
     The canonical workflow still performs a second clean solver run before
     locking/calibration, so stale outputs from the builder are not final
     evidence.
+
+    Parameters can be supplied as individual keyword arguments (legacy) or as a
+    typed *FullBuildConfig* object.  When *config* is provided, the individual
+    kwargs are ignored in favour of the config fields.
     """
-    out = Path(outdir).expanduser().resolve()
-    normalized_hru_mode = hru_mode.strip().lower()
-    if normalized_hru_mode not in {"dominant_only", "full_overlay"}:
-        raise ValueError("--hru-mode must be one of: dominant_only, full_overlay")
-    if float(min_hru_fraction) < 0.0:
-        raise ValueError("--min-hru-fraction must be non-negative")
+    cfg: FullBuildConfig
+    if config is not None:
+        cfg = config
+    else:
+        out = Path(outdir).expanduser().resolve()
+        normalized_hru_mode = hru_mode.strip().lower()
+        if normalized_hru_mode not in {"dominant_only", "full_overlay"}:
+            raise ValueError("--hru-mode must be one of: dominant_only, full_overlay")
+        if float(min_hru_fraction) < 0.0:
+            raise ValueError("--min-hru-fraction must be non-negative")
+        cfg = FullBuildConfig(
+            usgs_id=usgs_id,
+            outdir=out,
+            start_date=start_date,
+            end_date=end_date,
+            warmup_years=int(warmup_years),
+            hru_mode=normalized_hru_mode,
+            min_hru_fraction=float(min_hru_fraction),
+            allow_diagnostic_fallbacks=allow_diagnostic_fallbacks,
+        )
+    out = cfg.outdir
     try:
-        env_overrides = {
-            "SWATPLUS_HRU_MODE": normalized_hru_mode,
-            "SWATPLUS_MIN_HRU_FRACTION": str(float(min_hru_fraction)),
-        }
-        if allow_diagnostic_fallbacks:
-            env_overrides.update(
-                {
-                "SWATPLUS_ALLOW_SYNTHETIC_SOILS": "1",
-                "SWATPLUS_MAX_SOIL_FALLBACK_RATIO": "1.0",
-                }
-            )
-        with _temporary_usgs_id(usgs_id), _temporary_env(env_overrides):
-            module = _load_example_builder()
-            # usgs_basin_workflow.main reads a CLI-created global args object
-            # for model_family in two locations. Provide the minimum object
-            # needed to keep the package wrapper deterministic.
-            module.STATION_ID = usgs_id
-            module.log = logging.getLogger(f"swat_build_{usgs_id}")
-            module.args = SimpleNamespace(model_family="full")
-            module.main(
-                out,
-                run_engine=True,
-                sim_start=start_date,
-                sim_end=end_date,
-                warmup_years=int(warmup_years),
-            )
+        module = _load_example_builder()
+        module.STATION_ID = cfg.usgs_id
+        module.log = logging.getLogger(f"swat_build_{cfg.usgs_id}")
+        module.args = SimpleNamespace(model_family="full")
+        module.main(
+            out,
+            run_engine=True,
+            sim_start=cfg.start_date,
+            sim_end=cfg.end_date,
+            warmup_years=cfg.warmup_years,
+            build_config=cfg,
+        )
     except Exception as exc:
         blocker = _classify_build_error(exc)
         if blocker == "soil_realism_gate_failed":
-            _write_soil_realism_diagnostics(out, exc, usgs_id=usgs_id)
+            _write_soil_realism_diagnostics(out, exc, usgs_id=cfg.usgs_id)
         return FullModelBuildResult(
             success=False,
             status="BLOCKED",
@@ -145,33 +174,6 @@ def _load_example_builder():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
-
-
-@contextmanager
-def _temporary_usgs_id(usgs_id: str) -> Iterator[None]:
-    old = os.environ.get("USGS_ID")
-    os.environ["USGS_ID"] = usgs_id
-    try:
-        yield
-    finally:
-        if old is None:
-            os.environ.pop("USGS_ID", None)
-        else:
-            os.environ["USGS_ID"] = old
-
-
-@contextmanager
-def _temporary_env(overrides: dict[str, str]) -> Iterator[None]:
-    old = {key: os.environ.get(key) for key in overrides}
-    os.environ.update(overrides)
-    try:
-        yield
-    finally:
-        for key, value in old.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
 
 
 def _classify_build_error(exc: Exception) -> str:

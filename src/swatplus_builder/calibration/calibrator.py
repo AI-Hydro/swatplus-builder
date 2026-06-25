@@ -1067,7 +1067,71 @@ def _write_bridge_failure_artifact(
         pass  # Never let diagnostic writing mask the original exception.
 
 
+_PY_SWATPLUS_SUPPORTED_UPTO: tuple[int, int, int] = (1, 4, 0)
+"""Maximum supported pySWATPlus version (exclusive).
+
+Patches target the 1.3.x API surface.  Before upgrading past this bound the
+structural assertions in :func:`_assert_pyswatplus_compatible` and every patch
+in :func:`_apply_platform_compatibility_patches` must be reviewed.
+"""
+
+
+def _assert_pyswatplus_compatible(mod: object) -> None:
+    """Assert structural API contracts before applying compatibility patches.
+
+    Raises ``RuntimeError`` with a clear message if any expected attribute,
+    method, or class is missing (indicating an upstream breaking change).
+    """
+    missing: list[str] = []
+
+    # Top-level
+    if not hasattr(mod, "utils"):
+        missing.append("module pySWATPlus.utils")
+    if not hasattr(mod, "cpu"):
+        missing.append("module pySWATPlus.cpu")
+    if not hasattr(mod, "txtinout_reader"):
+        missing.append("module pySWATPlus.txtinout_reader")
+
+    # Sub-modules accessed by patches
+    cal_mod = getattr(mod, "calibration", None)
+    if cal_mod is None:
+        missing.append("module pySWATPlus.calibration")
+    else:
+        if not hasattr(cal_mod, "concurrent"):
+            missing.append("module pySWATPlus.calibration.concurrent")
+        else:
+            futures_mod = getattr(cal_mod, "concurrent", None)
+            if not hasattr(futures_mod, "futures"):
+                missing.append("pySWATPlus.calibration.concurrent.futures")
+
+    # Specific functions/classes that get patched
+    utils = getattr(mod, "utils", None)
+    if utils is not None and not callable(getattr(utils, "_is_real_executable", None)):
+        missing.append("pySWATPlus.utils._is_real_executable (callable)")
+
+    cpu_mod = getattr(mod, "cpu", None)
+    if cpu_mod is not None and not callable(getattr(cpu_mod, "_simulation_output", None)):
+        missing.append("pySWATPlus.cpu._simulation_output (callable)")
+
+    txt_mod = getattr(mod, "txtinout_reader", None)
+    if txt_mod is not None:
+        if not hasattr(txt_mod, "TxtinoutReader"):
+            missing.append("pySWATPlus.txtinout_reader.TxtinoutReader")
+        elif not hasattr(txt_mod.TxtinoutReader, "_run_swat_exe"):
+            missing.append("pySWATPlus.txtinout_reader.TxtinoutReader._run_swat_exe")
+
+    if missing:
+        raise RuntimeError(
+            "pySWATPlus API contract mismatch — the following expected symbols "
+            f"are missing:\n  " + "\n  ".join(missing) + "\n\n"
+            f"This package requires pySWATPlus < {_PY_SWATPLUS_SUPPORTED_UPTO[0]}.{_PY_SWATPLUS_SUPPORTED_UPTO[1]}.0. "
+            "If you have upgraded pySWATPlus, either pin it back or update the "
+            "compatibility patches in calibrator.py."
+        )
+
+
 def _apply_platform_compatibility_patches(mod: object) -> None:
+    _assert_pyswatplus_compatible(mod)
     if not sys.platform.startswith("darwin"):
         return
     utils = getattr(mod, "utils", None)
