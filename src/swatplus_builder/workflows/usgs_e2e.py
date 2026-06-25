@@ -1802,6 +1802,15 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
     }
     _write_json(run_manifest_path, manifest_payload)
 
+    # Generate interactive HTML dashboard
+    try:
+        from ..output.dashboard import build_dashboard
+        dashboard_path = build_dashboard(out)
+        values["dashboard_html"] = str(dashboard_path)
+        _event("dashboard", "completed", path=str(dashboard_path))
+    except Exception as dashboard_exc:
+        _event("dashboard", "failed", error=str(dashboard_exc)[:500])
+
     return RunUSGSWorkflowResult(
         success=bool(success),
         run_id=run_id,

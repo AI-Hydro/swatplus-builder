@@ -252,6 +252,14 @@ def run_pipeline(
         with open(outdir / "run_config.json", "w") as f:
             json.dump(run_config, f, indent=2)
 
+        # Generate interactive HTML dashboard
+        try:
+            from .output.dashboard import build_dashboard
+            dashboard_path = build_dashboard(outdir)
+            run_config["dashboard_html"] = str(dashboard_path)
+        except Exception as dashboard_exc:
+            log.warning("Dashboard generation failed (non-fatal): %s", dashboard_exc)
+
         return run_config
         
     except Exception as e:
