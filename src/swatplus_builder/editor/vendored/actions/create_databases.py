@@ -1,9 +1,9 @@
 from helpers.executable_api import ExecutableApi, Unbuffered
-from database.datasets.setup import SetupDatasetsDatabase
-from database.output.setup import SetupOutputDatabase
-from database.project.setup import SetupProjectDatabase
-from database.project.config import Project_config
-from database import soils
+from _swatplus_db.datasets.setup import SetupDatasetsDatabase
+from _swatplus_db.output.setup import SetupOutputDatabase
+from _swatplus_db.project.setup import SetupProjectDatabase
+from _swatplus_db.project.config import Project_config
+from _swatplus_db import soils
 
 import sys
 import argparse

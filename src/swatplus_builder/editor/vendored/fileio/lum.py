@@ -1,15 +1,15 @@
 from .base import BaseFileModel, FileColumn as col
 from peewee import *
 from helpers import utils
-import database.project.lum as db
-import database.datasets.lum as db_datasets
+import _swatplus_db.project.lum as db
+import _swatplus_db.datasets.lum as db_datasets
 
-from database.project.decision_table import D_table_dtl as project_d_table
-from database.datasets.decision_table import D_table_dtl as datasets_d_table
+from _swatplus_db.project.decision_table import D_table_dtl as project_d_table
+from _swatplus_db.datasets.decision_table import D_table_dtl as datasets_d_table
 
-from database.project import base as project_base
-from database.datasets import base as datasets_base
-from database import lib as db_lib
+from _swatplus_db.project import base as project_base
+from _swatplus_db.datasets import base as datasets_base
+from _swatplus_db import lib as db_lib
 
 
 class Management_sch(BaseFileModel):
@@ -20,7 +20,7 @@ class Management_sch(BaseFileModel):
 
 	def read(self, database ='project'):
 		"""
-		Read a management.sch text file into the database.
+		Read a management.sch text file into the _swatplus_db.
 		:param database: project or datasets
 		:return:
 		"""
@@ -232,7 +232,7 @@ class Cntable_lum(BaseFileModel):
 
 	def read(self, database ='project'):
 		"""
-		Read a cntable.lum text file into the database.
+		Read a cntable.lum text file into the _swatplus_db.
 		:param database: project or datasets
 		:return:
 		"""
@@ -302,7 +302,7 @@ class Ovn_table_lum(BaseFileModel):
 
 	def read(self, database ='project'):
 		"""
-		Read a ovn_table.lum text file into the database.
+		Read a ovn_table.lum text file into the _swatplus_db.
 		:param database: project or datasets
 		:return:
 		"""
@@ -342,7 +342,7 @@ class Cons_prac_lum(BaseFileModel):
 
 	def read(self, database ='project'):
 		"""
-		Read a cons_practice.lum text file into the database.
+		Read a cons_practice.lum text file into the _swatplus_db.
 		:param database: project or datasets
 		:return:
 		"""

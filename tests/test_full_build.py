@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib.util
 import json
 import os
 import sys
@@ -12,26 +11,22 @@ from swatplus_builder.types import SoilHorizon, SoilProfile
 from swatplus_builder.workflows import full_build
 
 
-def _load_build_real_basin_module():
-    path = Path(__file__).resolve().parents[1] / "examples" / "build_real_basin.py"
-    spec = importlib.util.spec_from_file_location("build_real_basin_under_test", path)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+def _load_basin_workflow_module():
+    # Exercise the same packaged builder selected by the production wrapper;
+    # the repository-level example may lag during package development.
+    return full_build._load_example_builder()
 
 
 def test_weather_station_sampling_is_even_and_bounded() -> None:
-    module = _load_build_real_basin_module()
+    module = _load_basin_workflow_module()
 
     assert module._sample_evenly(list(range(10)), 4) == [0, 3, 6, 9]
     assert module._sample_evenly(list(range(10)), 1) == [5]
     assert module._sample_evenly([1, 2, 3], 5) == [1, 2, 3]
 
 
-def test_build_real_basin_writes_successful_soil_report_artifact(tmp_path: Path) -> None:
-    module = _load_build_real_basin_module()
+def test_basin_workflow_writes_successful_soil_report_artifact(tmp_path: Path) -> None:
+    module = _load_basin_workflow_module()
 
     path = module._write_soil_report(
         tmp_path,
@@ -52,11 +47,11 @@ def test_build_real_basin_writes_successful_soil_report_artifact(tmp_path: Path)
     assert payload["source_priority"][-1]["research_grade_eligible"] is False
 
 
-def test_build_real_basin_replaces_partial_default_soils_with_soilgrids(
+def test_basin_workflow_replaces_partial_default_soils_with_soilgrids(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    module = _load_build_real_basin_module()
+    module = _load_basin_workflow_module()
 
     def profile(name: str, source: str) -> SoilProfile:
         return SoilProfile(
@@ -100,7 +95,7 @@ def test_build_real_basin_replaces_partial_default_soils_with_soilgrids(
 
 
 def test_fetch_dem_reuses_same_gauge_authoritative_cache(monkeypatch, tmp_path: Path) -> None:
-    module = _load_build_real_basin_module()
+    module = _load_basin_workflow_module()
     monkeypatch.setattr(module, "STATION_ID", "01013500")
 
     class _Py3dep(types.ModuleType):
@@ -109,10 +104,10 @@ def test_fetch_dem_reuses_same_gauge_authoritative_cache(monkeypatch, tmp_path: 
 
     monkeypatch.setitem(sys.modules, "py3dep", _Py3dep("py3dep"))
 
-    cached = tmp_path / "demo_runs" / "objective_01013500" / "raw" / "dem.tif"
+    cached = tmp_path / "swatplus_runs" / "objective_01013500" / "raw" / "dem.tif"
     cached.parent.mkdir(parents=True)
     cached.write_bytes(b"cached authoritative 3dep dem")
-    out = tmp_path / "demo_runs" / "post_hardening_01013500_network" / "raw" / "dem.tif"
+    out = tmp_path / "swatplus_runs" / "post_hardening_01013500_network" / "raw" / "dem.tif"
 
     class _Geometry:
         @property
@@ -130,8 +125,48 @@ def test_fetch_dem_reuses_same_gauge_authoritative_cache(monkeypatch, tmp_path: 
     assert "local_authoritative_3dep_cache" in sidecar.read_text(encoding="utf-8")
 
 
+def test_fetch_dem_requests_buffered_bounding_box(monkeypatch, tmp_path: Path) -> None:
+    import geopandas as gpd
+    from shapely.geometry import box
+
+    module = _load_basin_workflow_module()
+    captured: dict[str, object] = {}
+
+    class _Rio:
+        def to_raster(self, path, **_kwargs):
+            Path(path).write_bytes(b"dem")
+
+    class _Dem:
+        rio = _Rio()
+
+    class _Py3dep(types.ModuleType):
+        def get_dem(self, geom, **kwargs):
+            captured["geom"] = geom
+            captured["kwargs"] = kwargs
+            return _Dem()
+
+    monkeypatch.setitem(sys.modules, "py3dep", _Py3dep("py3dep"))
+    basin = gpd.GeoDataFrame(
+        {"id": [1]},
+        geometry=[box(-86.1, 40.0, -86.0, 40.1)],
+        crs="EPSG:4326",
+    )
+    out = tmp_path / "dem.tif"
+
+    module.fetch_dem(basin, out, resolution_m=30, buffer_m=5000)
+
+    assert out.read_bytes() == b"dem"
+    request_geom = captured["geom"]
+    assert request_geom.bounds[0] < basin.total_bounds[0]
+    assert request_geom.bounds[2] > basin.total_bounds[2]
+    source = json.loads(out.with_suffix(".source.json").read_text(encoding="utf-8"))
+    assert source["dem_buffer_m"] == 5000
+    assert source["request_shape"] == "buffered_bounding_box"
+    assert source["request_area_km2"] > source["reference_area_km2"]
+
+
 def test_datasets_db_reuses_local_authoritative_cache(monkeypatch, tmp_path: Path) -> None:
-    module = _load_build_real_basin_module()
+    module = _load_basin_workflow_module()
     monkeypatch.setattr(module, "STATION_ID", "01013500")
 
     def fail_fetch(*_args, **_kwargs):
@@ -143,14 +178,14 @@ def test_datasets_db_reuses_local_authoritative_cache(monkeypatch, tmp_path: Pat
 
     cached = (
         tmp_path
-        / "demo_runs"
+        / "swatplus_runs"
         / "objective_01013500"
         / "reference_dbs"
         / "swatplus_datasets-3.2.0.sqlite"
     )
     cached.parent.mkdir(parents=True)
     cached.write_bytes(b"cached datasets sqlite")
-    outdir = tmp_path / "demo_runs" / "post_hardening_01013500_network"
+    outdir = tmp_path / "swatplus_runs" / "post_hardening_01013500_network"
 
     settings = SimpleNamespace(reference_db_dir=outdir / "reference_dbs")
     result = module._ensure_datasets_db_with_local_cache(settings, outdir)
@@ -162,21 +197,21 @@ def test_datasets_db_reuses_local_authoritative_cache(monkeypatch, tmp_path: Pat
     assert "local_authoritative_swatplus_datasets_cache" in sidecar.read_text(encoding="utf-8")
 
 
-def test_build_full_model_sets_usgs_id_before_loading_builder(monkeypatch, tmp_path: Path) -> None:
-    seen: dict[str, str | None] = {}
+def test_build_full_model_passes_config_via_build_config_argument(monkeypatch, tmp_path: Path) -> None:
+    from swatplus_builder.workflows.full_build import FullBuildConfig
+
+    seen_config: object = None
 
     def fake_load_builder():
-        seen["during_load"] = os.environ.get("USGS_ID")
-
         def main(outdir, **kwargs):
-            seen["during_main"] = os.environ.get("USGS_ID")
+            nonlocal seen_config
+            seen_config = kwargs.get("build_config")
             txt = Path(outdir) / "project" / "Scenarios" / "Default" / "TxtInOut"
             txt.mkdir(parents=True)
             (txt / "file.cio").write_text("file.cio\n", encoding="utf-8")
 
         return SimpleNamespace(main=main)
 
-    monkeypatch.delenv("USGS_ID", raising=False)
     monkeypatch.setattr(full_build, "_load_example_builder", fake_load_builder)
 
     result = full_build.build_full_model(
@@ -188,26 +223,25 @@ def test_build_full_model_sets_usgs_id_before_loading_builder(monkeypatch, tmp_p
     )
 
     assert result.success is True
-    assert seen["during_load"] == "01654000"
-    assert seen["during_main"] == "01654000"
-    assert os.environ.get("USGS_ID") is None
+    assert isinstance(seen_config, FullBuildConfig)
+    assert seen_config.usgs_id == "01654000"
 
 
-def test_build_full_model_allows_diagnostic_fallbacks_with_scoped_env(monkeypatch, tmp_path: Path) -> None:
-    seen: dict[str, str | None] = {}
+def test_build_full_model_passes_diagnostic_fallbacks_in_config(monkeypatch, tmp_path: Path) -> None:
+    from swatplus_builder.workflows.full_build import FullBuildConfig
+
+    seen_config: object = None
 
     def fake_load_builder():
         def main(outdir, **kwargs):
-            seen["allow_synthetic"] = os.environ.get("SWATPLUS_ALLOW_SYNTHETIC_SOILS")
-            seen["max_fallback"] = os.environ.get("SWATPLUS_MAX_SOIL_FALLBACK_RATIO")
+            nonlocal seen_config
+            seen_config = kwargs.get("build_config")
             txt = Path(outdir) / "project" / "Scenarios" / "Default" / "TxtInOut"
             txt.mkdir(parents=True)
             (txt / "file.cio").write_text("file.cio\n", encoding="utf-8")
 
         return SimpleNamespace(main=main)
 
-    monkeypatch.delenv("SWATPLUS_ALLOW_SYNTHETIC_SOILS", raising=False)
-    monkeypatch.delenv("SWATPLUS_MAX_SOIL_FALLBACK_RATIO", raising=False)
     monkeypatch.setattr(full_build, "_load_example_builder", fake_load_builder)
 
     result = full_build.build_full_model(
@@ -217,15 +251,15 @@ def test_build_full_model_allows_diagnostic_fallbacks_with_scoped_env(monkeypatc
         end_date="2010-01-10",
         warmup_years=3,
         allow_diagnostic_fallbacks=True,
+        hru_mode="full_overlay",
+        min_hru_fraction=0.001,
     )
 
     assert result.success is True
-    assert seen == {
-        "allow_synthetic": "1",
-        "max_fallback": "1.0",
-    }
-    assert os.environ.get("SWATPLUS_ALLOW_SYNTHETIC_SOILS") is None
-    assert os.environ.get("SWATPLUS_MAX_SOIL_FALLBACK_RATIO") is None
+    assert isinstance(seen_config, FullBuildConfig)
+    assert seen_config.hru_mode == "full_overlay"
+    assert seen_config.min_hru_fraction == 0.001
+    assert seen_config.allow_diagnostic_fallbacks is True
 
 
 def test_classify_dem_dns_failure_as_provider_unreachable() -> None:

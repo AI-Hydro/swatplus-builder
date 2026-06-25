@@ -1,7 +1,7 @@
 from .base import BaseFileModel, FileColumn as col
 from helpers import utils
-from database.project.recall import Recall_dat, Recall_rec
-import database.project.exco as db
+from _swatplus_db.project.recall import Recall_dat, Recall_rec
+import _swatplus_db.project.exco as db
 
 
 class Exco_om_exc(BaseFileModel):

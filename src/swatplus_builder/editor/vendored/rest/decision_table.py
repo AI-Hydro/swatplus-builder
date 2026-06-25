@@ -5,11 +5,11 @@ from playhouse.shortcuts import model_to_dict
 from peewee import *
 
 from .defaults import DefaultRestMethods, RestHelpers
-from database.project import decision_table as db
-from database.datasets import decision_table as ds
+from _swatplus_db.project import decision_table as db
+from _swatplus_db.datasets import decision_table as ds
 from fileio import decision_table as fio
 
-from database import lib
+from _swatplus_db import lib
 from helpers import table_mapper
 
 bp = Blueprint('decision_table', __name__, url_prefix='/decision_table')

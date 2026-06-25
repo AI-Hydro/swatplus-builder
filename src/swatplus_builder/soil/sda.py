@@ -1,19 +1,18 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
-import hashlib
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List
 
 import requests
 from shapely.geometry.base import BaseGeometry
 
 from swatplus_builder.errors import SwatBuilderExternalError
-from swatplus_builder.soil.models import SoilProfile, SoilConfig
-from swatplus_builder.soil.params import horizon_from_chorizon, collapse_dual_hyd_group
+from swatplus_builder.soil.models import SoilConfig, SoilProfile
+from swatplus_builder.soil.params import collapse_dual_hyd_group, horizon_from_chorizon
 
 log = logging.getLogger(__name__)
 
@@ -121,7 +120,7 @@ def _write_spatial_cache(path: Path, data: dict[str, list[int]]) -> None:
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
-def fetch_sda_horizons(mukeys: List[int], config: SoilConfig, cache_dir: Path | None = None) -> dict[int, SoilProfile]:
+def fetch_sda_horizons(mukeys: list[int], config: SoilConfig, cache_dir: Path | None = None) -> dict[int, SoilProfile]:
     """Fetch rigorous soil horizons via USDA Soil Data Access API."""
     if not mukeys:
         return {}
@@ -133,7 +132,7 @@ def fetch_sda_horizons(mukeys: List[int], config: SoilConfig, cache_dir: Path | 
     
     if cache_path and cache_path.exists():
         try:
-            with open(cache_path, "r") as f:
+            with open(cache_path) as f:
                 raw_cache = json.load(f)
                 # Cache version validation
                 if isinstance(raw_cache, dict) and raw_cache.get("_version") == CACHE_VERSION:
@@ -197,10 +196,8 @@ def fetch_sda_horizons(mukeys: List[int], config: SoilConfig, cache_dir: Path | 
                                 
                             for m in batch:
                                 mk = str(m)
-                                if mk in current_batch_rows:
-                                    cache[mk] = current_batch_rows[mk]
-                                else:
-                                    cache[mk] = [] # Cache empty array so we don't refetch missing mukeys
+                                # default [] caches the empty result so we don't refetch missing mukeys
+                                cache[mk] = current_batch_rows.get(mk, [])
                         break
                     else:
                         log.warning(f"SDA returned {resp.status_code}. Attempt {attempt+1}/{max_retries}.")

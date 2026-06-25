@@ -20,7 +20,6 @@ from swatplus_builder.errors import (
 from swatplus_builder.soil import SoilsWriteResult, write_soils
 from swatplus_builder.types import SoilHorizon, SoilProfile
 
-
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
 # ---------------------------------------------------------------------------

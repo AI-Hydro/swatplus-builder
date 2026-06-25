@@ -5,10 +5,10 @@ from playhouse.shortcuts import model_to_dict
 from peewee import *
 
 from .defaults import DefaultRestMethods, RestHelpers
-from database.project import base, lum, structural, init, hru_parm_db, decision_table
-from database.datasets import lum as ds
+from _swatplus_db.project import base, lum, structural, init, hru_parm_db, decision_table
+from _swatplus_db.datasets import lum as ds
 
-from database import lib
+from _swatplus_db import lib
 from helpers import utils
 
 bp = Blueprint('lum', __name__, url_prefix='/lum')

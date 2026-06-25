@@ -398,7 +398,7 @@ def fetch_usgs_site_metadata(usgs_id: str, *, timeout_s: float = 3.0) -> dict[st
     )
     url = f"https://waterservices.usgs.gov/nwis/site/?{query}"
     try:
-        with urllib.request.urlopen(url, timeout=timeout_s) as response:
+        with urllib.request.urlopen(url, timeout=timeout_s) as response:  # noqa: S310  (fixed https USGS endpoint)
             text = response.read().decode("utf-8", errors="replace")
     except Exception as exc:
         return {"available": False, "site_no": site, "source": url, "error": str(exc)}
@@ -469,14 +469,13 @@ def trace_mass_balance(
         raise SwatBuilderInputError(f"TxtInOut directory not found: {txt}", txtinout_dir=str(txt))
 
     metadata = _load_json(run / "metadata.json")
-    outlet_prov = _load_json(run / "outputs" / "outlet_provenance.json")
-    basin = basin_id or str(metadata.get("usgs_id") or run.name)
-    selected = (
-        selected_outlet_gis_id
-        or _safe_int(metadata.get("selected_outlet_gis_id"))
-        or _safe_int(_lookup(outlet_prov, ("pinned_pass", "diagnostics", "selected_outlet_gis_id")))
-        or _safe_int(_lookup(outlet_prov, ("pinned_pass", "diagnostics", "requested_outlet_gis_id")))
+    selected, selected_source = _resolve_selected_outlet_gis_id(
+        run,
+        txt,
+        explicit=selected_outlet_gis_id,
+        metadata=metadata,
     )
+    basin = basin_id or str(metadata.get("usgs_id") or run.name)
 
     area_km2 = _model_area_km2(txt)
     basin_wb = _read_water_balance_optional(txt / "basin_wb_yr.txt") or _read_water_balance_optional(txt / "basin_wb_aa.txt")
@@ -525,7 +524,10 @@ def trace_mass_balance(
         status = "fail_no_land_generation"
         flags.append("no_land_generation")
     elif expected_m3:
-        if selected_is_terminal is False and (channel.get("all_terminal_outflow_m3") or 0.0) > 0:
+        if selected is None:
+            status = "fail_outlet_selection"
+            flags.append("selected_outlet_gis_id_missing")
+        elif selected_is_terminal is False and (channel.get("all_terminal_outflow_m3") or 0.0) > 0:
             status = "fail_outlet_selection"
             flags.append("selected_outlet_is_not_terminal")
         elif terminal_m3 is None:
@@ -566,6 +568,13 @@ def trace_mass_balance(
 
     if selected_is_terminal is False:
         notes.append("Selected outlet is not terminal; terminal closure should use an audited terminal outlet.")
+    if selected_source:
+        notes.append(f"Selected outlet GIS ID resolved from {selected_source}.")
+    if selected is None:
+        notes.append(
+            "Selected outlet GIS ID was not available from explicit input, run metadata, outlet provenance, "
+            "or benchmark lock artifacts; selected-outlet mass closure cannot be evaluated."
+        )
     if ratio is not None:
         notes.append(
             f"Closure ratio uses terminal_outflow_m3 / {closure_reference} with acceptable range "
@@ -2352,6 +2361,86 @@ def _load_json(path: Path) -> dict:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return {}
+
+
+def _resolve_selected_outlet_gis_id(
+    run: Path,
+    txt: Path,
+    *,
+    explicit: int | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> tuple[int | None, str | None]:
+    """Resolve selected outlet from explicit args and nearby provenance artifacts.
+
+    Mass tracing can be called on either a basin run directory or a standalone
+    ``TxtInOut`` copy, including ``calibration/locked_calibrated_TxtInOut``.
+    The latter often does not carry its own ``metadata.json``, so search the
+    source run's benchmark and outlet-provenance artifacts before declaring the
+    selected outlet unavailable.
+    """
+
+    if explicit is not None:
+        value = _safe_int(explicit)
+        if value is not None:
+            return value, "explicit selected_outlet_gis_id"
+
+    candidate_payloads: list[tuple[str, dict[str, Any]]] = []
+    if metadata:
+        candidate_payloads.append(("run metadata.json", metadata))
+
+    for label, path in _selected_outlet_context_paths(run, txt):
+        payload = _load_json(path)
+        if isinstance(payload, dict) and payload:
+            candidate_payloads.append((label, payload))
+
+    for label, payload in candidate_payloads:
+        for value in _selected_outlet_values(payload):
+            selected = _safe_int(value)
+            if selected is not None:
+                return selected, label
+
+    return None, None
+
+
+def _selected_outlet_context_paths(run: Path, txt: Path) -> list[tuple[str, Path]]:
+    roots: list[Path] = []
+    for root in [run, txt, _routing_artifact_root(run, txt), *run.parents[:5], *txt.parents[:6]]:
+        if root not in roots:
+            roots.append(root)
+
+    paths: list[tuple[str, Path]] = []
+    seen: set[Path] = set()
+    for root in roots:
+        candidates = [
+            ("metadata.json", root / "metadata.json"),
+            ("outlet_provenance.json", root / "outlet_provenance.json"),
+            ("outputs/outlet_provenance.json", root / "outputs" / "outlet_provenance.json"),
+            ("benchmark/outlet_provenance.json", root / "benchmark" / "outlet_provenance.json"),
+            ("benchmark/benchmark_lock.json", root / "benchmark" / "benchmark_lock.json"),
+        ]
+        for label, path in candidates:
+            resolved = path.resolve()
+            if resolved not in seen:
+                seen.add(resolved)
+                paths.append((label, path))
+    return paths
+
+
+def _selected_outlet_values(payload: dict[str, Any]) -> list[Any]:
+    values: list[Any] = [
+        payload.get("selected_outlet_gis_id"),
+        payload.get("outlet_gis_id"),
+        payload.get("pinned_outlet_gis_id"),
+    ]
+    nested_paths = [
+        ("pinned_pass", "diagnostics", "selected_outlet_gis_id"),
+        ("pinned_pass", "diagnostics", "requested_outlet_gis_id"),
+        ("pinned_pass", "pinned_outlet_gis_id"),
+        ("selection_pass", "diagnostics", "selected_outlet_gis_id"),
+        ("selection_pass", "pinned_outlet_gis_id"),
+    ]
+    values.extend(_lookup(payload, path) for path in nested_paths)
+    return values
 
 
 def _ratio(num: float | None, den: float | None) -> float | None:

@@ -10,6 +10,7 @@ swat hrus        — build HRUs by LU × Soil × Slope overlay
 swat project     — build SWAT+ SQLite + TxtInOut from a prepared workdir
 swat run         — run the SWAT+ engine on a prepared project
 swat build       — full pipeline: watershed → hrus → project → run (one-shot)
+swat setup       — one-time environment setup (engine binary, reference DBs)
 swat mcp         — start the stdio MCP server (requires [mcp] extra)
 swat version     — print version
 
@@ -19,19 +20,18 @@ Subcommands are single short words — no hyphens, no underscores.
 
 from __future__ import annotations
 
+import contextlib
+import json
+import os
+import sys
+from pathlib import Path
+
 import typer
 from rich import print as rprint
-import json
-import contextlib
-import os
 
 from . import __version__
-import sys
 
-if sys.version_info < (3, 10):
-    import warnings
-    warnings.warn("swatplus-builder requires Python >= 3.10. Execution will proceed but may fail.", RuntimeWarning)
-    # The user suggested a strict RuntimeError, let's raise it.
+if sys.version_info < (3, 10):  # noqa: UP036  (defensive guard for source runs on <3.10)
     raise RuntimeError("swatplus-builder requires Python >= 3.10. Please upgrade your environment.")
 
 app = typer.Typer(
@@ -42,10 +42,17 @@ app = typer.Typer(
 )
 workflow_app = typer.Typer(
     name="workflow",
-    help="Agent-governed workflow commands (negotiate/run).",
+    help="Agent-governed workflow commands (negotiate → parse contract, run → execute).",
     no_args_is_help=True,
 )
 app.add_typer(workflow_app, name="workflow")
+
+setup_app = typer.Typer(
+    name="setup",
+    help="One-time environment setup: install the SWAT+ engine binary, reference DBs.",
+    no_args_is_help=True,
+)
+app.add_typer(setup_app, name="setup")
 
 
 class _DiscardingBuffer:
@@ -327,7 +334,7 @@ def cmd_health(
     pkg_ok = True
     try:
         import swatplus_builder  # noqa: F401
-    except Exception as exc:  # pragma: no cover
+    except Exception:  # pragma: no cover
         pkg_ok = False
     _check("package_import", critical=True, ok=pkg_ok, detail=f"v{__version__}" if pkg_ok else "import failed")
 
@@ -375,8 +382,8 @@ def cmd_health(
 
     # --- optional: GIS stack ---
     try:
-        import rasterio  # noqa: F401
         import geopandas  # noqa: F401
+        import rasterio  # noqa: F401
         gis_ok = True
         gis_detail = "rasterio + geopandas"
     except ImportError as exc:
@@ -425,6 +432,7 @@ def cmd_inspect(
     Looks for ``metadata.json`` under the provided run path and prints it as JSON.
     """
     from pathlib import Path as _P
+
     from .output.metadata import read_metadata
 
     run_path = _P(run_id).expanduser().resolve()
@@ -617,7 +625,6 @@ def cmd_run(
     """Run the SWAT+ engine or automate a full platform execution (--usgs).
     """
     from pathlib import Path as _P
-    import json
 
     # Platform automation branch
     if usgs:
@@ -640,7 +647,7 @@ def cmd_run(
             raise typer.Exit(0)
         except Exception as exc:
             rprint(f"[red]Pipeline failed:[/red] {exc}")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from exc
 
     # Standard engine runner branch
     from .errors import SwatBuilderError
@@ -704,6 +711,7 @@ def cmd_validate(
 ) -> None:
     """Run benchmark validation for a basin suite and write artifacts/reports."""
     from pathlib import Path as _P
+
     from .validation.runner import load_basin_specs, run_validation
 
     basins_path = _P(basins).expanduser().resolve()
@@ -1188,9 +1196,8 @@ def cmd_sensitivity(
     from pathlib import Path as _P
 
     from .errors import SwatBuilderError
-    from .sensitivity import SensitivityAnalyzer, SensitivityRequest
-
     from .params import get_parameter as _gp
+    from .sensitivity import SensitivityAnalyzer, SensitivityRequest
     param_list = [p.strip() for p in parameters.split(",") if p.strip()]
     if not param_list:
         rprint("[red]error:[/red] at least one parameter is required")
@@ -1264,6 +1271,7 @@ def cmd_mcp_check(
     # Check 3: server instantiates and tools register
     try:
         import asyncio
+
         from .mcp.server import create_mcp_server
         srv = create_mcp_server()
         tool_names = [t.name for t in asyncio.run(srv.list_tools())]
@@ -1524,7 +1532,19 @@ def cmd_locked_calibrate(
             timeout_s=timeout_s,
         )
     except SwatBuilderError as exc:
-        if not json_output:
+        if json_output:
+            print(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "error": str(exc),
+                        "error_type": exc.__class__.__name__,
+                        "context": exc.context,
+                    },
+                    default=str,
+                )
+            )
+        else:
             rprint(f"[red]error:[/red] {exc}")
         raise typer.Exit(1) from exc
 
@@ -1649,7 +1669,7 @@ def cmd_realism_audit(
     """
     from pathlib import Path as _P
 
-    from .output.realism import audit_realism, run_realism_audit
+    from .output.realism import run_realism_audit
 
     entries = [e.strip() for e in alignment_csvs.split(",") if e.strip()]
     basin_alignments = []
@@ -1696,7 +1716,7 @@ def cmd_realism_audit(
 def cmd_workflow_negotiate(
     task: str = typer.Option(..., "--task", help="Natural-language workflow request."),
     out_dir: str = typer.Option(
-        "demo_runs/contracts/latest",
+        "swatplus_runs/contracts/latest",
         "--out-dir",
         help="Directory to write workflow_contract.json and WORKFLOW_CONTRACT.md.",
     ),
@@ -1740,10 +1760,20 @@ def cmd_workflow_run(
     ),
     start: str = typer.Option("2000-01-01", "--start", help="Simulation start date."),
     end: str = typer.Option("2019-12-31", "--end", help="Simulation end date."),
-    out_dir: str = typer.Option("demo_runs/workflow/latest", "--out-dir"),
+    out_dir: str = typer.Option("swatplus_runs/workflow/latest", "--out-dir"),
     warmup_years: int = typer.Option(3, "--warmup-years"),
     calibrate: bool = typer.Option(True, "--calibrate/--no-calibrate"),
     claim_tier: str = typer.Option("diagnostic", "--claim-tier"),
+    hru_mode: str = typer.Option(
+        "dominant_only",
+        "--hru-mode",
+        help="HRU construction mode: dominant_only or full_overlay.",
+    ),
+    min_hru_fraction: float = typer.Option(
+        0.0,
+        "--min-hru-fraction",
+        help="Minimum LSU-area fraction retained for full-overlay HRU combinations.",
+    ),
     contract: str = typer.Option(None, "--contract", help="Path to workflow_contract.json."),
     contract_status: str | None = typer.Option(
         None,
@@ -1776,6 +1806,13 @@ def cmd_workflow_run(
     if family not in {"full", "lte"}:
         rprint("[red]error:[/red] --model-family must be one of: full, lte")
         raise typer.Exit(2)
+    normalized_hru_mode = hru_mode.strip().lower()
+    if normalized_hru_mode not in {"dominant_only", "full_overlay"}:
+        rprint("[red]error:[/red] --hru-mode must be one of: dominant_only, full_overlay")
+        raise typer.Exit(2)
+    if min_hru_fraction < 0.0:
+        rprint("[red]error:[/red] --min-hru-fraction must be non-negative")
+        raise typer.Exit(2)
 
     contract_path = None
     if contract:
@@ -1799,6 +1836,8 @@ def cmd_workflow_run(
         accepted_by=accepted_by,
         contract_path=contract_path,
         calibrate=calibrate,
+        hru_mode=normalized_hru_mode,
+        min_hru_fraction=min_hru_fraction,
         virtual_all_terminal_outlet=virtual_all_terminal_outlet,
         virtual_outlet_authority=virtual_outlet_authority,
     )
@@ -1825,6 +1864,120 @@ def cmd_workflow_run(
         return
     rprint(f"[bold]workflow run[/bold] success={res.success} run_id={res.run_id}")
     rprint(f"  evidence={res.evidence_summary_path}")
+
+
+# ---------------------------------------------------------------------------
+# swat setup  — one-time environment setup
+# ---------------------------------------------------------------------------
+
+_SWAT_DOWNLOAD_URL = "https://swat.tamu.edu/software/plus/"
+_SWAT_GITHUB_RELEASES = "https://github.com/swat-model/swatplus/releases"
+
+
+@setup_app.command("engine")
+def cmd_setup_engine(
+    path: str = typer.Option(
+        None,
+        "--path",
+        "-p",
+        help="Path to a SWAT+ engine binary you already downloaded. "
+             "Copies it to ~/.swatplus_builder/bin/ and marks it executable.",
+    ),
+    force: bool = typer.Option(False, "--force", "-f", help="Overwrite an existing install."),
+) -> None:
+    """Install the SWAT+ engine binary into ~/.swatplus_builder/bin/.
+
+    **Why this command exists**
+
+    The SWAT+ engine is a compiled Fortran binary distributed by Texas A&M
+    (swat.tamu.edu). It cannot be bundled in a Python package or auto-downloaded
+    without a browser session. This command is the recommended one-time setup
+    step for agents and agentic platforms:
+
+    \\b
+    1. Download the binary for your platform from:
+       https://swat.tamu.edu/software/plus/
+       (or GitHub releases: https://github.com/swat-model/swatplus/releases)
+    2. Run:  swat setup engine --path /path/to/downloaded/binary
+
+    After this, `swat run`, `swat build`, and the full workflow automatically
+    find the binary — no SWATPLUS_EXE env var or PATH edits required.
+
+    **Supported binary names (any will be recognised)**
+
+    swatplus_exe, swatplus, swatplus_exe.exe, swatplus.exe
+
+    **Platform notes**
+
+    - Linux x86_64: download the Linux binary (no .exe extension).
+    - macOS Apple Silicon: the official binary is x86_64; run via Rosetta
+      (`softwareupdate --install-rosetta`) or use `arch -x86_64`.
+    - Windows: download the .exe variant.
+    """
+    from .run.swatplus import BINARY_CANDIDATES, ENGINE_BIN_DIR, locate_binary
+
+    if path is None:
+        # Print guidance and check current state
+        rprint("\n[bold]SWAT+ Engine Setup[/bold]\n")
+        rprint("The SWAT+ engine binary is NOT bundled with swatplus-builder.")
+        rprint("Download it for your platform from:\n")
+        rprint(f"  [cyan]{_SWAT_DOWNLOAD_URL}[/cyan]")
+        rprint(f"  [cyan]{_SWAT_GITHUB_RELEASES}[/cyan]  (direct binary downloads)\n")
+        rprint("Then run:\n")
+        rprint("  [bold]swat setup engine --path /path/to/downloaded/binary[/bold]\n")
+        rprint(f"Install location: [dim]{ENGINE_BIN_DIR}/[/dim]")
+        rprint(f"Recognised names: {', '.join(BINARY_CANDIDATES)}\n")
+
+        # Show current state
+        try:
+            found = locate_binary()
+            rprint(f"[green]✓ Engine already available:[/green] {found}")
+            rprint("  Run [bold]swat health[/bold] to verify it works correctly.")
+        except Exception:
+            rprint("[yellow]✗ No engine found yet.[/yellow]  Complete the steps above.")
+        raise typer.Exit(0)
+
+    src = Path(path).expanduser().resolve()
+    if not src.is_file():
+        rprint(f"[red]Error:[/red] --path does not point at a file: {src}")
+        raise typer.Exit(1)
+
+    ENGINE_BIN_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Use the source filename if it's a recognised name, otherwise default to 'swatplus_exe'
+    dest_name = src.name if src.name in BINARY_CANDIDATES else "swatplus_exe"
+    dest = ENGINE_BIN_DIR / dest_name
+
+    if dest.exists() and not force:
+        rprint(f"[yellow]Already installed:[/yellow] {dest}")
+        rprint("Use --force to overwrite.")
+        raise typer.Exit(0)
+
+    import shutil as _shutil
+    _shutil.copy2(src, dest)
+    dest.chmod(dest.stat().st_mode | 0o111)  # ensure +x on all execute bits
+
+    rprint(f"[green]✓ Installed:[/green] {dest}")
+
+    # Quick smoke-test: does it print a revision banner?
+    import subprocess as _subprocess
+    try:
+        result = _subprocess.run(
+            [str(dest)],
+            capture_output=True, text=True, timeout=10,
+            cwd=str(ENGINE_BIN_DIR),
+        )
+        combined = (result.stdout or "") + (result.stderr or "")
+        from .run.swatplus import parse_engine_revision
+        rev = parse_engine_revision(combined)
+        if rev:
+            rprint(f"  Engine revision: [bold]{rev}[/bold]")
+        else:
+            rprint("  [dim](revision not detected in banner — run 'swat health' to verify)[/dim]")
+    except Exception as exc:
+        rprint(f"  [dim](smoke test skipped: {exc})[/dim]")
+
+    rprint("\nRun [bold]swat health[/bold] to confirm full setup.")
 
 
 if __name__ == "__main__":

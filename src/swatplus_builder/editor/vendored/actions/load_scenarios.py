@@ -1,6 +1,6 @@
 from helpers.executable_api import ExecutableApi, Unbuffered
 from helpers import utils
-from database.project.setup import SetupProjectDatabase
+from _swatplus_db.project.setup import SetupProjectDatabase
 
 import sys
 import argparse
@@ -37,7 +37,7 @@ class LoadScenarios(ExecutableApi):
 			self.emit_progress(60, 'Copying scenario files...')
 			copytree(new_scenario_path, os.path.join(scenarios_path, 'Default'))
 
-			self.emit_progress(90, 'Copying project database...')
+			self.emit_progress(90, 'Copying project _swatplus_db...')
 			base_path = os.path.dirname(project_db)
 			project_db_file = os.path.relpath(project_db, base_path)
 			new_db_file = os.path.join(new_scenario_path, project_db_file)
@@ -73,7 +73,7 @@ class LoadScenarios(ExecutableApi):
 
 			base_path = os.path.dirname(project_db)
 			project_db_file = os.path.relpath(project_db, base_path)
-			self.emit_progress(90, 'Copying project database...')
+			self.emit_progress(90, 'Copying project _swatplus_db...')
 			copyfile(project_db, os.path.join(new_scenario_path, project_db_file))
 		except Exception as ex:
 			sys.exit(ex)

@@ -74,13 +74,14 @@ def _fix_codes_bsn(tio: Path) -> None:
 
 
 def _fix_rout_unit_def(tio: Path) -> None:
-    """Add each routing unit's own negative sdc/channel element.
+    """Add routing-unit HRU elements and each unit's own negative sdc element.
 
-    The engine requires two elements per RU: a positive source (HRU) and
-    a negative sink (sdc/channel). The negative element is the routing unit's
-    own sdc element, not the downstream target from ``rout_unit.con``. Reusing a
-    downstream negative element across multiple RUs causes ``ru_read_elements``
-    to allocate the same object twice and crash in ``hyd_connect``.
+    In dominant-HRU mode, each routing unit has one positive ``rout_unit.ele``
+    source element plus one negative sdc/channel element. In full-overlay mode,
+    one routing unit can own many HRU elements; keeping only the first source
+    silently disconnects the remaining HRUs from the routing network. The
+    negative element is still the routing unit's own sdc element, not the
+    downstream target from ``rout_unit.con``.
     """
     rdef = _require(tio, "rout_unit.def")
 
@@ -88,22 +89,90 @@ def _fix_rout_unit_def(tio: Path) -> None:
     if len(lines) < 3:
         raise RoutingFixError("rout_unit.def too short")
 
-    out = [lines[0], lines[1]]
+    hru_element_ids = _hru_element_ids(tio)
+    data_rows: list[tuple[list[str], int | None]] = []
+    starts: list[int | None] = []
     for ln in lines[2:]:
         if not ln.strip() or ln.strip().startswith("rout_unit"):
-            out.append(ln)
+            data_rows.append(([ln], None))
+            starts.append(None)
             continue
         parts = ln.split()
-        if len(parts) >= 4:
-            ru_id = parts[0]
-            elem_id = parts[3]
-            out.append(
-                f"      {ru_id}             {parts[1]}         2      {elem_id}     -{ru_id}"
-            )
-        else:
-            out.append(ln)
+        start = _first_positive_int(parts[3:]) if len(parts) >= 4 else None
+        data_rows.append((parts, start))
+        starts.append(start)
+
+    row_starts = [start for start in starts if start is not None]
+    out = [lines[0], lines[1]]
+    for parts_or_line, start in data_rows:
+        if start is None:
+            out.append(parts_or_line[0])
+            continue
+
+        parts = parts_or_line
+        ru_id = parts[0]
+        next_start = _next_start(row_starts, start)
+        positive_elements = _positive_elements_for_range(
+            hru_element_ids,
+            start=start,
+            next_start=next_start,
+        )
+        if not positive_elements:
+            positive_elements = [start]
+
+        elements = [str(value) for value in positive_elements] + [f"-{ru_id}"]
+        out.append(
+            f"      {ru_id}             {parts[1]}         {len(elements)}      "
+            + "     ".join(elements)
+        )
 
     rdef.write_text("\n".join(out))
+
+
+def _hru_element_ids(tio: Path) -> list[int]:
+    ele = tio / "rout_unit.ele"
+    if not ele.exists():
+        return []
+    ids: list[int] = []
+    for ln in ele.read_text().splitlines()[2:]:
+        parts = ln.split()
+        if len(parts) >= 4 and parts[2].lower() == "hru":
+            try:
+                ids.append(int(parts[0]))
+            except ValueError:
+                continue
+    return sorted(set(ids))
+
+
+def _first_positive_int(tokens: list[str]) -> int | None:
+    for token in tokens:
+        try:
+            value = int(token)
+        except ValueError:
+            continue
+        if value > 0:
+            return value
+    return None
+
+
+def _next_start(starts: list[int], current: int) -> int | None:
+    later = [value for value in starts if value > current]
+    return min(later) if later else None
+
+
+def _positive_elements_for_range(
+    hru_element_ids: list[int],
+    *,
+    start: int,
+    next_start: int | None,
+) -> list[int]:
+    if not hru_element_ids:
+        return []
+    return [
+        value
+        for value in hru_element_ids
+        if value >= start and (next_start is None or value < next_start)
+    ]
 
 
 def _fix_rout_unit_con(tio: Path) -> None:
@@ -185,7 +254,7 @@ def _fix_chandeg_con_outlet(tio: Path) -> None:
     # Parse routing graph — collect ALL channels, not just those with routes
     routes: dict[str, str] = {}
     all_ids: set[str] = set()
-    for i, ln in enumerate(lines[2:], start=2):
+    for _i, ln in enumerate(lines[2:], start=2):
         if not ln.strip():
             continue
         parts = ln.split()
@@ -258,25 +327,42 @@ def _validate_fixes(tio: Path) -> None:
         if flag in h and d[h.index(flag)] != expected:
             errors.append(f"codes.bsn {flag}={d[h.index(flag)]} expected {expected}")
 
-    # Check rout_unit.def has elem_tot=2
+    # Check rout_unit.def has internally consistent element lists and exactly
+    # one own negative sdc element per routing unit.
     rdef = (tio / "rout_unit.def").read_text().split("\n")
     negative_elements: list[str] = []
+    positive_elements: list[int] = []
     for ln in rdef[2:]:
         if ln.strip():
             parts = ln.split()
-            if len(parts) >= 3 and parts[2] != "2":
+            if len(parts) < 4:
+                errors.append(f"rout_unit.def malformed row: {ln}")
+                break
+            try:
+                elem_tot = int(parts[2])
+            except ValueError:
+                errors.append(f"rout_unit.def {parts[0]} elem_tot={parts[2]} is not an integer")
+                break
+            elements = parts[3:]
+            if elem_tot != len(elements):
                 errors.append(
-                    f"rout_unit.def {parts[0]} elem_tot={parts[2]} expected 2"
+                    f"rout_unit.def {parts[0]} elem_tot={parts[2]} but has {len(elements)} elements"
                 )
                 break
-            if len(parts) >= 5:
-                neg = [p for p in parts[3:] if p.startswith("-")]
-                if not neg:
-                    errors.append(
-                        f"rout_unit.def {parts[0]} missing negative sdc element"
-                    )
-                    break
-                negative_elements.extend(neg)
+            neg = [p for p in elements if p.startswith("-")]
+            if neg != [f"-{parts[0]}"]:
+                errors.append(
+                    f"rout_unit.def {parts[0]} expected own negative sdc element -{parts[0]}, got {neg or 'none'}"
+                )
+                break
+            negative_elements.extend(neg)
+            for elem in elements:
+                try:
+                    value = int(elem)
+                except ValueError:
+                    continue
+                if value > 0:
+                    positive_elements.append(value)
 
     duplicates = sorted(
         {elem for elem in negative_elements if negative_elements.count(elem) > 1},
@@ -287,6 +373,26 @@ def _validate_fixes(tio: Path) -> None:
             "rout_unit.def has duplicate negative sdc elements: "
             + ", ".join(duplicates)
         )
+
+    hru_elements = _hru_element_ids(tio)
+    if hru_elements:
+        missing = sorted(set(hru_elements) - set(positive_elements))
+        extra = sorted(set(positive_elements) - set(hru_elements))
+        duplicate_positive = sorted(
+            {elem for elem in positive_elements if positive_elements.count(elem) > 1}
+        )
+        if missing:
+            preview = ", ".join(str(v) for v in missing[:10])
+            suffix = "..." if len(missing) > 10 else ""
+            errors.append(f"rout_unit.def missing HRU routing elements: {preview}{suffix}")
+        if extra:
+            preview = ", ".join(str(v) for v in extra[:10])
+            suffix = "..." if len(extra) > 10 else ""
+            errors.append(f"rout_unit.def references non-HRU positive elements: {preview}{suffix}")
+        if duplicate_positive:
+            preview = ", ".join(str(v) for v in duplicate_positive[:10])
+            suffix = "..." if len(duplicate_positive) > 10 else ""
+            errors.append(f"rout_unit.def duplicates HRU routing elements: {preview}{suffix}")
 
     # Check rout_unit.con has explicit sur/lat routes and no double-counting tot.
     ruc = (tio / "rout_unit.con").read_text()

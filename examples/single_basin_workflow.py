@@ -1,10 +1,11 @@
-"""End-to-end real-basin demo: Marsh Creek at Blanchard, PA (USGS 01547700).
+"""End-to-end single-basin workflow: driven by any USGS gauge ID.
 
+Default example uses Marsh Creek at Blanchard, PA (USGS 01547700).
 Drives the full ``swatplus-builder`` pipeline against **real data**:
 
 1. **Basin boundary** — USGS NLDI via ``pynhd``.
 2. **DEM** — USGS 3DEP 30 m via ``py3dep``.
-3. **Landuse** — NLCD 2021 via ``pygeohydro``.
+3. **Landuse** — nearest supported NLCD vintage via ``pygeohydro``.
 4. **Delineation** — WhiteboxTools D8 → subbasins/channels/routing.
 5. **Soils** — gNATSGO mukey raster via Planetary Computer, then
    horizon-resolved ``Soils_sol`` via
@@ -19,7 +20,7 @@ Drives the full ``swatplus-builder`` pipeline against **real data**:
 
 Run:
 
-    python examples/real_basin_marsh_creek.py /tmp/marsh_creek
+    python examples/single_basin_workflow.py /tmp/basin_output
 
 Every stage prints the artifact paths it produced so you can inspect
 them on disk.
@@ -50,7 +51,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%H:%M:%S",
 )
-log = logging.getLogger("marsh_creek")
+log = logging.getLogger("single_basin_workflow")
 
 STATION_ID = "01547700"
 EXPECTED_AREA_KM2 = 114.0
@@ -405,8 +406,10 @@ def main(
         setup_project,
         write_files,
     )
+    from swatplus_builder.errors import SwatBuilderPipelineError
     from swatplus_builder.gis.delineation import delineate, resolve_usgs_outlet
     from swatplus_builder.gis.hru import create_hrus
+    from swatplus_builder.gis.landuse import select_nlcd_year_for_simulation
     from swatplus_builder.gis.soil import fetch_mukey_raster
     from swatplus_builder.gis.tables import build_tables
     from swatplus_builder.gis.validate import validate_watershed
@@ -456,12 +459,29 @@ def main(
         elapsed=time.time() - t0)
 
     # 3. NLCD landuse
-    _section("3/11 NLCD 2021 landuse from MRLC")
-    nlcd_tif = outdir / "raw" / "nlcd_2021.tif"
+    nlcd_selection = select_nlcd_year_for_simulation(sim_start, sim_end)
+    nlcd_year = int(nlcd_selection["selected_year"])
+    _section(f"3/11 NLCD {nlcd_year} landuse from MRLC")
+    nlcd_tif = outdir / "raw" / f"nlcd_{nlcd_year}.tif"
+    nlcd_selection_path = outdir / "raw" / "nlcd_selection.json"
+    nlcd_selection_path.parent.mkdir(parents=True, exist_ok=True)
+    nlcd_selection_path.write_text(
+        json.dumps(
+            {
+                **nlcd_selection,
+                "source": "MRLC_NLCD_via_pygeohydro.nlcd_bygeom",
+                "raster_path": str(nlcd_tif),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     t0 = time.time()
-    _, n = _with_retries("fetch_nlcd", fetch_nlcd, basin, nlcd_tif, year=2021)
+    _, n = _with_retries("fetch_nlcd", fetch_nlcd, basin, nlcd_tif, year=nlcd_year)
     retry_attempts["fetch_nlcd"] = n
-    _ok(f"nlcd_2021.tif  ({nlcd_tif.stat().st_size / 1e6:.1f} MB)",
+    _ok(f"{nlcd_tif.name}  ({nlcd_tif.stat().st_size / 1e6:.1f} MB)",
         elapsed=time.time() - t0)
 
     # 4. Delineation (WhiteboxTools)
@@ -511,14 +531,30 @@ def main(
     selected_threshold = None
     threshold_attempts = []
     for th in thresholds:
-        ws_try = delineate(
-            dem_path=dem_tif,
-            outlet=outlet,
-            workdir=outdir / "delin",
-            stream_threshold_cells=th,
-            expected_area_km2=EXPECTED_AREA_KM2 if EXPECTED_AREA_KM2 > 0 else None,
-            dem_conditioning=dem_conditioning,  # type: ignore[arg-type]
-        )
+        try:
+            ws_try = delineate(
+                dem_path=dem_tif,
+                outlet=outlet,
+                workdir=outdir / "delin",
+                stream_threshold_cells=th,
+                expected_area_km2=EXPECTED_AREA_KM2 if EXPECTED_AREA_KM2 > 0 else None,
+                dem_conditioning=dem_conditioning,
+            )
+        except SwatBuilderPipelineError as exc:
+            threshold_attempts.append({
+                "threshold_cells": th,
+                "validation_passed": False,
+                "area_diff_pct": None,
+                "iou_pct": None,
+                "n_subbasins": exc.context.get("n_subbasins"),
+                "n_channels": exc.context.get("n_channels"),
+                "avg_subbasin_area_km2": None,
+                "complexity_acceptable": False,
+                "complexity_reasons": [str(exc)],
+                "topology_suspicious": True,
+            })
+            log.warning("Delineation attempt rejected (threshold=%s): %s", th, exc)
+            continue
         # Default 30 %: DEM-boundary truncation can legitimately leave 25-30 % of
         # a large basin outside the delineated watershed. Override via env var.
         _area_tol = float(os.environ.get("SWATPLUS_AREA_TOLERANCE_PCT", "30.0"))
@@ -556,8 +592,64 @@ def main(
             ",".join(complexity.reasons) or "ok",
         )
 
-    assert ws is not None
-    assert validation is not None
+    if ws is None:
+        # All threshold attempts raised SwatBuilderPipelineError (typically multi-terminal
+        # on flat terrain). Try once with NHD stream-burned DEM to force D8 connectivity.
+        log.warning(
+            "All delineation thresholds failed for %s — trying NHD stream-burn fallback.",
+            STATION_ID,
+        )
+        _flowlines_gpkg = outdir / "raw" / "nhd_flowlines.gpkg"
+        _area_tol_burn = float(os.environ.get("SWATPLUS_AREA_TOLERANCE_PCT", "30.0"))
+        try:
+            from swatplus_builder.gis.nldi_fallback import fetch_nhd_flowlines
+            _flowlines_path = fetch_nhd_flowlines(STATION_ID, _flowlines_gpkg)
+            if _flowlines_path is not None:
+                _burn_workdir = outdir / "delin_burned"
+                _burn_complexity = None
+                _burn_threshold = thresholds[0]
+                ws_try = delineate(
+                    dem_path=dem_tif,
+                    outlet=outlet,
+                    workdir=_burn_workdir,
+                    stream_threshold_cells=_burn_threshold,
+                    expected_area_km2=EXPECTED_AREA_KM2 if EXPECTED_AREA_KM2 > 0 else None,
+                    dem_conditioning="fill",
+                    stream_burn_vector=_flowlines_path,
+                    stream_burn_depth_m=10.0,
+                )
+                _vr = validate_watershed(
+                    ws_try,
+                    reference_polygon=basin_gpkg,
+                    area_tolerance_pct=_area_tol_burn,
+                )
+                _burn_complexity = assess_topology_complexity(ws_try.stats, complexity_policy)
+                threshold_attempts.append({
+                    "threshold_cells": _burn_threshold,
+                    "validation_passed": _vr.passed,
+                    "area_diff_pct": _vr.area_diff_pct,
+                    "iou_pct": _vr.iou_pct,
+                    "n_subbasins": ws_try.stats.get("n_subbasins"),
+                    "n_channels": ws_try.stats.get("n_channels"),
+                    "avg_subbasin_area_km2": _burn_complexity.avg_subbasin_area_km2 if _burn_complexity else None,
+                    "complexity_acceptable": _burn_complexity.acceptable if _burn_complexity else False,
+                    "complexity_reasons": list(_burn_complexity.reasons) + ["stream_burn_fallback"] if _burn_complexity else ["stream_burn_fallback"],
+                    "topology_suspicious": _topology_suspicious(ws_try.stats),
+                })
+                ws = ws_try
+                validation = _vr
+                selected_threshold = _burn_threshold
+                log.info("Stream-burn delineation succeeded for %s.", STATION_ID)
+        except SwatBuilderPipelineError as exc:
+            log.warning("Stream-burn delineation also failed for %s: %s", STATION_ID, exc)
+        except Exception as exc:
+            log.warning("Stream-burn fallback error for %s: %s", STATION_ID, exc)
+
+    if ws is None or validation is None:
+        raise RuntimeError(
+            "Delineation failed to produce a watershed after all threshold attempts "
+            f"(including stream-burn fallback): {threshold_attempts}"
+        )
     final_complexity = assess_topology_complexity(ws.stats, complexity_policy)
     if not validation.passed or _topology_suspicious(ws.stats) or not final_complexity.acceptable:
         raise RuntimeError(
@@ -643,7 +735,7 @@ def main(
     project_dir = outdir / "project"
     project_dir.mkdir(exist_ok=True)
     t0 = time.time()
-    db_path = create_project_db("marsh_creek", project_dir, reference_db=datasets_db, overwrite=True)
+    db_path = create_project_db("swatplus_project", project_dir, reference_db=datasets_db, overwrite=True)
     write_all(db_path, tables)
     _ok(f"project.sqlite created", elapsed=time.time() - t0)
 
@@ -1025,6 +1117,10 @@ def main(
             input_hashes[name] = sha256_file(p)
 
     notes: list[str] = []
+    notes.append(
+        f"nlcd_year={nlcd_year}; sim_midpoint_year={nlcd_selection['sim_midpoint_year']}; "
+        f"landuse_vintage_mismatch_years={nlcd_selection['landuse_vintage_mismatch_years']}"
+    )
     if abs(float(lte_scon_scale) - 1.0) > 1e-9:
         notes.append(
             f"lte_scon_scale_applied={float(lte_scon_scale):.3f} (rows={int(scon_rows)})"
@@ -1096,7 +1192,7 @@ def main(
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument("outdir", nargs="?", default="./marsh_creek_output", type=Path)
+    p.add_argument("outdir", nargs="?", default="./basin_output", type=Path)
     p.add_argument("--run", action="store_true", help="Also run the SWAT+ engine.")
     p.add_argument("--start", default=SIM_START, help="Simulation start date (YYYY-MM-DD).")
     p.add_argument("--end", default=SIM_END, help="Simulation end date (YYYY-MM-DD).")

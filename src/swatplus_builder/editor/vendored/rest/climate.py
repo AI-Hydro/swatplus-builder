@@ -5,11 +5,11 @@ from playhouse.shortcuts import model_to_dict
 from peewee import *
 
 from .defaults import DefaultRestMethods, RestHelpers
-from database.project import base as project_base
-from database.project.config import Project_config
-from database.project.climate import Weather_sta_cli, Weather_file, Weather_wgn_cli, Weather_wgn_cli_mon, Atmo_cli, Atmo_cli_sta, Atmo_cli_sta_value
-from database.project.simulation import Time_sim
-from database import lib as db_lib
+from _swatplus_db.project import base as project_base
+from _swatplus_db.project.config import Project_config
+from _swatplus_db.project.climate import Weather_sta_cli, Weather_file, Weather_wgn_cli, Weather_wgn_cli_mon, Atmo_cli, Atmo_cli_sta, Atmo_cli_sta_value
+from _swatplus_db.project.simulation import Time_sim
+from _swatplus_db import lib as db_lib
 from helpers import utils
 import sqlite3
 

@@ -58,8 +58,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-log = logging.getLogger(__name__)
-
 from ..config import DEFAULT_SETTINGS, Settings
 from ..errors import (
     SwatBuilderExternalError,
@@ -71,6 +69,8 @@ from .params import collapse_dual_hyd_group, horizon_from_chorizon
 
 if TYPE_CHECKING:
     import pandas as pd
+
+log = logging.getLogger(__name__)
 
 __all__ = [
     "DEFAULT_PC_STAC_URL",
@@ -249,7 +249,7 @@ def fetch_gnatsgo_profiles_result(
             " …" if len(missing) > 15 else "",
         )
     if horizon_rejected:
-        sample_items = list(sorted(horizon_rejected.items()))[:10]
+        sample_items = sorted(horizon_rejected.items())[:10]
         log.warning(
             "Horizon profiles rejected for %d mukeys (using aggregated instead); "
             "sample: %s%s",
@@ -271,16 +271,16 @@ def _load_tables(
     mukey_set: set[int],
     opts: GnatsgoFetchOptions,
     cache_dir: Path,
-) -> dict[str, "pd.DataFrame"]:
+) -> dict[str, pd.DataFrame]:
     """Query STAC + download + filter the three Parquet tables.
 
     Kept as a single function so the happy path is easy to follow;
     error translation is centralized here.
     """
     try:
-        import pystac_client  # type: ignore[import-untyped]
-        import planetary_computer  # type: ignore[import-untyped]
         import pandas as pd
+        import planetary_computer  # type: ignore[import-untyped]
+        import pystac_client  # type: ignore[import-untyped]
     except ImportError as exc:
         raise SwatBuilderExternalError(
             "gNATSGO fetch requires optional extras. "
@@ -359,11 +359,11 @@ def _load_tables(
 
 
 def _filter_parquet_rows(
-    df: "pd.DataFrame",
+    df: pd.DataFrame,
     *,
     filter_col: str,
     filter_values: set[int],
-) -> "pd.DataFrame":
+) -> pd.DataFrame:
     """Keep rows whose ``filter_col`` is in ``filter_values``.
 
     Coerces with ``to_numeric`` when ``isin`` matches nothing but the
@@ -423,8 +423,8 @@ def _read_parquet(
         df = _filter_parquet_rows(df, filter_col=filter_col, filter_values=filter_values)
     else:
         try:
-            import pyarrow.parquet as pq
             import pyarrow.dataset as ds
+            import pyarrow.parquet as pq
 
             dataset = ds.dataset(href, filesystem=None, format="parquet")
             filter_expr = ds.field(filter_col).isin(sorted(filter_values))
@@ -448,7 +448,7 @@ def _read_parquet(
 
 
 def _require_columns(
-    table: str, df: "pd.DataFrame", required: tuple[str, ...]
+    table: str, df: pd.DataFrame, required: tuple[str, ...]
 ) -> None:
     missing = [c for c in required if c not in df.columns]
     if missing:
@@ -467,11 +467,10 @@ def _require_columns(
 
 
 def _build_profile(
-    *, mukey: int, tables: Mapping[str, "pd.DataFrame"]
+    *, mukey: int, tables: Mapping[str, pd.DataFrame]
 ) -> SoilProfile | None:
     """Return the :class:`SoilProfile` for one mukey, or ``None`` if
     the map unit has no usable horizon data."""
-    import pandas as pd
 
     components = tables["component"]
     mu_components = components[components["mukey"].astype("int64") == mukey]
@@ -541,14 +540,14 @@ def _build_profile(
     )
 
 def _build_profile_from_chorizon(
-    *, mukey: int, tables: Mapping[str, "pd.DataFrame"]
+    *, mukey: int, tables: Mapping[str, pd.DataFrame]
 ) -> SoilProfile | None:
     # Back-compat alias for readability at the call site.
     return _build_profile(mukey=mukey, tables=tables)
 
 
 def _build_profile_from_muaggatt(
-    *, mukey: int, tables: Mapping[str, "pd.DataFrame"]
+    *, mukey: int, tables: Mapping[str, pd.DataFrame]
 ) -> SoilProfile | None:
     """Baseline soil builder: stable, aggregated, reproducible.
 
@@ -664,7 +663,7 @@ def _is_usable_horizon_profile(profile: SoilProfile) -> tuple[bool, str]:
     return (True, "ok")
 
 
-def _resolve_hyd_group(*, mukey: int, tables: Mapping[str, "pd.DataFrame"]) -> str:
+def _resolve_hyd_group(*, mukey: int, tables: Mapping[str, pd.DataFrame]) -> str:
     muaggatt = tables["muaggatt"]
     match = muaggatt[muaggatt["mukey"].astype("int64") == mukey]
     if not match.empty:

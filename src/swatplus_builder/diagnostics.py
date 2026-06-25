@@ -535,7 +535,7 @@ def _annual_peak_lag_summary(df: pd.DataFrame, *, window_days: int = 7) -> dict[
         }
     lags: list[int] = []
     water_year = df.index.year + (df.index.month >= 10).astype(int)
-    for year, group in df.groupby(water_year):
+    for _year, group in df.groupby(water_year):
         if len(group) < 30:
             continue
         obs_peak = pd.to_datetime(group["obs"].idxmax())

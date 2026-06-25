@@ -1,8 +1,8 @@
 from .base import BaseFileModel, FileColumn as col
 from peewee import *
 from helpers import utils
-import database.project.water_rights as db
-from database.project import connect
+import _swatplus_db.project.water_rights as db
+from _swatplus_db.project import connect
 
 obj_types = {
 	"hru": connect.Hru_con,

@@ -32,12 +32,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 FROM base AS builder
 
 WORKDIR /build
-COPY pyproject.toml ./
+COPY pyproject.toml README.md LICENSE ./
 COPY src/ ./src/
-# Install the package + core deps in a staging virtualenv.
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
-    && pip install --no-cache-dir -e ".[swatplus]" \
-    && pip install --no-cache-dir mcp fastmcp 2>/dev/null || true
+# Build a wheel and install it non-editably so the runtime stage does not
+# need the build directory.  An editable install (-e) would leave an egg-link
+# pointing at /build/src/ which does not exist in the runtime stage.
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel build \
+    && python -m build --wheel --no-isolation \
+    && pip install --no-cache-dir ".[swatplus]" dist/swatplus_builder-*.whl
 
 # ---- runtime stage ---------------------------------------------------------
 FROM base AS runtime
@@ -46,10 +48,9 @@ LABEL org.opencontainers.image.title="swatplus-builder" \
       org.opencontainers.image.description="Agent-operable SWAT+ framework (no QGIS)" \
       org.opencontainers.image.source="https://github.com/mgalib/swatplus-builder"
 
-# Copy installed packages from builder.
+# Copy installed packages from builder (site-packages, entry-point scripts).
 COPY --from=builder /usr/local/lib/python3.11 /usr/local/lib/python3.11
 COPY --from=builder /usr/local/bin/swat /usr/local/bin/swat
-COPY --from=builder /build/src /opt/swatplus_builder/src
 
 # Non-root user for safe agent execution.
 RUN useradd -m -s /bin/bash swatrunner

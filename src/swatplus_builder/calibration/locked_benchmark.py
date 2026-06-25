@@ -35,7 +35,6 @@ from ..errors import SwatBuilderInputError, SwatBuilderPipelineError
 from ..output.eval import evaluate_run
 from ..output.metadata import try_git_sha
 
-
 # ---------------------------------------------------------------------------
 # Data models
 # ---------------------------------------------------------------------------
@@ -864,8 +863,8 @@ def screen_parameters_against_lock(
             path=str(alignment_csv),
         )
 
-    from .real_engine import load_observed_from_alignment_csv, make_real_objective
     from ..params import get_parameter
+    from .real_engine import load_observed_from_alignment_csv, make_real_objective
 
     obs_series = load_observed_from_alignment_csv(alignment_csv)
     objective = make_real_objective(
@@ -887,6 +886,26 @@ def screen_parameters_against_lock(
     baseline_metrics = objective(defaults)
     rows: list[dict[str, Any]] = []
     warnings: list[str] = []
+
+    progress_path = screen_dir / "sensitivity_screen_progress.json"
+
+    def _write_progress(*, status: str, current_parameter: str | None = None) -> None:
+        progress = {
+            "basin_id": lock.basin_id,
+            "basis": "basin_specific",
+            "status": status,
+            "current_parameter": current_parameter,
+            "completed_parameters": len(rows),
+            "total_parameters": len(parameters),
+            "baseline_parameters": defaults,
+            "baseline_metrics": baseline_metrics,
+            "parameters": rows,
+            "warnings": warnings,
+            "updated_at_utc": datetime.now(timezone.utc).isoformat(),
+        }
+        progress_path.write_text(json.dumps(progress, indent=2, default=str) + "\n", encoding="utf-8")
+
+    _write_progress(status="running")
     for name in parameters:
         spec = get_parameter(name)
         lo, hi = spec.range
@@ -984,6 +1003,7 @@ def screen_parameters_against_lock(
                     },
                 }
             )
+            _write_progress(status="running", current_parameter=name)
         except Exception as exc:
             warnings.append(f"{name}: {exc}")
             rows.append(
@@ -999,6 +1019,7 @@ def screen_parameters_against_lock(
                     },
                 }
             )
+            _write_progress(status="running", current_parameter=name)
 
     payload = {
         "basin_id": lock.basin_id,
@@ -1010,6 +1031,7 @@ def screen_parameters_against_lock(
     json_path = screen_dir / "sensitivity_screen.json"
     md_path = screen_dir / "sensitivity_screen.md"
     json_path.write_text(json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8")
+    _write_progress(status="complete")
     lines = [
         "# Locked Sensitivity Screen",
         "",
@@ -1080,7 +1102,7 @@ def _diagnostic_calibration_phases(
             },
             {
                 "phase": "baseflow_subsurface",
-                "parameters": ["LAT_TTIME", "LATQ_CO", "PERCO", "ALPHA_BF", "RCHG_DP", "GW_DELAY"],
+                "parameters": ["LAT_TTIME", "LATQ_CO", "PERCO", "ALPHA_BF", "RCHG_DP"],
                 "objective": "maintain_volume_gate_then_improve_bfi_and_kge",
             },
             {

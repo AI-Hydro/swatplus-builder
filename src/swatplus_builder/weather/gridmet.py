@@ -36,10 +36,12 @@ does not import ``pygridmet``; the import is deferred until
 from __future__ import annotations
 
 import datetime as _dt
+import logging
 import os
 import time
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Iterable, Sequence
+from typing import TYPE_CHECKING
 
 from ..config import DEFAULT_SETTINGS, Settings
 from ..errors import (
@@ -52,6 +54,8 @@ from .writer import station_name
 
 if TYPE_CHECKING:
     import pandas as pd
+
+log = logging.getLogger(__name__)
 
 __all__ = [
     "GRIDMET_VARIABLE_MAP",
@@ -77,6 +81,10 @@ GRIDMET_VARIABLE_MAP: dict[WeatherVar, tuple[str, ...]] = {
 _GRIDMET_FETCH_ATTEMPTS = 3
 _GRIDMET_RETRY_SLEEP_SECONDS = 2.0
 _GRIDMET_CONN_TIMEOUT_SECONDS = 1800
+# GridMET typically lags real-time by 3–5 days; 7 is a conservative buffer.
+# Requests with end dates within this window may receive fewer rows than
+# expected because the THREDDS server silently clips to its coverage boundary.
+_GRIDMET_REALTIME_LAG_DAYS = 7
 
 
 # ---------------------------------------------------------------------------
@@ -84,9 +92,7 @@ _GRIDMET_CONN_TIMEOUT_SECONDS = 1800
 # ---------------------------------------------------------------------------
 
 
-from typing import Union
-
-StationLike = Union[WeatherStation, tuple[float, float, float]]
+StationLike = WeatherStation | tuple[float, float, float]
 """What ``fetch_gridmet`` accepts per station.
 
 Either a fully-formed :class:`WeatherStation` (caller provides the name)
@@ -148,6 +154,7 @@ def fetch_gridmet(
     """
     start_date, end_date = _parse_date_range(start, end)
     n_days = (end_date - start_date).days + 1
+    _warn_if_end_near_realtime(end_date, end)
 
     stations_typed = [_coerce_station(s) for s in stations]
     if not stations_typed:
@@ -198,6 +205,32 @@ def fetch_gridmet(
 # ---------------------------------------------------------------------------
 # Internals
 # ---------------------------------------------------------------------------
+
+
+def _warn_if_end_near_realtime(end_date: _dt.date, end_str: str) -> None:
+    """Emit a warning when *end_date* falls within GridMET's real-time lag window.
+
+    The THREDDS server silently clips responses to its coverage boundary
+    (~3–5 days behind today).  Requesting data inside that window will cause
+    the server to return fewer rows than asked for; those trailing days will be
+    forward-filled with the last available real observation.
+
+    Warn early so the operator can deliberately choose a safe end date rather
+    than silently receiving synthetic weather data.
+    """
+    today = _dt.date.today()
+    lag_boundary = today - _dt.timedelta(days=_GRIDMET_REALTIME_LAG_DAYS)
+    if end_date > lag_boundary:
+        log.warning(
+            "GridMET end date %s is within the server's real-time lag window "
+            "(estimated coverage boundary: %s). The server may return fewer rows "
+            "than requested; trailing missing days will be forward-filled with the "
+            "last available real observation. Consider using end ≤ %s to avoid "
+            "synthetic weather data.",
+            end_str,
+            lag_boundary.isoformat(),
+            lag_boundary.isoformat(),
+        )
 
 
 def _parse_date_range(start: str, end: str) -> tuple[_dt.date, _dt.date]:
@@ -288,7 +321,7 @@ def _fetch_one(
     end: str,
     variables: Sequence[str],
     cache_dir: Path,
-) -> "pd.DataFrame":
+) -> pd.DataFrame:
     """Call pygridmet for a single (lon, lat). Translate errors."""
     last_exc: Exception | None = None
     for attempt in range(1, _GRIDMET_FETCH_ATTEMPTS + 1):
@@ -337,19 +370,34 @@ def _fetch_one(
 
 
 def _repair_bounded_day_gaps(
-    df: "pd.DataFrame",
+    df: pd.DataFrame,
     *,
     station: WeatherStation,
     start: str,
     end: str,
     n_days: int,
-) -> "pd.DataFrame":
-    """Fill a few isolated provider-missing days using adjacent or nearest data."""
+) -> pd.DataFrame:
+    """Fill provider-missing days using adjacent or nearest data.
+
+    Handles three gap patterns:
+
+    * **Leading** (missing days before the first returned row): backward-fill
+      from the first available row.
+    * **Trailing** (missing days after the last returned row — the common case
+      when the server clips to its real-time coverage boundary): forward-fill
+      from the last available row.
+    * **Interior** (isolated missing day between two available days): linear
+      average of the flanking days.
+
+    The cap is 7 days, which covers the typical GridMET real-time lag (~3 days)
+    plus a safety margin.  Gaps larger than 7 days are returned unrepaired so
+    that ``_validate_response_shape`` raises a clear error.
+    """
     if len(df) == n_days:
         return df
 
     missing_count = n_days - len(df)
-    if missing_count < 1 or missing_count > 3:
+    if missing_count < 1 or missing_count > 7:
         return df
 
     import pandas as pd
@@ -363,22 +411,46 @@ def _repair_bounded_day_gaps(
     if len(missing) != missing_count:
         return df
 
+    first_available = got[0]
+    last_available = got[-1]
+
+    trailing_days = sorted(d for d in missing if d > last_available)
+    if trailing_days:
+        log.warning(
+            "GridMET station %r: server returned data through %s but %s was "
+            "requested (%d trailing day(s) missing). Forward-filling from last "
+            "real observation — these days contain synthetic weather data.",
+            station.name,
+            last_available.strftime("%Y-%m-%d"),
+            end,
+            len(trailing_days),
+        )
+
     repaired = df.copy()
-    for day in missing:
-        if day == expected[0]:
-            row = repaired.iloc[[0]].copy()
-            row.index = pd.DatetimeIndex([day])
-            repaired = pd.concat([repaired, row])
-        elif day == expected[-1]:
-            row = repaired.iloc[[-1]].copy()
+    for day in sorted(missing):
+        if day < first_available:
+            # Leading gap: backward-fill from first available row
+            row = repaired.loc[[repaired.index.min()]].copy()
             row.index = pd.DatetimeIndex([day])
             repaired = pd.concat([row, repaired])
+        elif day > last_available:
+            # Trailing gap (server clipped end of coverage): forward-fill
+            row = repaired.loc[[repaired.index.max()]].copy()
+            row.index = pd.DatetimeIndex([day])
+            repaired = pd.concat([repaired, row])
         else:
+            # Interior gap: average flanking days from the original data
             prev_day = day - pd.Timedelta(days=1)
             next_day = day + pd.Timedelta(days=1)
             if prev_day not in got or next_day not in got:
                 return df
-            row = ((repaired.loc[[prev_day]].reset_index(drop=True) + repaired.loc[[next_day]].reset_index(drop=True)) / 2.0)
+            row = (
+                (
+                    repaired.loc[[prev_day]].reset_index(drop=True)
+                    + repaired.loc[[next_day]].reset_index(drop=True)
+                )
+                / 2.0
+            )
             row.index = pd.DatetimeIndex([day])
             repaired = pd.concat([repaired, row])
 
@@ -386,7 +458,7 @@ def _repair_bounded_day_gaps(
 
 
 def _validate_response_shape(
-    df: "pd.DataFrame",
+    df: pd.DataFrame,
     *,
     station: WeatherStation,
     n_days: int,
@@ -411,7 +483,7 @@ def _validate_response_shape(
 
 def _build_series(
     *,
-    df: "pd.DataFrame",
+    df: pd.DataFrame,
     station: WeatherStation,
     start: str,
     n_days: int,
@@ -462,7 +534,7 @@ def _build_series(
     )
 
 
-def _normalize_columns(df: "pd.DataFrame") -> dict[str, "pd.Series"]:
+def _normalize_columns(df: pd.DataFrame) -> dict[str, pd.Series]:
     """Flatten pygridmet's column names to their pure variable name.
 
     pygridmet's DataFrames label columns like ``"pr (mm)"`` /
@@ -478,7 +550,7 @@ def _normalize_columns(df: "pd.DataFrame") -> dict[str, "pd.Series"]:
 
 
 def _col(
-    cols: dict[str, "pd.Series"], name: str, station: WeatherStation
+    cols: dict[str, pd.Series], name: str, station: WeatherStation
 ):  # type: ignore[no-untyped-def]
     try:
         return cols[name].to_list()

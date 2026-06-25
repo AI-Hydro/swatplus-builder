@@ -27,8 +27,9 @@ import calendar as _calendar
 import datetime as _dt
 import math
 import time
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Iterable, Sequence
+from typing import TYPE_CHECKING
 
 from ..config import DEFAULT_SETTINGS, Settings
 from ..errors import (
@@ -194,7 +195,7 @@ def _fetch_one(
     end: str,
     variables: Sequence[str],
     cache_dir: Path,
-) -> "pd.DataFrame":
+) -> pd.DataFrame:
     last_exc: Exception | None = None
     for attempt in range(1, _DAYMET_FETCH_ATTEMPTS + 1):
         try:
@@ -329,7 +330,7 @@ def _fill_daymet_calendar_gaps(
 
 
 def _validate_response_shape(
-    df: "pd.DataFrame",
+    df: pd.DataFrame,
     *,
     station: WeatherStation,
     n_days: int,
@@ -381,7 +382,7 @@ def _validate_response_shape(
 
 def _build_series(
     *,
-    df: "pd.DataFrame",
+    df: pd.DataFrame,
     station: WeatherStation,
     start: str,
     n_days: int,
@@ -426,7 +427,7 @@ def _build_series(
     )
 
 
-def _normalize_columns(df: "pd.DataFrame") -> dict[str, "pd.Series"]:
+def _normalize_columns(df: pd.DataFrame) -> dict[str, pd.Series]:
     out: dict[str, pd.Series] = {}
     for col in df.columns:
         key = str(col).split("(")[0].strip().split()[0].lower()
@@ -434,7 +435,7 @@ def _normalize_columns(df: "pd.DataFrame") -> dict[str, "pd.Series"]:
     return out
 
 
-def _col(cols: dict[str, "pd.Series"], name: str, station: WeatherStation):  # type: ignore[no-untyped-def]
+def _col(cols: dict[str, pd.Series], name: str, station: WeatherStation):  # type: ignore[no-untyped-def]
     try:
         return cols[name].to_list()
     except KeyError as exc:

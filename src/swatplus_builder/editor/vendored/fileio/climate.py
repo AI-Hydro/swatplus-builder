@@ -1,7 +1,7 @@
 from .base import BaseFileModel, FileColumn as col
 from peewee import *
-import database.project.climate as db
-import database.project.config as config_db
+import _swatplus_db.project.climate as db
+import _swatplus_db.project.config as config_db
 from helpers import utils
 import os
 

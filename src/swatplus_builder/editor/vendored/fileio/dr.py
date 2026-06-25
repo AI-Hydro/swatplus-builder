@@ -1,6 +1,6 @@
 from .base import BaseFileModel, FileColumn as col
 from helpers import utils
-import database.project.dr as db
+import _swatplus_db.project.dr as db
 
 
 class Dr_om_del(BaseFileModel):

@@ -21,15 +21,14 @@ An opt-in ``@pytest.mark.slow`` test honors ``$SWATPLUS_EXE`` for running the
 
 from __future__ import annotations
 
+import json
 import os
 import stat
 import sys
 import textwrap
-import json
 from pathlib import Path
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Fake-engine fixtures

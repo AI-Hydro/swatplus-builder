@@ -28,7 +28,13 @@ Do not use this skill for:
 - Policy or water-management recommendations without model evidence.
 
 Boundary rules:
-- Prefer explicit typed tool calls over free-form scripts.
+- **MCP tools** are the governed front door for the canonical pipeline: use
+  `run_workflow` + `workflow_status` for any reportable end-to-end run.
+  Structured returns enforce "read the evidence bundle" — the governance
+  thesis depends on not scraping terminal text.
+- **CLI commands** are the substrate for granular steps, iteration,
+  debugging, and reproducible scripts. Both surfaces call the same governed
+  code; the package decides the claim tier either way.
 - Prefer artifact-backed outputs over ad hoc local files.
 - Never hide fallback behaviors (soil/weather/outlet/routing assumptions).
 - **Summarize only from the evidence bundle** — never scrape a metric from
@@ -57,16 +63,22 @@ binary banner into its evidence bundle.
 - SWAT+ GitBook docs: https://swatplus.gitbook.io/docs
 - Source / releases: https://github.com/swat-model
 
-**After downloading:**
+**After downloading — recommended (no PATH or env-var needed):**
+```bash
+swat setup engine --path /path/to/downloaded/swatplus_exe
+```
+Installs to `~/.swatplus_builder/bin/` and is found automatically on every
+subsequent run. Run `swat setup engine` (no args) to see current status.
+
+**Alternative (manual):**
 ```bash
 chmod +x swatplus_exe
 export SWATPLUS_EXE=/path/to/swatplus_exe   # or place as 'swatplus' on PATH
 ```
 
 **Agent guidance:** if `swat health --json` shows `"swatplus_exe": false`,
-tell the user to download a supported SWAT+ v2023 engine (rev 60.5.7 –
-61.0.2.61; latest recommended) from https://swat.tamu.edu/software/plus/ and
-set the `SWATPLUS_EXE` environment variable to its path.
+run `swat setup engine` (no args) for download instructions, then
+`swat setup engine --path <binary>` to install.
 
 ### Reference databases
 
@@ -78,7 +90,22 @@ Bootstrap both, then confirm with `swat health --json` (reports engine path,
 version, and reference-DB availability). A `degraded` result almost always
 means a missing engine or missing reference DBs.
 
-## Tool catalog
+## Execution surfaces
+
+swatplus-builder exposes **two surfaces that call the same governed code**.
+The package decides the claim tier either way — the surface only changes
+the interaction style and what's ergonomic for the agent.
+
+| Surface | When to use |
+|---------|-------------|
+| **MCP tools** | Canonical end-to-end governed run; structured background launch + poll; hosted/chat agents that cannot shell out arbitrarily; any result that will be reported — structured returns enforce "read the evidence bundle". |
+| **`swat` CLI** | Granular step-by-step work; iteration and debugging; shell-native agents (Claude Code, Cursor); reproducible scripts and CI; anything that needs to be copy-pasted into a runbook or paper appendix. |
+
+The MCP `run_workflow` tool literally assembles a `swat workflow run ...`
+argv list and execs it — it always returns the `equivalent_cli` field so
+the agent can record the exact reproducible command.
+
+## MCP tool catalog
 
 The MCP surface is intentionally narrow: exactly **13 typed tools** in three
 tiers. The tools expose operations (build, run, calibrate, verify, query) but
@@ -87,8 +114,12 @@ is not an action the agent can take.
 
 ### Tier 0 — Canonical governed workflow (2 tools) — START HERE
 
-When the user says "build/run/model gauge X", reach for `run_workflow` first.
-It is the only MCP path that produces a claim-governed evidence bundle.
+When the user says "build/run/model gauge X" and the MCP server is
+available, use `run_workflow`. It backgrounds the run, lets you poll
+`workflow_status`, and hands you the evidence bundle path — making
+"summarize only from the bundle" the natural path, not an extra rule.
+Prefer the CLI equivalent (`swat workflow run ...`) for shell-native
+agents, reproducible scripts, or when debugging a failure interactively.
 
 #### `run_workflow`
 - input: `RunWorkflowRequest(usgs_id: str, start='2000-01-01', end='2019-12-31',
@@ -198,8 +229,15 @@ reported calibration metrics**.
 The `lock_benchmark → locked_calibrate → verify` chain is the authoritative
 path. These rules are **enforced by the toolchain**, not advisory:
 
-- Effective calibration parameters default to **CN2 and ALPHA_BF only** — no
-  silent scope expansion. Widening scope is an explicit, recorded decision.
+- Standalone `locked_calibrate` defaults to the historical `CN2,ALPHA_BF`
+  scope unless a caller supplies `parameters`.
+- The governed end-to-end workflow uses the locked benchmark plus a
+  basin-specific sensitivity screen over calibration-eligible full-mode
+  parameters. Retained controls are then passed into staged diagnostic phases:
+  volume/process partition, baseflow/subsurface, peaks/timing, and final
+  NSE/KGE finetuning.
+- No silent scope expansion: candidate parameters must be declared, screened,
+  recorded in artifacts, and independently verified before claim use.
 - Calibrated metrics are always **delta-reported against the locked baseline**,
   never as standalone absolute numbers without their baseline.
 - **verify_calibration is mandatory** (`verify_calibration`): the best solution is re-run
@@ -211,19 +249,30 @@ path. These rules are **enforced by the toolchain**, not advisory:
 
 ## CLI commands
 
-Every MCP tool has a CLI equivalent (the package is operable by a person or an
-agent through the same surface). Key commands:
+Every MCP tool has a CLI equivalent. Shell-native agents and reproducible
+scripts should use these directly. Key commands:
 
 ```bash
-swat health --json                 # engine + reference-DB readiness
-swat workflow negotiate --task ...  # produce/accept a workflow_contract.json
-swat workflow run --usgs-id <id> ... # canonical end-to-end pipeline
+# Setup (one-time)
+swat setup engine --path /path/to/swatplus_exe  # install binary to ~/.swatplus_builder/bin/
+swat setup engine                               # print download instructions + current status
+swat health --json                              # engine + reference-DB readiness
+
+# Canonical governed pipeline (primary recommendation for shell-native agents)
+swat workflow run --usgs-id <id> \
+  --start 2000-01-01 --end 2019-12-31 \
+  --model-family full --warmup-years 3 \
+  --calibrate --claim-tier diagnostic \
+  --out-dir runs/usgs_<id> --json
+
+# Other pipeline steps
+swat workflow negotiate --task ...             # produce/accept a workflow_contract.json
 swat lock-benchmark --txtinout ... --observed-csv ... --basin-id ...
 swat locked-calibrate --benchmark-dir ... --base-txtinout ... --parameters CN2,ALPHA_BF
 swat readiness-table --locks-root artifacts/locks/ --json
-swat inspect <run_path>            # persisted run metadata
+swat inspect <run_path>                        # persisted run metadata
 swat validate --basins basins/curated_v1.json
-swat mcp                           # launch the stdio MCP server
+swat mcp                                       # launch the stdio MCP server
 ```
 
 Solver execution guardrail: all SWAT+ binary invocations must go through
@@ -313,7 +362,9 @@ Interpretation guardrails:
 
 ### Workflow B — Authoritative locked calibration
 1. `lock_benchmark` to seal the baseline (records baseline NSE/KGE + alignment hash).
-2. `locked_calibrate` with `CN2, ALPHA_BF` (verification runs automatically).
+2. For the standalone command, call `locked_calibrate` with declared parameters
+   such as `CN2, ALPHA_BF`; for the governed workflow, use the basin-screened
+   full-mode parameter set retained by the package.
 3. Report **delta** NSE/KGE vs the locked baseline, verified — never the
    optimizer-loop metric.
 4. `readiness_table` to summarize across basins.

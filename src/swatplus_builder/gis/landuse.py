@@ -33,12 +33,14 @@ strings must still match plant/urban names in the target datasets DB.
 from __future__ import annotations
 
 __all__ = [
+    "NLCD_AVAILABLE_YEARS",
     "NLCD_CLASS_DESCRIPTIONS",
     "NLCD_TO_SWATPLUS",
     "NLCD_URBAN_CODES",
     "is_urban",
     "is_water",
     "resolve_landuse",
+    "select_nlcd_year_for_simulation",
 ]
 
 
@@ -127,6 +129,10 @@ contains an entry for every SWAT+ code produced by these NLCD classes.
 _NLCD_WATER_CODES: frozenset[int] = frozenset({11, 12})
 
 
+NLCD_AVAILABLE_YEARS: tuple[int, ...] = (2001, 2004, 2006, 2008, 2011, 2013, 2016, 2019, 2021)
+"""Legacy NLCD land-cover epochs currently used by the pygeohydro fetch path."""
+
+
 def is_urban(nlcd_code: int) -> bool:
     """Return True if the NLCD code is an urban / developed class."""
     return int(nlcd_code) in NLCD_URBAN_CODES
@@ -176,3 +182,39 @@ def resolve_landuse(
     if code_i in default_lookup:
         return default_lookup[code_i]
     return f"{fallback_prefix}{code_i}"
+
+
+def select_nlcd_year_for_simulation(
+    sim_start: str,
+    sim_end: str,
+    *,
+    available_years: tuple[int, ...] = NLCD_AVAILABLE_YEARS,
+) -> dict[str, object]:
+    """Select the NLCD epoch closest to a simulation window midpoint.
+
+    The current acquisition path requests legacy NLCD epochs from MRLC via
+    pygeohydro. This helper makes the temporal choice explicit and records the
+    mismatch instead of silently using the newest raster for older simulations.
+    """
+
+    if not available_years:
+        raise ValueError("available_years must contain at least one NLCD year")
+    try:
+        start_year = int(str(sim_start)[:4])
+        end_year = int(str(sim_end)[:4])
+    except Exception as exc:
+        raise ValueError(f"invalid simulation dates: {sim_start!r}, {sim_end!r}") from exc
+    if end_year < start_year:
+        raise ValueError(f"sim_end year {end_year} is earlier than sim_start year {start_year}")
+
+    midpoint = int(round((start_year + end_year) / 2.0))
+    years = tuple(sorted(int(year) for year in available_years))
+    selected = min(years, key=lambda year: (abs(year - midpoint), year))
+    return {
+        "selected_year": selected,
+        "available_years": list(years),
+        "sim_start": str(sim_start),
+        "sim_end": str(sim_end),
+        "sim_midpoint_year": midpoint,
+        "landuse_vintage_mismatch_years": selected - midpoint,
+    }

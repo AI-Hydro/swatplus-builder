@@ -1,7 +1,7 @@
 from peewee import *
 import sqlite3
 #import pyodbc
-import database.lib as db_lib
+import _swatplus_db.lib as db_lib
 
 db = SqliteDatabase(None)
 

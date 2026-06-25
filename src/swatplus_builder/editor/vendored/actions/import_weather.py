@@ -1,11 +1,11 @@
 from helpers.executable_api import ExecutableApi, Unbuffered
-from database.project import base as project_base
-from database.project.setup import SetupProjectDatabase
-from database.project.config import Project_config
-from database.project.climate import Weather_file, Weather_sta_cli, Weather_sta_cli_scale, Weather_wgn_cli, Weather_wgn_cli_mon, Atmo_cli, Atmo_cli_sta, Atmo_cli_sta_value
-from database.project.connect import Aquifer_con, Channel_con, Rout_unit_con, Reservoir_con, Recall_con, Hru_con, Exco_con, Chandeg_con, Hru_lte_con
-from database.project.simulation import Time_sim
-from database import lib as db_lib
+from _swatplus_db.project import base as project_base
+from _swatplus_db.project.setup import SetupProjectDatabase
+from _swatplus_db.project.config import Project_config
+from _swatplus_db.project.climate import Weather_file, Weather_sta_cli, Weather_sta_cli_scale, Weather_wgn_cli, Weather_wgn_cli_mon, Atmo_cli, Atmo_cli_sta, Atmo_cli_sta_value
+from _swatplus_db.project.connect import Aquifer_con, Channel_con, Rout_unit_con, Reservoir_con, Recall_con, Hru_con, Exco_con, Chandeg_con, Hru_lte_con
+from _swatplus_db.project.simulation import Time_sim
+from _swatplus_db import lib as db_lib
 from helpers import utils
 from fileio import base as fileio
 
@@ -130,7 +130,7 @@ class WeatherImport(ExecutableApi):
 			else:
 				self.match_files_to_stations(20, 45)
 		except Project_config.DoesNotExist:
-			sys.exit('Could not retrieve project configuration from database')
+			sys.exit('Could not retrieve project configuration from _swatplus_db')
 
 	def delete_existing(self):
 		Weather_file.delete().execute()
@@ -676,7 +676,7 @@ class Swat2012WeatherImport(ExecutableApi):
 			weather_api = WeatherImport(self.project_db_file, self.delete_existing, self.create_stations)
 			weather_api.import_data()
 		except Project_config.DoesNotExist:
-			sys.exit('Could not retrieve project configuration from database')
+			sys.exit('Could not retrieve project configuration from _swatplus_db')
 
 	def write_to_swatplus(self, dir):
 		warnings = []
@@ -861,7 +861,7 @@ class WgnImport(ExecutableApi):
 				self.wgn_database = wgn_db
 				self.wgn_table = config.wgn_table_name
 		except Project_config.DoesNotExist:
-			sys.exit('Could not retrieve project configuration from database')
+			sys.exit('Could not retrieve project configuration from _swatplus_db')
 
 		if delete_existing:
 			self.delete_existing()
@@ -1112,7 +1112,7 @@ class WgnImport(ExecutableApi):
 				station_to_mv[station['name']] = monthly_values
 				i += 1
 
-			self.emit_progress(round(total_prog*0.75), 'Inserting stations into project database...')
+			self.emit_progress(round(total_prog*0.75), 'Inserting stations into project _swatplus_db...')
 			db_lib.bulk_insert(self.project_db, Weather_wgn_cli, stations)
 			name_to_id = {}
 			for row in Weather_wgn_cli.select(Weather_wgn_cli.id, Weather_wgn_cli.name):
@@ -1125,7 +1125,7 @@ class WgnImport(ExecutableApi):
 					m['weather_wgn_cli'] = id
 					mv_to_insert.append(m)
 
-			self.emit_progress(round(total_prog*0.90), 'Inserting monthly values into project database...')
+			self.emit_progress(round(total_prog*0.90), 'Inserting monthly values into project _swatplus_db...')
 			db_lib.bulk_insert(self.project_db, Weather_wgn_cli_mon, mv_to_insert)
 		except UnicodeDecodeError:
 			sys.exit('Your CSV file contains a character that is not UTF-8 encoding. Please check your station names and remove any accents or other non-unicode characters.')
@@ -1293,7 +1293,7 @@ class AtmoImport(ExecutableApi):
 			stations_to_values[name].append(data)
 			i += 1
 
-		self.emit_progress(round(total_prog*0.75), 'Inserting stations into project database...')
+		self.emit_progress(round(total_prog*0.75), 'Inserting stations into project _swatplus_db...')
 		stations_db = [{ 'atmo_cli': self.atmo_cli.id, 'name': v } for v in stations]
 		db_lib.bulk_insert(self.project_db, Atmo_cli_sta, stations_db)
 		name_to_id = {}
@@ -1312,7 +1312,7 @@ class AtmoImport(ExecutableApi):
 				self.atmo_cli.save()
 			i += 1
 
-		self.emit_progress(round(total_prog*0.90), 'Inserting values into project database...')
+		self.emit_progress(round(total_prog*0.90), 'Inserting values into project _swatplus_db...')
 		db_lib.bulk_insert(self.project_db, Atmo_cli_sta_value, station_values)
 		
 
@@ -1357,7 +1357,7 @@ class AtmoImport(ExecutableApi):
 				
 				i += 1
 
-		self.emit_progress(round(total_prog*0.75), 'Inserting stations into project database...')
+		self.emit_progress(round(total_prog*0.75), 'Inserting stations into project _swatplus_db...')
 		stations_db = [{ 'atmo_cli': self.atmo_cli.id, 'name': v } for v in stations]
 		db_lib.bulk_insert(self.project_db, Atmo_cli_sta, stations_db)
 		name_to_id = {}
@@ -1390,7 +1390,7 @@ class AtmoImport(ExecutableApi):
 				station_values.append(data)
 				j += 1
 				
-		self.emit_progress(round(total_prog*0.90), 'Inserting values into project database...')
+		self.emit_progress(round(total_prog*0.90), 'Inserting values into project _swatplus_db...')
 		db_lib.bulk_insert(self.project_db, Atmo_cli_sta_value, station_values)
 
 	def get_atmo_cli_data_line(self, line):
@@ -1436,7 +1436,7 @@ class AtmoImport(ExecutableApi):
 
 if __name__ == '__main__':
 	sys.stdout = Unbuffered(sys.stdout)
-	parser = argparse.ArgumentParser(description="Import weather generator data into project SQLite database.")
+	parser = argparse.ArgumentParser(description="Import weather generator data into project SQLite _swatplus_db.")
 	parser.add_argument("--project_db_file", type=str, help="full path of project SQLite database file", nargs="?")
 	parser.add_argument("--delete_existing", type=str, help="y/n delete existing data first", nargs="?")
 

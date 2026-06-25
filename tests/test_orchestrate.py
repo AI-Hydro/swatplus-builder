@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from swatplus_builder.orchestrate import run_pipeline
+from swatplus_builder.orchestrate import _load_observed_series, run_pipeline
 
 
 def _write_prepared_run(root: Path) -> Path:
@@ -48,10 +48,30 @@ def _write_prepared_run(root: Path) -> Path:
     return txt
 
 
+def test_load_observed_series_preserves_values_when_normalizing_times(tmp_path: Path) -> None:
+    obs_csv = tmp_path / "obs_q.csv"
+    obs_csv.write_text(
+        "date,obs\n"
+        "2010-01-01 05:00:00,1.25\n"
+        "2010-01-02 05:00:00,2.50\n",
+        encoding="utf-8",
+    )
+
+    series = _load_observed_series(obs_csv)
+
+    assert series is not None
+    assert list(series.index.strftime("%Y-%m-%d")) == ["2010-01-01", "2010-01-02"]
+    assert series.tolist() == [1.25, 2.50]
+
+
 def test_run_pipeline_blocks_when_package_build_fails(monkeypatch, tmp_path: Path) -> None:
     from swatplus_builder.workflows.full_build import FullModelBuildResult
 
+    seen = {}
+
     def fake_build_full_model(**kwargs):
+        seen["hru_mode"] = kwargs.get("hru_mode")
+        seen["min_hru_fraction"] = kwargs.get("min_hru_fraction")
         report = tmp_path / "reports" / "overlay_repair" / "overlay_repair_report.json"
         report.parent.mkdir(parents=True)
         report.write_text('{"reason":"categorical_overlay_gap_too_large"}\n', encoding="utf-8")
@@ -66,9 +86,17 @@ def test_run_pipeline_blocks_when_package_build_fails(monkeypatch, tmp_path: Pat
 
     monkeypatch.setattr("swatplus_builder.workflows.full_build.build_full_model", fake_build_full_model)
 
-    summary = run_pipeline("01654000", tmp_path, start_date="2010-01-01", end_date="2010-01-10")
+    summary = run_pipeline(
+        "01654000",
+        tmp_path,
+        start_date="2010-01-01",
+        end_date="2010-01-10",
+        hru_mode="full_overlay",
+        min_hru_fraction=0.001,
+    )
 
     assert summary["status"] == "BLOCKED"
+    assert seen == {"hru_mode": "full_overlay", "min_hru_fraction": 0.001}
     assert summary["blocker_class"] == "external_data_provider_unreachable"
     assert summary["build"]["blocker_class"] == "external_data_provider_unreachable"
     assert summary["build"]["diagnostic_artifacts"]["overlay_repair_report"].endswith(

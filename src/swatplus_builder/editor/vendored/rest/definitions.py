@@ -3,7 +3,7 @@ from .config import RequestHeaders as rh
 
 from playhouse.shortcuts import model_to_dict
 
-from database.vardefs import Var_range, Var_code, SetupVardefsDatabase
+from _swatplus_db.vardefs import Var_range, Var_code, SetupVardefsDatabase
 import os
 
 vardef_db = 'swatplus_vardefs.sqlite'

@@ -1,9 +1,9 @@
 from .base import BaseFileModel, FileColumn as col
 from peewee import *
 from helpers import utils
-from database.project import init, connect
-import database.project.aquifer as db
-from database.project.salts import Salt_aqu_ini, Salt_module
+from _swatplus_db.project import init, connect
+import _swatplus_db.project.aquifer as db
+from _swatplus_db.project.salts import Salt_aqu_ini, Salt_module
 
 
 class Aquifer_aqu(BaseFileModel):

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
 from swatplus_builder.cli import app
+from swatplus_builder.errors import SwatBuilderPipelineError
 
 
 def test_calibrate_cli_runs_and_writes_artifacts(tmp_path: Path) -> None:
@@ -92,6 +94,48 @@ def test_calibrate_cli_real_engine_requires_base_txtinout(tmp_path: Path) -> Non
     )
     assert res.exit_code == 2
     assert "--base-txtinout is required" in res.stdout
+
+
+def test_locked_calibrate_json_reports_swatbuilder_error(monkeypatch, tmp_path: Path) -> None:
+    def fake_calibrate_against_lock(**kwargs):
+        raise SwatBuilderPipelineError(
+            "No calibration candidate passed the promotion gates during phase 'volume'.",
+            phase="volume",
+            history_csv=str(tmp_path / "history.csv"),
+            n_evaluations=3,
+            promotion_gate="abs(pbias) <= 30",
+        )
+
+    monkeypatch.setattr(
+        "swatplus_builder.calibration.locked_benchmark.calibrate_against_lock",
+        fake_calibrate_against_lock,
+    )
+
+    runner = CliRunner()
+    res = runner.invoke(
+        app,
+        [
+            "locked-calibrate",
+            "--benchmark-dir",
+            str(tmp_path / "benchmark"),
+            "--base-txtinout",
+            str(tmp_path / "TxtInOut"),
+            "--out-dir",
+            str(tmp_path / "cal"),
+            "--parameters",
+            "CN2",
+            "--n-evals",
+            "2",
+            "--json",
+        ],
+    )
+
+    assert res.exit_code == 1
+    payload = json.loads(res.stdout)
+    assert payload["status"] == "error"
+    assert payload["error_type"] == "SwatBuilderPipelineError"
+    assert payload["context"]["phase"] == "volume"
+    assert payload["context"]["promotion_gate"] == "abs(pbias) <= 30"
 
 
 def test_calibrate_cli_proxy_ignores_min_improvement_gate(tmp_path: Path) -> None:

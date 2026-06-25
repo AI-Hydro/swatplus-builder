@@ -10,6 +10,5 @@ from __future__ import annotations
 
 from run_objective_10basin import main
 
-
 if __name__ == "__main__":
     main()

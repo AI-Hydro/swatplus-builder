@@ -5,7 +5,76 @@
 Phase 3L — Full-Mode Engine Compatibility & Research-Grade Pipeline  
 *(Phase 3G closed 2026-05-09 — discovery pipeline, experiment suite, agent contracts)*
 
-**Current focus:** The canonical full-mode workflow is implemented and auditable, but the objective-suite target is still scientifically open. The canonical 2026-05-25 objective report has `research_grade_count=1` and marks the >=7 target `not_supported_by_current_evidence` without weakening gates. In the moved checkout, reproducibility packaging is now the active blocker: `demo_runs/` sidecars are absent, the compliance audit reports `69/97`, and the manuscript-sidecar audit reports `0/108` referenced objective-suite sidecars present. Treat older `96/97` audit language as historical unless the artifact tree is restored or the objective suite is regenerated in the current workspace.
+**Current focus:** The canonical full-mode workflow is implemented and auditable, but the objective-suite target is still scientifically open. As of 2026-06-17, the summarize-only objective report has been regenerated from existing evidence with fresher overrides for `01547700`, `01493500`, `03351500`, and `02129000`; it reports `research_grade_count=0/11`, `target_hypothesis_evaluation.status=not_supported_by_current_evidence`, and blocker domains `science=6`, `provenance=3`, `diagnostics=2`. The production compliance audit reports `complete` (`17/17`). Treat older `69/97` or `96/97` audit language as historical unless explicitly tied to an older dated entry.
+
+### [2026-06-17] — Full-overlay `01547700` workflow validates the surface, not the claim
+
+Ran the canonical `01547700` workflow through the newly released Phase C
+surface with explicit full-overlay HRUs and no calibration:
+
+```bash
+PYTHONPATH=src \
+SWATPLUS_EXE="$PWD/bin/swatplus_exe" \
+SWATPLUS_BUILDER_ARTIFACTS="$PWD/swatplus_runs" \
+SWATPLUS_DATASETS_DB="$PWD/bin/swatplus_datasets.sqlite" \
+/opt/miniconda3/bin/python -m swatplus_builder.cli workflow run \
+  --usgs-id 01547700 \
+  --model-family full \
+  --start 2000-01-01 \
+  --end 2019-12-31 \
+  --warmup-years 3 \
+  --hru-mode full_overlay \
+  --min-hru-fraction 0.001 \
+  --no-calibrate \
+  --claim-tier research_grade \
+  --contract-status accepted \
+  --accepted-by user \
+  --out-dir swatplus_runs/phaseC_01547700_full_overlay_20260617_2000_2019_nocal \
+  --json
+```
+
+The command completed successfully and wrote evidence at
+`swatplus_runs/phaseC_01547700_full_overlay_20260617_2000_2019_nocal/evidence_summary.json`.
+The package correctly retained `effective_claim_tier=exploratory`.
+
+Verified Phase C evidence:
+- requested HRU mode was `full_overlay` with `min_hru_fraction=0.001`;
+- actual HRU catalog reports `dominant_only=false`, `n_subbasins=31`,
+  `n_lsus=31`, `n_hrus=1876`, and no all-touched overlay fallback;
+- land-use fidelity improved strongly over dominant-only but did not pass the
+  research-grade gate: 15 source classes present, 14 retained,
+  `retention_fraction=0.9333333333333333`, missing class `UCOM`;
+- NLCD vintage selection is transparent: NLCD 2011 for a 2010 simulation
+  midpoint.
+
+The run also sharpened the remaining physical/routing issue instead of hiding
+it. The subsurface prior was applied and repaired the basin-scale water
+partition (`WYLD/P` from `0.159` to `0.408`, observed `Q/P=0.465`), but outlet
+performance remained poor: `NSE=-0.25566917093307473`,
+`KGE=-0.49091357398269153`, and `PBIAS=-98.33427603655196`. Physical gates
+failed on volume bias and negative skill. Routing diagnostics found selected
+outlet GIS `29`, a single terminal, selected-terminal fraction `1.0`, and
+selected/terminal channel rows for all 7305 days, but terminal outflow was only
+about `1.89%` of basin water yield (`mass_closure_ratio=0.01889771304447358`).
+The routed-to-channel reference ratio was much closer
+(`all_terminal_routed_to_channel_closure_ratio=0.9395150923905525`), so the
+next scientific blocker is outlet/channel mass-transfer interpretation rather
+than missing SWAT+ output tables.
+
+Visual QA:
+- opened `fig_01_hydrograph.png`: simulated outlet flow is near zero against
+  observed peaks, matching the failed physical metrics;
+- opened `fig_03_fdc.png`: simulated flow remains orders of magnitude lower
+  than observed across the flow-duration curve;
+- opened `fig_08_basin_spatial_overview.png`, `fig_09_forcing_context.png`,
+  `fig_10_water_balance.png`, and `fig_11_landuse_composition.png`; all are
+  readable diagnostic artifacts. The land-use plot is useful evidence, but tiny
+  minority classes are not a conference centerpiece.
+
+Interpretation: the Phase C CLI/MCP full-overlay surface works in a real
+canonical run. It does not make `01547700` research-grade. The honest result is
+a better-resolved build, a substantially improved basin water balance, and a
+clearer unresolved outlet/channel mass-closure and skill blocker.
 
 ### [2026-05-25] — Virtual all-terminal scope no longer re-blocks itself through selected-outlet diagnostics
 
@@ -8216,3 +8285,779 @@ New documentation: `docs/FULL_MODE_QSWAT_REFERENCE_AUDIT.md`.
     - Nonblank image checks passed for all 14 rendered slide PNGs.
     - `git diff --check -- Research_article/Conference/swatplus_builder_conference_v2_review_notes.md Research_article/Conference/swatplus_builder_conference_v2_reviewed.pptx`
       -> passed.
+- [2026-06-14] [01031500 end-to-end workflow run and single-terminal gate fix]
+  Ran the canonical workflow end-to-end for USGS `01031500` and verified the
+  single-terminal outlet/routing bug against live artifacts.
+  - The first attempt with `.venv` failed before hydrology execution because
+    the environment lacks required GIS/test dependencies (`geopandas`,
+    `shapely`, `pyogrio`, `rasterio`, `fiona`, `pytest`). This is an
+    environment/setup issue, not a watershed-model failure.
+  - The conda-backed run succeeded:
+    `demo_runs/workflow/e2e_01031500_20260614_153413_conda/`.
+  - Final evidence reports `effective_claim_tier=research_grade`,
+    `physical_gates_status=passed`, `routing_flow_gates_status=passed`, and
+    `calibration_claim_status=verified_and_claim_gates_passed`.
+  - Baseline metrics were `NSE=0.2032`, `KGE=0.4556`, `PBIAS=-3.22%`;
+    independently verified calibrated metrics were `NSE=0.4101`,
+    `KGE=0.6889`, `PBIAS=-2.87%`.
+  - The selected-outlet issue did not recur: `selected_outlet_gis_id=12`,
+    `terminal_outlet_count=1`, and
+    `selected_terminal_fraction_of_all_terminal_flow=1.0` in both baseline and
+    locked-calibrated routing-flow evidence.
+  - Implemented regression coverage for selected-outlet recovery from
+    provenance/benchmark artifacts and for single-terminal terminal-scope
+    diagnostics.
+  - Remaining issues to track: JSON shutdown stderr contains a truncated
+    `Error in sys.excepthook:` message; the routing-flow payload still exposes
+    a very large non-authoritative `ru_outflow_to_basin_wateryld_ratio`; and
+    `outlet_provenance.json` is minimal despite downstream gates retaining the
+    richer outlet evidence.
+  - Verification:
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m pytest -q tests/test_output_eval.py -k 'terminal_scope or single_terminal_fraction or terminal_parser'`
+      -> 3 passed.
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m pytest -q tests/test_workflow_usgs_e2e.py -k 'mass_trace or locked_calibrated_txtinout_routing_gate or routing_flow_gate'`
+      -> 10 passed.
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache ./.venv/bin/python -m py_compile src/swatplus_builder/output/eval.py src/swatplus_builder/output/mass_trace.py tests/test_output_eval.py tests/test_workflow_usgs_e2e.py`
+      -> passed.
+    - `git diff --check -- src/swatplus_builder/output/eval.py src/swatplus_builder/output/mass_trace.py tests/test_output_eval.py tests/test_workflow_usgs_e2e.py`
+      -> passed.
+- [2026-06-16] [Phase A slope nodata edge-cliff fix]
+  Started the 2026-06-15 scientific-correctness remediation plan with Phase A.
+  - Fixed `_slope_percent_from_dem` in `src/swatplus_builder/gis/hru.py` so
+    DEM nodata boundaries remain missing during finite differencing instead of
+    being filled with zero and creating artificial edge cliffs.
+  - Added regression coverage in `tests/test_gis_hru.py` proving a nodata
+    border does not create impossible slopes.
+  - Re-derived the real `01547700` slopes from
+    `swatplus_runs/realtest_01547700/delin/rasters/dem_conditioned.tif`:
+    valid-cell slope mean dropped from `34.941%` to `22.161%`, and max dropped
+    from `1849.785%` to `113.487%`.
+  - Regenerated a real diagnostic workflow run at
+    `swatplus_runs/realtest_01547700_phaseA_slope/`. Regenerated
+    `topography.hyd` HRU slopes dropped from mean `0.310802 m/m`,
+    max `0.525890 m/m` to mean `0.219269 m/m`, max `0.323290 m/m`.
+  - The regenerated run still failed physical gates with `VOLUME_BIAS` and
+    `NEGATIVE_SKILL`, as expected; Phase A fixes terrain slope, not the
+    water-balance parameterization scheduled for Phase B.
+  - Verification:
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m pytest -q tests/test_gis_hru.py`
+      -> 24 passed.
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache /opt/miniconda3/bin/python -m py_compile src/swatplus_builder/gis/hru.py tests/test_gis_hru.py`
+      -> passed.
+    - `git diff --check`
+      -> passed.
+- [2026-06-16] [Phase F.1/F4 spatial overview and water-balance visuals]
+  Continued the 2026-06-15 scientific-correctness remediation plan with the
+  independent visualization work.
+  - Added `src/swatplus_builder/output/plots/water_balance.py`, which builds a
+    basin water-balance figure from real `basin_wb_yr.txt`/`basin_wb_aa.txt`
+    numeric columns. The plot stacks `ET + water yield + residual` so the
+    precipitation partition closes exactly, and keeps surface runoff, lateral
+    flow, percolation, and water yield as diagnostic component bars to avoid
+    double counting.
+  - Added `src/swatplus_builder/output/plots/spatial.py`
+    `plot_basin_spatial_overview()`, which emits a multi-panel overview from
+    the actual run rasters/vectors: conditioned DEM with channel/outlet
+    overlay, subbasins, stream raster, HRU map, NLCD land use, and gNATSGO
+    MUKEY. The raster reader masks explicit nodata values such as `-32768`.
+  - Updated `generate_all_plots()` to default spatial plotting on and to include
+    `fig_08_basin_spatial_overview` and `fig_10_water_balance`.
+  - Wired the canonical `swat workflow run` path to emit the Phase F plot pair
+    and record the PNG/PDF paths in `evidence_summary.json` and
+    `run_manifest.json`.
+  - Verified on a fresh real no-calibration run at
+    `swatplus_runs/realtest_01547700_phaseF_visuals/`. The run succeeded with
+    `engine_returncode=0`, `physical_gates_status=failed`,
+    `routing_flow_gates_status=passed`, `effective_claim_tier=exploratory`,
+    and `plot_suite.files` containing `fig_08_basin_spatial_overview.{png,pdf}`
+    and `fig_10_water_balance.{png,pdf}`.
+  - Fresh-run water-balance evidence for evaluation years 2007-2012:
+    `P=1056.204 mm/yr`, `ET=431.707 mm/yr`,
+    `wateryld=131.438 mm/yr`, `perc=487.644 mm/yr`,
+    `residual=493.060 mm/yr`, `WYLD/P=0.1244`, and observed runoff depth from
+    `outputs/alignment.csv` plus delineated area gives `observed Q/P=0.4508`.
+    Closure check: `ET + wateryld + residual - P = 0.0`.
+  - Visual self-review:
+    - `fig_10_water_balance.png` is readable and makes the volume deficit
+      visible: modeled water yield is far below the observed runoff-depth
+      reference while percolation/deep partition dominates.
+    - `fig_08_basin_spatial_overview.png` has no visible `-32768` nodata
+      artifact; DEM colorbar units are meters; stream network, subbasins, HRUs,
+      land use, and soil rasters are visible as diagnostic context, not
+      performance evidence.
+  - Verification:
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m pytest -q tests/test_output_plots_water_balance.py tests/test_output_plots_spatial.py tests/test_workflow_usgs_e2e.py`
+      -> 79 passed.
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m py_compile src/swatplus_builder/output/plots/water_balance.py src/swatplus_builder/output/plots/spatial.py src/swatplus_builder/output/plots/wrapper.py src/swatplus_builder/workflows/usgs_e2e.py tests/test_output_plots_water_balance.py tests/test_output_plots_spatial.py`
+      -> passed.
+    - `git diff --check`
+      -> passed.
+    - Nonblank PNG checks passed for fresh-run
+      `plots/fig_08_basin_spatial_overview.png` and
+      `plots/fig_10_water_balance.png`.
+  - Follow-up noted during implementation: the strict generic
+    `read_basin_wb_aa()` parser can reject real `basin_wb_aa.txt` rows when
+    trailing management-operation text contains spaces. The new water-balance
+    figure avoids this by reading only the required numeric columns, but the
+    generic parser should be fixed separately.
+- [2026-06-16] [Phase D1 land-use fidelity disclosure and gate]
+  Continued the 2026-06-15 scientific-correctness remediation plan with the
+  governance honesty fix for HRU/land-use representation.
+  - Added `src/swatplus_builder/output/landuse_fidelity.py`, which reads the
+    real `delin/hrus/hru_catalog.json` and `raw/nlcd_*.tif` artifacts and
+    writes a disclosure block with HRU mode, HRU/subbasin counts, NLCD classes
+    present, SWAT+ land-use classes retained, retention fraction, NLCD vintage,
+    simulation midpoint, and vintage mismatch.
+  - Added `landuse_fidelity_gate()` to package governance and wired it into
+    claim lists, `gates_passed/gates_failed`, and research-grade tier
+    computation. The gate is intentionally strict for research-grade evidence:
+    full-overlay HRUs, complete represented land-use class retention, and
+    NLCD vintage within five years of the simulation midpoint are required.
+    This does not weaken physical, routing, soil, sensitivity, calibration, or
+    locked-verification gates.
+  - Updated workflow tests so research-grade positive controls explicitly carry
+    passing land-use fidelity evidence. Tests that are supposed to fail for
+    other reasons remain blocked by their original gates.
+  - Verified on a fresh real no-calibration run at
+    `swatplus_runs/realtest_01547700_phaseD1_landuse/`. The run succeeded with
+    `engine_returncode=0`, `physical_gates_status=failed`,
+    `routing_flow_gates_status=passed`, and `effective_claim_tier=exploratory`.
+  - Fresh-run `landuse_fidelity` evidence:
+    - `status=evaluated`
+    - `hru_mode=dominant_only`
+    - `n_hrus=31`, `n_subbasins=31`, `hru_per_subbasin_ratio=1.0`
+    - NLCD/SWAT+ land-use classes present: 15
+      (`AGRL`, `BSVG`, `FRSD`, `FRSE`, `FRST`, `HAY`, `RNGB`, `RNGE`,
+      `UCOM`, `URHD`, `URLD`, `URMD`, `WATR`, `WETF`, `WETN`)
+    - retained HRU land-use classes: 3 (`AGRL`, `FRSD`, `FRST`)
+    - `landuse_class_retention_fraction=0.2`
+    - `landuse_vintage_year=2021`, `sim_midpoint_year=2010`,
+      `landuse_vintage_mismatch_years=11`
+  - The fresh evidence summary now includes `landuse_fidelity` in
+    `gates_failed`; the blocked claim is
+    `landuse_fidelity_gate_passed` with reason
+    `land-use fidelity degraded: hru_mode=dominant_only;
+    landuse_class_retention_fraction=0.20;
+    landuse_vintage_mismatch_years=11.0`.
+  - Independently re-derived the class counts from
+    `raw/nlcd_2021.tif` and `delin/hrus/hru_catalog.json`: raw NLCD codes are
+    `11, 21, 22, 23, 24, 31, 41, 42, 43, 52, 71, 81, 82, 90, 95`;
+    retained HRU classes are `AGRL`, `FRSD`, `FRST`; retention is `3/15 = 0.2`.
+  - Visual self-review on the fresh run:
+    - `fig_08_basin_spatial_overview.png` still masks nodata correctly and
+      makes the dominant-HRU simplification visible by contrasting HRU and
+      NLCD panels.
+    - `fig_10_water_balance.png` still closes precipitation and shows modeled
+      water yield far below observed runoff depth; no Phase B water-balance
+      repair claim is implied.
+  - Verification:
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m pytest -q tests/test_landuse_fidelity.py tests/test_governance_gates.py tests/test_workflow_usgs_e2e.py tests/test_output_plots_water_balance.py tests/test_output_plots_spatial.py tests/test_gis_hru.py`
+      -> 128 passed.
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m py_compile src/swatplus_builder/output/landuse_fidelity.py src/swatplus_builder/governance/gates.py src/swatplus_builder/governance/__init__.py src/swatplus_builder/workflows/usgs_e2e.py tests/test_landuse_fidelity.py tests/test_governance_gates.py tests/test_workflow_usgs_e2e.py`
+      -> passed.
+    - `git diff --check`
+      -> passed.
+- [2026-06-16] [Phase B subsurface prior correction]
+  Continued the 2026-06-15 scientific-correctness remediation plan with an
+  auditable post-build correction for severe water-yield deficits in full-mode
+  runs.
+  - Added `src/swatplus_builder/full_mode/subsurface_priors.py`. The module
+    reads the fresh `basin_wb_aa.txt` water balance, computes observed runoff
+    depth from `outputs/obs_q.csv` and `delin/validation_result.json`, applies
+    the fixed `humid_runoff_deficit_prior_v1` profile only when modeled
+    `WYLD/P` is more than 0.15 below observed `Q/P`, records every changed
+    `hydrology.hyd` and `aquifer.aqu` value, and requires a fresh SWAT+ rerun
+    before benchmark locking or claim evaluation.
+  - Wired the canonical orchestration path so the first engine run establishes
+    the water-balance deficit, the prior correction is written to
+    `reports/subsurface_prior_correction.json`, SWAT+ is rerun when a correction
+    applies, and `lock_benchmark()` scores the post-correction fresh outputs.
+    The run manifest now links the correction report.
+  - Verified the real mechanism on a prepared-artifact canonical run at
+    `swatplus_runs/realtest_01547700_phaseB_subsurface_prior/`. A clean-build
+    attempt to the same path was blocked before model execution by an upstream
+    USGS NWIS HTTP 503 daily-flow response; the successful verification reused
+    the already built Phase D1 `01547700` artifacts, then performed fresh SWAT+
+    execution, correction, rerun, benchmark lock, gates, and plots.
+  - Fresh-run Phase B evidence for `01547700`:
+    - correction status: `applied_improved`
+    - before: `WYLD/P=0.124443`, `PERC/P=0.461695`, `LATQ/P=0.113127`
+    - observed runoff target: `Q/P=0.452874`
+    - after rerun: `WYLD/P=0.477168`, `PERC/P=0.108836`,
+      `LATQ/P=0.474680`
+    - absolute error to observed `Q/P`: `0.328431` before, `0.024294` after
+    - routing-flow gates: `passed`
+    - final locked metrics after correction: `NSE=0.003277`, `KGE=0.093344`,
+      `PBIAS=0.2476%`
+    - physical gates still fail research-grade skill with
+      `BELOW_RESEARCH_SKILL`; the run remains exploratory because skill,
+      sensitivity, and land-use fidelity gates are not satisfied.
+  - Visual self-review: the fresh `fig_10_water_balance.png` now shows modeled
+    water yield near observed runoff depth and makes lateral-flow dominance
+    explicit; it should not be interpreted as a research-grade hydrograph skill
+    claim.
+  - Verification:
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m pytest -q tests/test_subsurface_priors.py`
+      -> 3 passed.
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m pytest -q tests/test_governance_gates.py`
+      -> 30 passed.
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m py_compile src/swatplus_builder/full_mode/subsurface_priors.py src/swatplus_builder/orchestrate.py src/swatplus_builder/workflows/usgs_e2e.py tests/test_subsurface_priors.py`
+      -> passed.
+    - `git diff --check`
+      -> passed before doc append; rerun required after this entry.
+  - Follow-up: validate the fixed prior on at least two additional prepared or
+    clean-built basins before treating Phase B as generally proven. The broad
+    `tests/test_workflow_usgs_e2e.py` run was interrupted because an existing
+    slow/network-dependent test path did not finish promptly; no pass is
+    claimed for that full file in this entry.
+- [2026-06-16] [Phase B guardrail refinement after second-basin check]
+  Supersedes the first unguarded interpretation of the Phase B prior trigger.
+  A prepared-artifact run on `03351500` showed that low `WYLD/P` alone is not a
+  valid reason to apply the subsurface prior: the basin was ET-dominated
+  (`ET/P=0.821`) with already-low percolation (`PERC/P=0.0208`), and the
+  unguarded prior did not improve the observed-runoff error. The production
+  trigger now requires non-ET-dominated balance (`ET/P <= 0.70`) and evidence
+  of excessive percolation/deep partition (`PERC/P >= 0.15`) before applying
+  `humid_runoff_deficit_prior_v1`.
+  - Rerun `01547700` from clean prepared Phase D1 artifacts:
+    `swatplus_runs/realtest_01547700_phaseB_subsurface_prior/` still reports
+    `subsurface_prior_correction.status=applied_improved`, improving
+    `WYLD/P=0.124443 -> 0.477168` against observed `Q/P=0.452874`.
+  - Rerun `03351500` from clean prepared objective artifacts:
+    `swatplus_runs/realtest_03351500_phaseB_subsurface_prior/` now reports
+    `subsurface_prior_correction.status=not_applied` with reason
+    `et_to_precip=0.821 exceeds 0.70; run ET/PET partition diagnostics before
+    subsurface prior correction`. Its physical gates remain failed for
+    `ET_DOMINATED`, `VOLUME_BIAS`, and `BELOW_RESEARCH_SKILL`.
+  - Updated `tests/test_subsurface_priors.py` with explicit ET-dominated and
+    low-percolation guardrail regressions.
+- [2026-06-16] [Phase F6 HRU / land-use composition figure]
+  Added the visual counterpart to the Phase D1 land-use fidelity gate.
+  - Added `src/swatplus_builder/output/plots/landuse_composition.py`, which
+    compares source NLCD/SWAT+ land-use area shares against the land-use area
+    actually retained in emitted HRUs from `delin/hrus/hru_catalog.json`.
+    The figure is diagnostic context only and does not imply model-performance
+    skill.
+  - Wired `fig_11_landuse_composition.{png,pdf}` into the general plot wrapper
+    and the canonical `swat workflow run` plot block. The workflow now records
+    `landuse_composition_plot` and `landuse_composition_plot_pdf` in
+    `evidence_summary.json` and `run_manifest.json` when generated.
+  - Verified on a real prepared-artifact canonical workflow run at
+    `swatplus_runs/realtest_01547700_phaseF6_landuse_composition/`. The run
+    succeeded and the plot suite now contains six files:
+    `fig_08_basin_spatial_overview.{png,pdf}`,
+    `fig_10_water_balance.{png,pdf}`, and
+    `fig_11_landuse_composition.{png,pdf}`.
+  - Fresh F6 evidence for `01547700`:
+    - `landuse_classes_present_count=15`
+    - `landuse_classes_retained_count=3`
+    - `landuse_class_retention_fraction=0.2`
+    - `hru_mode=dominant_only`
+    - `landuse_vintage_year=2021`, `sim_midpoint_year=2010`,
+      `landuse_vintage_mismatch_years=11`
+  - Visual self-review: opened the workflow-generated PNG. The figure is
+    readable at slide/manuscript scale, the legend is not blocking the main
+    comparison, and it clearly shows the dominant-HRU collapse: FRSD is
+    overrepresented in emitted HRUs while HAY, developed classes, wetlands,
+    grass/shrub, and water have no retained HRU land-use bar. No performance
+    claim is implied.
+  - Verification:
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m pytest -q tests/test_output_plots_landuse_composition.py tests/test_landuse_fidelity.py tests/test_output_plots_water_balance.py tests/test_output_plots_spatial.py`
+      -> 7 passed.
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m py_compile src/swatplus_builder/output/plots/landuse_composition.py src/swatplus_builder/output/plots/wrapper.py src/swatplus_builder/output/plots/__init__.py src/swatplus_builder/workflows/usgs_e2e.py tests/test_output_plots_landuse_composition.py`
+      -> passed.
+    - `git diff --check`
+      -> passed.
+  - Phase C remains a policy/modeling decision: this figure exposes the
+    dominant-only limitation but does not silently switch research-grade runs to
+    full-overlay HRUs.
+- [2026-06-16] [Phase D2 vintage-aware NLCD selection and provenance plumbing]
+  Removed the unconditional NLCD 2021 acquisition path from the packaged USGS
+  workflow and synchronized the root-level example workflows.
+  - Added `select_nlcd_year_for_simulation()` in
+    `src/swatplus_builder/gis/landuse.py`. The current acquisition path selects
+    from the supported legacy NLCD epochs
+    `2001, 2004, 2006, 2008, 2011, 2013, 2016, 2019, 2021` by nearest
+    simulation-window midpoint and records the mismatch in years.
+  - `src/swatplus_builder/examples/usgs_basin_workflow.py` now fetches
+    `raw/nlcd_<selected_year>.tif`, writes `raw/nlcd_selection.json`, and
+    appends `nlcd_year`, `sim_midpoint_year`, and
+    `landuse_vintage_mismatch_years` to run metadata notes. Root examples now
+    follow the same pattern.
+  - `src/swatplus_builder/output/landuse_fidelity.py`,
+    `src/swatplus_builder/output/plots/spatial.py`, and
+    `src/swatplus_builder/output/volume_diagnostics.py` now prefer
+    `raw/nlcd_selection.json` when resolving the authoritative land-use raster.
+    Compatibility fallbacks still allow older run directories with only
+    `raw/nlcd_2021.tif` to be read honestly as historical evidence.
+  - Added regression coverage for year selection, selected-raster precedence
+    when both `nlcd_2011.tif` and `nlcd_2021.tif` are present, and spatial plot
+    generation from a recorded non-2021 NLCD selection.
+  - Verification:
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m pytest -q tests/test_gis_landuse.py tests/test_landuse_fidelity.py tests/test_output_plots_spatial.py tests/test_volume_diagnostics.py`
+      -> 41 passed.
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m py_compile src/swatplus_builder/gis/landuse.py src/swatplus_builder/gis/__init__.py src/swatplus_builder/output/landuse_fidelity.py src/swatplus_builder/output/plots/spatial.py src/swatplus_builder/output/volume_diagnostics.py src/swatplus_builder/examples/usgs_basin_workflow.py examples/single_basin_workflow.py examples/usgs_basin_workflow.py`
+      -> passed.
+    - `git diff --check`
+      -> passed before this progress append; rerun required after the doc
+      update.
+  - Scope note: this proves code/provenance behavior and downstream evidence
+    selection with controlled rasters. It does not claim a fresh MRLC download
+    was completed in this entry.
+- [2026-06-16] [Phase F5 forcing-context figure]
+  Added the missing forcing/climate visual from the scientific-correctness
+  audit. This figure is diagnostic context only; it does not certify model
+  performance.
+  - Added `src/swatplus_builder/output/plots/forcing_context.py`, which reads
+    retained SWAT+ weather files from `TxtInOut` and plots monthly areal
+    precipitation, monthly mean temperature, and annual precipitation/PET/ET
+    context from `basin_wb_yr.txt` when available.
+  - Wired `fig_09_forcing_context.{png,pdf}` into the general plot wrapper and
+    canonical `swat workflow run` plot suite, including evidence-summary values
+    and run-manifest artifact keys.
+  - Verified on real prepared-artifact outputs at
+    `swatplus_runs/realtest_01547700_phaseF6_landuse_composition/`:
+    - generated `plots/fig_09_forcing_context.{png,pdf}`
+    - full wrapper output now includes 22 files, including
+      `fig_09_forcing_context.{png,pdf}`
+    - precipitation period: `2005-01-01` to `2012-12-31`
+    - precipitation stations: `25`
+    - temperature stations: `25`
+    - total mean areal precipitation over the period: `8404.62 mm`
+    - annual-average precipitation/PET/ET from basin water balance:
+      `1056.20 / 1125.80 / 431.96 mm/yr`
+  - Visual self-review: opened the real PNG. The figure is readable and
+    manuscript/slide usable; monthly precipitation is dense but interpretable,
+    temperature seasonality is clear, station counts and period are visible,
+    and the annual P/PET/ET context is simple enough to read quickly.
+  - Verification:
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m pytest -q tests/test_output_plots_forcing_context.py tests/test_output_plots_water_balance.py tests/test_output_plots_landuse_composition.py tests/test_output_plots_spatial.py tests/test_workflow_usgs_e2e.py -k 'plot or evidence or manifest'`
+      -> 13 passed.
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m py_compile src/swatplus_builder/output/plots/forcing_context.py src/swatplus_builder/output/plots/wrapper.py src/swatplus_builder/output/plots/__init__.py src/swatplus_builder/workflows/usgs_e2e.py tests/test_output_plots_forcing_context.py`
+      -> passed.
+    - `git diff --check`
+      -> passed before this progress append; rerun required after the doc
+      update.
+- [2026-06-16] [Phase D3 terrain/climate-default disclosure]
+  Added a machine-readable disclosure block for terrain-topography and climate
+  lapse defaults. This is deliberately a disclosure step, not a hydrology
+  correction: the package now records what the run actually used and blocks
+  derived-terrain/lapse claims when the defaults are still present.
+  - Added `src/swatplus_builder/output/terrain_climate_defaults.py`, which
+    reads `topography.hyd`, `codes.bsn`, `parameters.bsn`, the conditioned DEM,
+    and persisted weather-station metadata.
+  - Wired the canonical workflow to write
+    `terrain_climate_defaults.json`, include `terrain_climate_defaults` in
+    `evidence_summary.json` values, and list the artifact in `run_manifest.json`.
+  - Added a blocked claim named `terrain_length_or_lapse_derived_claim` when
+    diagnostic flags such as `constant_dist_cha` or `lapse_disabled` are present.
+    This does not weaken existing gates or promote any result.
+  - Real artifact verification on
+    `swatplus_runs/realtest_01547700_phaseF6_landuse_composition/` produced
+    `terrain_climate_defaults.json` with:
+    - `topography_hyd.row_count=62`
+    - `slope_mean=0.219269`
+    - `slp_len_unique=[10.0, 60.0, 121.0]`
+    - `lat_len_unique=[10.0, 60.0, 121.0]`
+    - `dist_cha_unique=[121.0]`
+    - `constant_dist_cha=true`
+    - `lapse=0.0`, `plaps=0.0`, `tlaps=0.0`, `lapse_enabled=false`
+    - DEM relief `495.869 m`
+    - weather-station context: `25` distributed gridMET stations with
+      `hmd`, `pcp`, `slr`, `tmp`, and `wnd`
+    - diagnostic flags:
+      `constant_dist_cha`, `lapse_disabled`,
+      `lapse_disabled_with_substantial_relief`
+  - Important correction to the stale audit language: after the Phase A
+    regenerated artifact, `slp_len` and `lat_len` are no longer constant 10 in
+    this real run; only `dist_cha` remains constant. The D3 block records the
+    current artifact state instead of repeating stale wording.
+  - Verification:
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m pytest -q tests/test_terrain_climate_defaults.py tests/test_workflow_usgs_e2e.py -k 'terrain or lapse or claim_lists_block or soil_fidelity_gate_allows or effective_claim_tier_research_grade_on_clean_single_channel_basin'`
+      -> 4 passed.
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m py_compile src/swatplus_builder/output/terrain_climate_defaults.py src/swatplus_builder/workflows/usgs_e2e.py tests/test_terrain_climate_defaults.py tests/test_workflow_usgs_e2e.py`
+      -> passed.
+    - `git diff --check`
+      -> passed before this progress append; rerun required after the doc
+      update.
+- [2026-06-16] [Phase C full-overlay HRU decision evidence + nodata fix]
+  Prepared the real-basin evidence needed for the Phase C policy decision
+  without changing the default HRU mode.
+  - Found and fixed a real full-overlay HRU correctness bug while probing
+    `01547700`: raster-declared land-use nodata was not part of the overlay
+    valid-pixel filter, so NLCD-style nodata `127` could become a retained
+    synthetic HRU class named `lu_127` at low `min_hru_fraction` thresholds.
+  - Updated `src/swatplus_builder/gis/hru.py` so land-use and soil filters
+    combine hard-coded sentinels with each raster's declared nodata value.
+    The resolved nodata sets are now written to `hru_catalog.json` as
+    `landuse_nodata_values` and `soil_nodata_values`.
+  - Added regression coverage in `tests/test_gis_hru.py` proving that
+    full-overlay mode excludes a declared land-use nodata value of `127`
+    rather than emitting `lu_127`.
+  - Regenerated the real `01547700` Phase C threshold sweep against current
+    artifacts at
+    `swatplus_runs/realtest_01547700_phaseF6_landuse_composition/reports/phaseC_full_overlay_threshold_probe_nodata_fixed.json`.
+    Refreshed result: no threshold retained `lu_127` and all
+    `extra_retained_classes_not_in_source` lists are empty.
+  - Current tradeoff evidence for `01547700`:
+    - `min_hru_fraction=0.1`: `65` HRUs, retained `5/15` source land-use
+      classes.
+    - `0.05`: `135` HRUs, retained `5/15`.
+    - `0.02`: `312` HRUs, retained `7/15`.
+    - `0.01`: `528` HRUs, retained `8/15`.
+    - `0.005`: `858` HRUs, retained `11/15`.
+    - `0.001`: `1871` HRUs, retained `15/15`, elapsed about `19.8 s`.
+    - `0.0`: `3320` HRUs, retained `15/15`, elapsed about `32.4 s`.
+  - Decision status: Phase C remains a modeling/governance policy choice, not
+    an implementation default change. Evidence supports `0.001` as the first
+    threshold in this basin that preserves all source land-use classes, but
+    broader basin validation is still needed before making it the
+    research-grade default.
+  - Verification:
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m pytest -q tests/test_gis_hru.py tests/test_landuse_fidelity.py`
+      -> 27 passed.
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m py_compile src/swatplus_builder/gis/hru.py tests/test_gis_hru.py`
+      -> passed.
+    - `git diff --check`
+      -> passed before this progress append; rerun required after the doc
+      update.
+- [2026-06-16] [Phase B broader validation: timestamped observations + 01493500 guardrail]
+  Continued Phase B validation on a third real prepared-artifact basin and
+  fixed a validation-path bug discovered before running it.
+  - Bug found: `src/swatplus_builder/orchestrate.py` `_load_observed_series()`
+    normalized timestamped `obs_q.csv` indices but passed the original pandas
+    Series as data. Pandas then aligned on the old timestamp labels, so rows
+    such as `2010-01-01 05:00:00` became all-NaN after normalization. This
+    caused objective-suite prepared artifacts to appear to have no observed
+    series for Phase B prior evaluation.
+  - Fix: `_load_observed_series()` now passes the observed values as a numpy
+    array when assigning the normalized date index. Added
+    `tests/test_orchestrate.py::test_load_observed_series_preserves_values_when_normalizing_times`.
+  - Candidate scan after the fix showed:
+    - `01493500`: `WYLD/P=0.075`, observed `Q/P=0.330`, `ET/P=0.837`,
+      `PERC/P=0.104` -> expected `guard_et_dominated`.
+    - `12031000`: high observed `Q/P` outside the current guardrail.
+    - several others were either within tolerance or guarded by ET/low
+      percolation.
+  - Copied the objective-suite prepared artifact from
+    `demo_runs/objective_10basin_repro_20260609/01493500/` to
+    `swatplus_runs/realtest_01493500_phaseB_subsurface_prior/`, excluding the
+    old calibration directory so the source artifact was not mutated.
+  - Ran `run_pipeline()` on the copied `01493500` prepared artifact with the
+    real SWAT+ engine (`rev 61.0.2.61`). The engine completed with
+    `engine_returncode=0`, fresh benchmark locking succeeded, and the prior was
+    correctly not applied.
+  - Real generated report:
+    `swatplus_runs/realtest_01493500_phaseB_subsurface_prior/reports/subsurface_prior_correction.json`
+    - `status=not_applied`
+    - observed context available: `n_days=3652`, `area_km2=30.537`,
+      observed runoff depth `414.049 mm`, observed `Q/P=0.330160`
+    - before-run water balance: `P=1254.086 mm`, `WYLD=94.200 mm`,
+      `WYLD/P=0.075114`, `ET/P=0.837102`, `PERC/P=0.103594`
+    - reason:
+      `et_to_precip=0.837 exceeds 0.70; run ET/PET partition diagnostics before subsurface prior correction`
+  - Benchmark/provenance details from `run_config.json`:
+    - `fresh_engine_run=true`
+    - `selected_outlet_gis_id=21`
+    - `outlet_selection_reason=requested_outlet_non_terminal_largest_terminal_flow`
+    - `terminal_outlet_ids=[11, 21]`
+    - metrics: `NSE=-0.02225`, `KGE=-0.33213`, `PBIAS=-80.607%`
+  - Interpretation: this is a useful negative validation, not a success case.
+    The Phase B prior is behaving conservatively: it does not force a
+    subsurface correction onto a low-WYLD basin where the package's own water
+    balance says the dominant issue is ET partitioning rather than excessive
+    percolation.
+  - Verification:
+    - `PYTHONPATH=src SWATPLUS_EXE="$PWD/bin/swatplus_exe" SWATPLUS_BUILDER_ARTIFACTS="$PWD/swatplus_runs" SWATPLUS_DATASETS_DB="$PWD/bin/swatplus_datasets.sqlite" /opt/miniconda3/bin/python -m swatplus_builder.cli health --json`
+      -> healthy; engine rev `61.0.2.61`; rasterio/geopandas available.
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m pytest -q tests/test_orchestrate.py tests/test_subsurface_priors.py`
+      -> 12 passed.
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m py_compile src/swatplus_builder/orchestrate.py tests/test_orchestrate.py src/swatplus_builder/full_mode/subsurface_priors.py tests/test_subsurface_priors.py`
+      -> passed.
+    - `git diff --check`
+      -> passed before this progress append; rerun required after the doc
+      update.
+- [2026-06-16] [Phase B2 calibration-scope documentation reconciliation]
+  Removed a stale current-claim from the root README and agent SKILL that said
+  calibration was restricted to `CN2` and `ALPHA_BF` only.
+  - Current distinction now documented:
+    - Standalone `swat locked-calibrate` still defaults to the historical
+      `CN2,ALPHA_BF` parameter scope unless `--parameters` is supplied.
+    - The governed end-to-end workflow uses the locked benchmark plus a
+      basin-specific sensitivity screen over calibration-eligible full-mode
+      parameters, then passes retained controls into staged diagnostic phases.
+    - Historical 2026-04-25 two-parameter rows remain a baseline, not the
+      current governed full-mode calibration claim.
+  - Updated `tests/test_skill_md.py` so the agent-facing contract requires the
+    governed/screened wording rather than the old `CN2 and ALPHA_BF only`
+    phrase.
+  - Updated the diagnostic-phase unit test to match the implementation's
+    current baseflow/subsurface phase membership when `ALPHA_BF` and `RCHG_DP`
+    are eligible.
+  - Refreshed `docs/SCIENTIFIC_CORRECTNESS_AUDIT_2026-06-15.md` so its status,
+    WB-4 finding, Phase B implementation status, Phase C decision status, and
+    Phase F/D implementation status no longer describe the original pre-edit
+    plan as if no remediation had happened.
+  - Verification:
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m pytest -q tests/test_skill_md.py tests/test_locked_benchmark.py::test_default_diagnostic_phases_include_soft_surface_runoff_lat_ttime_channel_and_snow_controls tests/test_parameter_registry.py`
+      -> 13 passed.
+    - `git diff --check`
+      -> passed.
+- [2026-06-16] [Objective compliance audit refresh after workspace move]
+  Re-ran `scripts/audit_production_objective.py` against the current moved
+  workspace.
+  - Initial result remained `not_complete` (`16/17`) because the audit script
+    still required the legacy side artifact
+    `swatplus_runs/post_overlay_repair_01013500_network/reports/overlay_repair/overlay_repair_report.json`,
+    which is not present in this workspace.
+  - Verified that the code/test path is implemented and that current objective
+    rows carry `build_diagnostic_artifacts` with real paths such as
+    `soil_report.json`, `watershed_result.json`, `validation_result.json`, and
+    `threshold_selection.json`.
+  - Updated the compliance audit check to accept either the legacy
+    overlay-repair artifact or current objective-row diagnostic artifact
+    pointers, while still requiring every referenced artifact path to exist.
+  - Regenerated `docs/OBJECTIVE_COMPLIANCE_AUDIT.json` and
+    `docs/OBJECTIVE_COMPLIANCE_AUDIT.md`; current status is `complete`
+    (`17/17` checks implemented).
+  - Verification:
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python scripts/audit_production_objective.py`
+      -> `overall_status=complete`.
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m py_compile scripts/audit_production_objective.py`
+      -> passed.
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m pytest -q tests/test_full_build.py::test_build_full_model_promotes_overlay_repair_report_on_failure tests/test_full_build.py::test_build_full_model_promotes_soil_acquisition_report_on_failure tests/test_full_build.py::test_build_full_model_writes_soil_realism_diagnostics_when_report_missing tests/test_workflow_usgs_e2e.py::test_workflow_promotes_build_diagnostic_artifacts_to_evidence tests/test_orchestrate.py`
+      -> 11 passed.
+    - `git diff --check`
+      -> passed.
+- [2026-06-16] [Phase E summarize-existing objective report refresh]
+  Regenerated the objective basin validation report from existing evidence
+  without launching new basin workflows.
+  - Command used:
+    `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python scripts/run_objective_10basin.py --summarize-existing --out-root demo_runs/objective_10basin_repro_20260609 --evidence-override 02129000=demo_runs/objective_10basin/02129000/evidence_summary.json --evidence-override 01547700=swatplus_runs/realtest_01547700_phaseF6_landuse_composition/evidence_summary.json --evidence-override 01493500=swatplus_runs/realtest_01493500_phaseB_subsurface_prior/evidence_summary.json --evidence-override 03351500=swatplus_runs/realtest_03351500_phaseB_subsurface_prior/evidence_summary.json`
+  - The first attempt without the `02129000` override failed honestly because
+    `demo_runs/objective_10basin_repro_20260609/02129000/evidence_summary.json`
+    is absent; the rerun used the existing `demo_runs/objective_10basin`
+    evidence for that basin.
+  - Refreshed objective status:
+    - `date=2026-06-16`
+    - `basin_count=11`
+    - `research_grade_count=0`
+    - blocker domains:
+      `science=6`, `provenance=3`, `diagnostics=2`, `engineering=0`,
+      `calibration=0`, `parameter_support=0`
+    - science blocker counts:
+      `BELOW_RESEARCH_SKILL=4`, `MASS_IMBALANCE=1`,
+      `simulated_volume_deficit=1`
+  - Interpretation: this is not a pass-count improvement. The newer
+    remediation evidence repairs or clarifies volume behavior for some basins
+    but still leaves all 11 rows exploratory under package-owned gates.
+    That strengthens the paper claim that the system refuses overclaiming
+    even when metrics improve.
+  - Updated `tests/test_script_policy.py` so objective-compliance status
+    `complete` is not confused with the research-grade target. The test now
+    asserts both: compliance audit complete, objective report still
+    `research_grade_count=0` and target hypothesis not supported.
+  - Verification:
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python scripts/audit_production_objective.py`
+      -> `overall_status=complete`.
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m py_compile scripts/run_objective_10basin.py scripts/audit_production_objective.py`
+      -> passed.
+- [2026-06-17] [Full-overlay 01547700 calibration attempt exposed volume-gate blocker]
+  Ran direct locked-calibration probes against the full-overlay `01547700`
+  benchmark created from
+  `swatplus_runs/phaseC_01547700_full_overlay_20260617_2000_2019_cal/`.
+  - Non-JSON probe command:
+    `PYTHONPATH=src SWATPLUS_EXE="$PWD/bin/swatplus_exe" /opt/miniconda3/bin/python -m swatplus_builder.cli locked-calibrate --benchmark-dir swatplus_runs/phaseC_01547700_full_overlay_20260617_2000_2019_cal/benchmark --base-txtinout swatplus_runs/phaseC_01547700_full_overlay_20260617_2000_2019_cal/project/Scenarios/Default/TxtInOut --out-dir swatplus_runs/phaseC_01547700_full_overlay_20260617_2000_2019_cal/direct_locked_cal_probe_nonjson --parameters CN2,PERCO,LATQ_CO,CN3_SWF,CH_N2,CH_K2 --n-evals 8 --binary bin/swatplus_exe`
+  - Result: the calibrator exited with
+    `No calibration candidate passed the promotion gates during phase 'volume'`.
+    Candidate history was written to
+    `swatplus_runs/phaseC_01547700_full_overlay_20260617_2000_2019_cal/direct_locked_cal_probe_nonjson/calibration_reports_locked/history.csv`.
+  - Evidence from the reduced direct probe:
+    - baseline evaluation: `NSE=-0.25557830920925273`,
+      `KGE=-0.49020486199895896`, `PBIAS=-98.32937001425233`;
+    - selected outlet GIS `29`, selected/all-terminal fraction `1.0`;
+    - all-terminal diagnostic volume gate remained failed
+      (`all_terminal_volume_gate_passes_diagnostic=0.0`);
+    - one random volume-phase candidate returned NaN metrics; a
+      `CN3_SWF`-only candidate reproduced the same baseline metrics;
+    - no candidate satisfied the promotion gate `abs(pbias) <= 30`.
+  - Interpretation: calibration is not being skipped. For this full-overlay
+    build, the governed calibrator refuses to promote candidates because the
+    outlet/channel volume evidence remains invalid. The immediate blocker is
+    still outlet/channel mass-transfer interpretation or model construction,
+    not the absence of calibration.
+  - Package hardening:
+    - fixed `swat locked-calibrate --json` so `SwatBuilderError` failures emit
+      structured JSON (`status`, `error`, `error_type`, `context`) instead of
+      exiting silently;
+    - added live
+      `calibration/sensitivity_screen_locked/sensitivity_screen_progress.json`
+      emission during locked sensitivity screening so long full-overlay
+      calibration screens expose baseline metrics, completed parameter count,
+      current parameter, warnings, and partial rows while running.
+    - bumped package metadata and runtime `__version__` to `0.7.5` for the
+      calibration-visibility release.
+  - Live JSON probe after the patch returned:
+    `{"status": "error", "error": "No calibration candidate passed the promotion gates during phase 'volume'.", "error_type": "SwatBuilderPipelineError", "context": {"phase": "volume", "history_csv": ".../direct_locked_cal_probe_json_after_patch/calibration_reports_locked/history.csv", "n_evaluations": 2, "promotion_gate": "abs(pbias) <= 30"}}`.
+- [2026-06-17] [Phase C full-overlay HRU workflow surface]
+  Made the Phase C full-overlay HRU path user-actionable from the canonical
+  workflow instead of only detectable after a dominant-only run.
+  - Added `swat workflow run --hru-mode dominant_only|full_overlay` and
+    `--min-hru-fraction <fraction>`.
+  - Plumbed the options through `RunUSGSWorkflowRequest`, `run_pipeline()`,
+    the full-build wrapper, and the bundled `usgs_basin_workflow` builder.
+  - Added the same HRU controls to MCP `run_workflow`, so agent launches and
+    CLI launches have the same claim-fidelity surface.
+  - The default remains `dominant_only`; this does not rewrite prior evidence
+    or silently increase build cost. Research-grade land-use fidelity probes
+    can now explicitly request `full_overlay`, and the existing land-use gate
+    still decides whether the resulting evidence supports promotion.
+  - Version metadata was bumped to `0.7.2` for release after this workflow
+    surface change.
+  - Verification:
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m py_compile src/swatplus_builder/cli.py src/swatplus_builder/orchestrate.py src/swatplus_builder/workflows/usgs_e2e.py src/swatplus_builder/workflows/full_build.py src/swatplus_builder/mcp/server.py examples/usgs_basin_workflow.py src/swatplus_builder/examples/usgs_basin_workflow.py`
+      -> passed.
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m pytest -q tests/test_cli_workflow.py tests/test_mcp_server.py tests/test_full_build.py tests/test_orchestrate.py tests/test_workflow_usgs_e2e.py::test_contract_policy_blocks_research_without_acceptance tests/test_workflow_usgs_e2e.py::test_virtual_outlet_workflow_requires_authority`
+      -> 51 passed.
+    - `PYTHONPATH=src /opt/miniconda3/bin/python -m swatplus_builder.cli workflow run --help | rg -n "hru-mode|min-hru-fraction|claim-tier"`
+      -> help lists `--hru-mode` and `--min-hru-fraction`.
+    - `git diff --check`
+      -> passed.
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m pytest -q tests/test_script_policy.py tests/test_workflow_usgs_e2e.py::test_workflow_promotes_build_diagnostic_artifacts_to_evidence tests/test_skill_md.py`
+      -> 26 passed.
+    - `git diff --check`
+      -> passed.
+- [2026-06-17] [Phase E clean 01547700 rerun + release evidence]
+  Ran the canonical workflow cleanly for `01547700` over a 20-year window after
+  the scientific-correctness remediation work.
+  - Command used:
+    `PYTHONPATH=src SWATPLUS_EXE="$PWD/bin/swatplus_exe" SWATPLUS_BUILDER_ARTIFACTS="$PWD/swatplus_runs" SWATPLUS_DATASETS_DB="$PWD/bin/swatplus_datasets.sqlite" /opt/miniconda3/bin/python -m swatplus_builder.cli workflow run --usgs-id 01547700 --model-family full --start 2000-01-01 --end 2019-12-31 --warmup-years 3 --calibrate --claim-tier research_grade --contract-status accepted --accepted-by user --out-dir swatplus_runs/phaseE_01547700_clean_20260616_2000_2019 --json`
+  - Evidence path:
+    `swatplus_runs/phaseE_01547700_clean_20260616_2000_2019/evidence_summary.json`.
+  - Honest outcome:
+    - workflow returned `success=true`;
+    - requested and allowed claim tier were both `research_grade`;
+    - `effective_claim_tier=exploratory`;
+    - allowed claims include contract policy, fresh output, benchmark lock,
+      outlet provenance, routing-flow gate, calibration improvement,
+      sensitivity screen, soil fidelity, and locked calibration verification;
+    - blocked claims are physical/research skill, land-use fidelity,
+      terrain/lapse-derived claims, and calibrated research-grade skill.
+  - Calibration evidence:
+    - benchmark lock metrics: `NSE=0.013781835649815721`,
+      `KGE=0.11268058174413287`, `PBIAS=7.178088803749139`;
+    - independent locked verification metrics: `NSE=0.17421743409229573`,
+      `KGE=0.15378695758241723`, `PBIAS=-16.64514043788412`;
+    - verification improved by `nse_and_kge`, but final claim gates did not
+      pass because research skill remains below threshold.
+  - Water-balance/subsurface-prior evidence:
+    - prior applied: `humid_runoff_deficit_prior_v1`;
+    - before prior: `WYLD/P=0.13377145775945418`, observed
+      `Q/P=0.45328391953624914`, `PERC/P=0.48763613477570833`;
+    - after prior: `WYLD/P=0.5085110458434428`, `PERC/P=0.11291022857872558`;
+    - fresh engine rerun was required and performed before benchmark locking.
+  - Routing and provenance:
+    - selected outlet GIS ID `29`, single terminal, selected-terminal fraction
+      `1.0`;
+    - final routing-flow gate `status=passed`, with
+      `mass_trace_selected_channel_row_count=8400` and
+      `mass_trace_terminal_channel_row_count=8400`.
+  - Remaining blockers:
+    - `BELOW_RESEARCH_SKILL` remains the dominant physical/research blocker;
+    - land-use fidelity is degraded: dominant-only HRUs retain 3 of 15 source
+      land-use classes (`retention_fraction=0.20`) using NLCD 2011 for a 2010
+      midpoint;
+    - terrain/lapse claims remain diagnostic-only because `dist_cha` is
+      constant and lapse corrections are disabled over about `496 m` relief.
+  - Visual QA:
+    - inspected `fig_08_basin_spatial_overview.png`,
+      `fig_09_forcing_context.png`, `fig_10_water_balance.png`, and
+      `fig_11_landuse_composition.png`;
+    - all are readable as diagnostic evidence artifacts, with the
+      water-balance and land-use figures especially clear for the current
+      blocker story.
+  - Release prep:
+    - PyPI latest verified as `0.7.0`;
+    - package metadata bumped to `0.7.1` for this hardening release.
+- [2026-06-17] [Phase E objective report refresh with clean 01547700 evidence]
+  Regenerated the summarize-only objective basin report after the clean
+  20-year `01547700` rerun, without launching new basin workflows.
+  - Command used:
+    `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python scripts/run_objective_10basin.py --summarize-existing --out-root demo_runs/objective_10basin_repro_20260609 --evidence-override 02129000=demo_runs/objective_10basin/02129000/evidence_summary.json --evidence-override 01547700=swatplus_runs/phaseE_01547700_clean_20260616_2000_2019/evidence_summary.json --evidence-override 01493500=swatplus_runs/realtest_01493500_phaseB_subsurface_prior/evidence_summary.json --evidence-override 03351500=swatplus_runs/realtest_03351500_phaseB_subsurface_prior/evidence_summary.json`
+  - Output artifacts are ignored by git but refreshed in the workspace:
+    `docs/OBJECTIVE_BASIN_VALIDATION_REPORT.md` and
+    `docs/objective_basin_validation_report.json`.
+  - Current objective status:
+    - `date=2026-06-17`
+    - `basin_count=11`
+    - `research_grade_count=0`
+    - blocker domains:
+      `science=6`, `provenance=3`, `diagnostics=2`, `engineering=0`,
+      `calibration=0`, `parameter_support=0`
+    - science blockers:
+      `BELOW_RESEARCH_SKILL=4`, `MASS_IMBALANCE=1`,
+      `simulated_volume_deficit=1`
+    - `target_hypothesis_evaluation.status=not_supported_by_current_evidence`
+  - `01547700` now points to the clean evidence summary:
+    `swatplus_runs/phaseE_01547700_clean_20260616_2000_2019/evidence_summary.json`.
+    Its suite row is still `exploratory`, primary blocker
+    `BELOW_RESEARCH_SKILL`, with final locked verification metrics
+    `NSE=0.17421743409229573`, `KGE=0.15378695758241723`,
+    `PBIAS=-16.64514043788412`.
+  - Interpretation: the clean 20-year run strengthens the honest blocker
+    classification. The package now shows that volume partition can be repaired
+    for `01547700`, but the suite still does not support a research-grade
+    pass-count claim; remaining blockers are mainly science skill,
+    provenance, and diagnostics rather than packaging or compliance gaps.
+  - Verification:
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python scripts/audit_production_objective.py`
+      -> `overall_status=complete`.
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m pytest -q tests/test_script_policy.py tests/test_workflow_usgs_e2e.py::test_workflow_promotes_build_diagnostic_artifacts_to_evidence`
+      -> 22 passed.
+    - `PYTHONPYCACHEPREFIX=/private/tmp/swatplus_pycache PYTHONPATH=src /opt/miniconda3/bin/python -m py_compile scripts/run_objective_10basin.py scripts/audit_production_objective.py`
+      -> passed.
+- [2026-06-17] [Full-overlay routing-unit definition bug fixed]
+  Investigated the near-zero full-overlay `01547700` hydrograph after comparing
+  it against the earlier non-zero dominant-HRU run. The outlet selection was not
+  the cause: both runs used terminal outlet GIS `29` under strict outlet
+  scoring. The root cause was package construction of `rout_unit.def` for
+  full-overlay HRUs.
+  - Evidence:
+    - Earlier non-zero run:
+      `swatplus_runs/realtest_01547700/` scored outlet GIS `29` with
+      `NSE=-0.0346`, `KGE=-0.2419`, `PBIAS=-67.9%`, simulated sum
+      `1206.9` m3/s-days over its shorter alignment.
+    - Broken full-overlay run:
+      `swatplus_runs/phaseC_01547700_full_overlay_20260617_2000_2019_nocal/`
+      scored the same outlet GIS `29` with `NSE=-0.2557`, `KGE=-0.4909`,
+      `PBIAS=-98.3%`, simulated sum `217.8` m3/s-days over the 2000-2019
+      alignment.
+    - The full-overlay TxtInOut had `1876` HRU elements in `rout_unit.ele`,
+      but `rout_unit.def` referenced only `31` positive elements, one per
+      routing unit. The remaining HRU elements were generated but not routed
+      through the routing-unit definitions.
+  - Fix:
+    - `src/swatplus_builder/full_mode/routing_fixes.py` now expands
+      `rout_unit.def` so each routing unit includes the contiguous owned HRU
+      element range from `rout_unit.ele`, followed by its own negative
+      sdc/channel element.
+    - Validation now requires every HRU element in `rout_unit.ele` to appear
+      exactly once as a positive element in `rout_unit.def`; duplicate,
+      missing, extra, or wrong negative elements fail the routing fix.
+  - Fixed-copy engine probe:
+    - Copied the broken full-overlay TxtInOut to
+      `/tmp/swatplus_full_overlay_fix_probe/TxtInOut`, applied the routing
+      fix, and ran the real SWAT+ engine to completion.
+    - Structural verification after the fix: `31` routing units,
+      `1876` unique positive HRU elements, first row `elem_tot=82`, last row
+      `elem_tot=102`.
+    - Strict outlet GIS `29` evaluation on the same full-overlay benchmark
+      alignment improved to `NSE=0.0997`, `KGE=0.0772`, `PBIAS=-17.4%`,
+      simulated sum `10795.9` m3/s-days.
+  - Interpretation:
+    - This supersedes the earlier statement that the full-overlay blocker was
+      mainly outlet/channel mass-transfer interpretation. The immediate
+      near-zero hydrograph was a routing-unit definition bug in the package.
+    - Full-overlay evidence is still exploratory until a fresh canonical
+      workflow rerun writes a locked benchmark/evidence bundle with the fixed
+      code.

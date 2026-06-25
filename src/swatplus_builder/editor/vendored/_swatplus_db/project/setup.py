@@ -2,8 +2,8 @@ from peewee import *
 from . import base, config, simulation, climate, link, channel, reservoir, dr, exco, recall, hydrology, routing_unit, aquifer, \
 	basin, hru_parm_db, structural, ops, decision_table, init, lum, soils, \
 	change, regions, hru, connect, gis, water_rights, salts
-from database import lib
-from database.datasets import base as datasets_base, definitions as dataset_defs, decision_table as dataset_dts
+from _swatplus_db import lib
+from _swatplus_db.datasets import base as datasets_base, definitions as dataset_defs, decision_table as dataset_dts
 import os, os.path
 from shutil import copyfile, copy
 import time

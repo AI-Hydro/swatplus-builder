@@ -8,14 +8,18 @@ Figure naming follows a journal-friendly convention:
     fig_05_residuals.{png,pdf}
     fig_06_seasonal.{png,pdf}
     fig_07_soil_sources.{png,pdf}
+    fig_08_basin_spatial_overview.{png,pdf}
+    fig_09_forcing_context.{png,pdf}
+    fig_10_water_balance.{png,pdf}
+    fig_11_landuse_composition.{png,pdf}
 
 Every plot also writes a matching PDF for manuscript submission.
 """
 
 from __future__ import annotations
 
-import logging
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +29,7 @@ log = logging.getLogger(__name__)
 def generate_all_plots(
     run_dir: str | Path,
     *,
-    include_spatial: bool = False,
+    include_spatial: bool = True,
     include_soil: bool = True,
     metadata: dict | None = None,
 ) -> dict[str, Any]:
@@ -33,7 +37,7 @@ def generate_all_plots(
 
     Args:
         run_dir: Project output directory containing ``outputs/``, ``reports/``.
-        include_spatial: Generate spatial (GIS) maps (requires geopandas).
+        include_spatial: Generate spatial (GIS) maps from run rasters/vectors.
         include_soil: Generate soil provenance bar chart.
         metadata: Optional ``{"basin_name", "usgs_id", "time_range"}`` passed
             through to every figure title for automatic manuscript-level labelling.
@@ -94,23 +98,64 @@ def generate_all_plots(
             except Exception as exc:
                 log.warning("Soil plot failed: %s", exc)
 
-    # ── fig_08+09 Spatial Maps ─────────────────────────────────────────────
+    # ── fig_08 Spatial Overview ────────────────────────────────────────────
     if include_spatial:
-        # We look for subbasins.geojson in the expected delin/ folder
-        sub_path = run_dir / "delin" / "subbasins.geojson"
-        if sub_path.exists():
-            try:
-                import geopandas as gpd
-                from .spatial import plot_basin_summary
-                sub_gdf = gpd.read_file(sub_path)
-                spatial_files = plot_basin_summary(
-                    sub_gdf, plots_dir, metrics=metrics, metadata=merged_metadata
-                )
-                files += spatial_files
-            except Exception as exc:
-                log.warning("Spatial plots failed: %s", exc)
-        else:
-            log.info("subbasins.geojson not found in %s; skipping spatial plots.", sub_path.parent)
+        try:
+            from .spatial import plot_basin_spatial_overview
+
+            spatial_files = plot_basin_spatial_overview(
+                run_dir,
+                plots_dir / "fig_08_basin_spatial_overview",
+                metadata=merged_metadata,
+            )
+            files += spatial_files
+        except Exception as exc:
+            log.warning("Spatial overview plot failed: %s", exc)
+
+    # ── fig_10 Water Balance ───────────────────────────────────────────────
+    try:
+        from .forcing_context import plot_forcing_context
+
+        plot_forcing_context(
+            run_dir,
+            plots_dir / "fig_09_forcing_context",
+            metadata=merged_metadata,
+        )
+        files += ["fig_09_forcing_context.png", "fig_09_forcing_context.pdf"]
+    except Exception as exc:
+        log.warning("Forcing-context plot failed: %s", exc)
+
+    # ── fig_10 Water Balance ───────────────────────────────────────────────
+    try:
+        from .water_balance import plot_water_balance
+
+        plot_water_balance(
+            run_dir,
+            plots_dir / "fig_10_water_balance",
+            metadata=merged_metadata,
+        )
+        files += ["fig_10_water_balance.png", "fig_10_water_balance.pdf"]
+    except Exception as exc:
+        log.warning("Water-balance plot failed: %s", exc)
+
+    # ── fig_11 HRU / Land-use Composition ─────────────────────────────────
+    try:
+        from .landuse_composition import plot_landuse_composition
+
+        plot_landuse_composition(
+            run_dir,
+            plots_dir / "fig_11_landuse_composition",
+            metadata=merged_metadata,
+            sim_start=str(merged_metadata.get("start_date") or merged_metadata.get("start") or "")
+            if merged_metadata
+            else None,
+            sim_end=str(merged_metadata.get("end_date") or merged_metadata.get("end") or "")
+            if merged_metadata
+            else None,
+        )
+        files += ["fig_11_landuse_composition.png", "fig_11_landuse_composition.pdf"]
+    except Exception as exc:
+        log.warning("Land-use composition plot failed: %s", exc)
 
     # ── Load aligned timeseries ────────────────────────────────────────────
     ts_path = run_dir / "outputs" / "alignment.csv"

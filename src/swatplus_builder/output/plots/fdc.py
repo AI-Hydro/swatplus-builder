@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from pathlib import Path
-from typing import Optional
 
-from .style import apply_style, COLORS
+from .style import COLORS, apply_style
 from .utils import build_figure_title, save_publication_figure
 
 
@@ -16,8 +16,8 @@ def plot_fdc(
     obs: pd.Series,
     sim: pd.Series,
     outpath: Path | str,
-    metrics: Optional[dict] = None,
-    metadata: Optional[dict] = None,
+    metrics: dict | None = None,
+    metadata: dict | None = None,
 ) -> None:
     """Plot Flow Duration Curve (exceedance probability vs log discharge).
 

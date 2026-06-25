@@ -1,13 +1,13 @@
 from helpers.executable_api import ExecutableApi, Unbuffered
 from helpers import utils
-from database import lib
-from database.project import base, init, dr, channel, reservoir, simulation, hru, lum, exco, connect, routing_unit, recall, change, soils, aquifer, hru_parm_db, decision_table, ops, basin, water_rights, salts, climate
-from database.project.config import Project_config, File_cio, File_cio_classification
-from database.project.setup import SetupProjectDatabase
+from _swatplus_db import lib
+from _swatplus_db.project import base, init, dr, channel, reservoir, simulation, hru, lum, exco, connect, routing_unit, recall, change, soils, aquifer, hru_parm_db, decision_table, ops, basin, water_rights, salts, climate
+from _swatplus_db.project.config import Project_config, File_cio, File_cio_classification
+from _swatplus_db.project.setup import SetupProjectDatabase
 
-from database.datasets.setup import SetupDatasetsDatabase
-from database.datasets.definitions import File_cio as dataset_file_cio
-from database.datasets.hru_parm_db import Plants_plt as dataset_plants
+from _swatplus_db.datasets.setup import SetupDatasetsDatabase
+from _swatplus_db.datasets.definitions import File_cio as dataset_file_cio
+from _swatplus_db.datasets.hru_parm_db import Plants_plt as dataset_plants
 
 from actions.import_gis import GisImport
 
@@ -84,7 +84,7 @@ class UpdateProject(ExecutableApi):
 		if upgrade_chain is not None:
 			# Backup original db before beginning
 			try:
-				self.emit_progress(2, 'Backing up project database...')
+				self.emit_progress(2, 'Backing up project _swatplus_db...')
 				filename, file_extension = os.path.splitext(rel_project_db)
 				bak_filename = filename + '_v' + m.editor_version.replace('.', '_') + '_' + time.strftime('%Y%m%d-%H%M%S') + file_extension
 				bak_dir = os.path.join(base_path, 'DatabaseBackups')
@@ -108,7 +108,7 @@ class UpdateProject(ExecutableApi):
 						method(project_db)
 				except Exception as ex:
 					if backup_db_file is not None:
-						self.emit_progress(50, "Error occurred. Rolling back database...")
+						self.emit_progress(50, "Error occurred. Rolling back _swatplus_db...")
 						SetupProjectDatabase.rollback(project_db, backup_db_file)
 						self.emit_progress(100, "Error occurred.")
 					sys.exit(str(ex))
@@ -643,7 +643,7 @@ class UpdateProject(ExecutableApi):
 			migrator.add_column('water_balance_sft_item', 'pet', DoubleField(default=0))
 		)
 
-		self.emit_progress(10, 'Updating database...')
+		self.emit_progress(10, 'Updating _swatplus_db...')
 		lum.Ovn_table_lum.update({
 			lum.Ovn_table_lum.ovn_mean: 0.011, 
 			lum.Ovn_table_lum.ovn_min: 0.011, 

@@ -60,7 +60,7 @@ def _check_d1_codes_bsn(tio: Path) -> list[str]:
     # Filter out empty lines keeping original indices
     non_empty = [ln for ln in lines if ln.strip()]
     if len(non_empty) < 3:
-        return [f"D1: codes.bsn too short (expected title + header + values row)"]
+        return ["D1: codes.bsn too short (expected title + header + values row)"]
 
     headers = non_empty[1].split()
     values = non_empty[2].split()
@@ -154,7 +154,7 @@ def _check_d4_aquifer_con(tio: Path) -> list[str]:
     try:
         obj_typ_idx = header_tokens.index("obj_typ")
     except ValueError:
-        return [f"D4: aquifer.con has no 'obj_typ' column; cannot verify D4"]
+        return ["D4: aquifer.con has no 'obj_typ' column; cannot verify D4"]
     for lineno, ln in enumerate(lines[2:], start=3):
         if not ln.strip():
             continue

@@ -18,6 +18,7 @@ import pandas as pd
 
 from ..gis.landuse import NLCD_CLASS_DESCRIPTIONS, NLCD_URBAN_CODES, is_water
 from .eval import _extract_flo_out_rows, _normalize_discharge_units, _terminal_ids_from_chandeg_con
+from .landuse_fidelity import find_nlcd_raster
 from .metrics import kge, kge_components, nse, pbias
 from .plots.utils import align_timeseries
 from .reader import read_output_file
@@ -951,9 +952,9 @@ def _hru_runoff_summary(run: Path) -> dict[str, Any]:
 
 
 def _landuse_raster_summary(run: Path) -> dict[str, Any]:
-    raster_path = run / "raw" / "nlcd_2021.tif"
+    raster_path = find_nlcd_raster(run)
     boundary_path = run / "raw" / "basin_boundary.gpkg"
-    if not raster_path.is_file():
+    if raster_path is None or not raster_path.is_file():
         return {"available": False, "reason": "nlcd_raster_missing"}
     try:
         import geopandas as gpd
@@ -2403,7 +2404,7 @@ def _source_backed_alternatives(flags: list[dict[str, str]], values: dict[str, A
                 "option": "audit_developed_land_and_urban_curve_number_assumptions",
                 "source": "SWAT+ urban landuse inputs and CN method affect impervious runoff response",
                 "parameters": ["CN2"],
-                "required_artifacts": ["raw/nlcd_2021.tif", "landuse.lum", "urban.urb"],
+                "required_artifacts": ["raw/nlcd_<selected_year>.tif", "landuse.lum", "urban.urb"],
                 "fresh_output_required": True,
                 "claim_impact": "diagnostic_only_until_developed_land_assumptions_are_audited",
                 "rationale": "Developed land dominates runoff response and fixed high urban CN can overwhelm calibration.",

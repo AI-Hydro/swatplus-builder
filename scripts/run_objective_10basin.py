@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import json
 import argparse
-import warnings
 import csv
-from dataclasses import dataclass, asdict
+import json
+import warnings
+from collections.abc import Sequence
+from dataclasses import asdict, dataclass
 from datetime import date
 from pathlib import Path
-from collections.abc import Sequence
 
+from swatplus_builder.diagnostics import classify_skill_limitation
+from swatplus_builder.evidence.migration import migrate_legacy_bundle
 from swatplus_builder.output.mass_trace import (
     classify_terminal_area_scope,
     classify_terminal_authority_area,
@@ -22,7 +24,6 @@ from swatplus_builder.output.volume_diagnostics import (
     classify_terminal_hydrograph_scope,
 )
 from swatplus_builder.params.registry import registry
-from swatplus_builder.diagnostics import classify_skill_limitation
 from swatplus_builder.workflows.usgs_e2e import terminal_scope_blocked_claim
 
 warnings.filterwarnings("ignore", category=FutureWarning, module=r"pygridmet(\.|$)")
@@ -265,6 +266,7 @@ class Row:
     build_diagnostic_artifacts: dict[str, str]
     allowed_claim_names: list[str]
     blocked_claim_names: list[str]
+    claim_tier_matrix: dict[str, str]
     notes: str
 
 
@@ -1463,6 +1465,7 @@ def summarize_evidence(basin: str, evidence_summary_path: Path, *, area_km2: flo
         build_diagnostic_artifacts=build_diagnostics,
         allowed_claim_names=allowed_names,
         blocked_claim_names=blocked_names,
+        claim_tier_matrix=_compute_claim_tier_matrix(payload),
         notes=notes or "none",
     )
     row.primary_blocker = _primary_blocker(row)
@@ -1571,10 +1574,12 @@ def write_outputs(
     target_hypothesis = _target_hypothesis_evaluation(rows, blocker_classification)
     improvement_plan = _pipeline_improvement_plan(rows, target_hypothesis)
     science_summary = _science_blocker_summary(rows, blocker_classification)
+    claim_matrix_summary = _claim_tier_matrix_summary(rows)
     data = {
         "date": date.today().isoformat(),
         "basin_count": len(rows),
         "research_grade_count": sum(1 for r in rows if r.tier == "research_grade"),
+        "claim_tier_matrix_summary": claim_matrix_summary,
         "non_research_blocker_classification": blocker_classification,
         "target_hypothesis_evaluation": target_hypothesis,
         "science_blocker_summary": science_summary,
@@ -1584,12 +1589,37 @@ def write_outputs(
     }
     out_json.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
+    claim_types = claim_matrix_summary["claim_types"]
     lines = [
         "# Objective Basin Validation Report",
         "",
         f"- Date: `{data['date']}`",
         f"- Basins: `{len(rows)}`",
         f"- Research-grade outcomes: `{data['research_grade_count']}`",
+        "",
+        "## Per-Claim Tier Matrix",
+        "",
+        "Achieved tier per claim class (highest tier where all claims of that class are unblocked).",
+        "",
+        "| Basin | " + " | ".join(claim_types) + " |",
+        "|---" + ("|---" * len(claim_types)) + "|",
+    ] + [
+        "| " + r.basin + " | " + " | ".join(r.claim_tier_matrix.get(ct, "—") for ct in claim_types) + " |"
+        for r in rows
+    ] + [
+        "",
+        "**Summary (basins at each tier per claim class)**",
+        "",
+        "| Claim class | " + " | ".join(sorted(_TIER_RANK, key=lambda t: -_TIER_RANK[t])) + " |",
+        "|---" + ("|---" * len(_TIER_RANK)) + "|",
+    ] + [
+        "| " + ct + " | "
+        + " | ".join(
+            str(claim_matrix_summary["counts"][ct].get(tier, 0))
+            for tier in sorted(_TIER_RANK, key=lambda t: -_TIER_RANK[t])
+        ) + " |"
+        for ct in claim_types
+    ] + [
         "",
         "## Non-Research Classification",
         "",
@@ -2720,6 +2750,32 @@ def _row_action_items(row: Row) -> list[str]:
     return _dedupe(actions)
 
 
+_ASSERTION_TYPE_ORDER = ("readiness", "provenance", "comparison", "metric")
+
+
+def _claim_tier_matrix_summary(rows: list[Row]) -> dict[str, object]:
+    """Aggregate per-basin claim_tier_matrix into a suite-level summary."""
+    all_types: set[str] = set()
+    for r in rows:
+        all_types.update(r.claim_tier_matrix)
+    claim_types = sorted(
+        all_types,
+        key=lambda t: list(_ASSERTION_TYPE_ORDER).index(t) if t in _ASSERTION_TYPE_ORDER else 99,
+    )
+    counts: dict[str, dict[str, int]] = {ct: {} for ct in claim_types}
+    for r in rows:
+        for ct in claim_types:
+            tier = r.claim_tier_matrix.get(ct, "blocked")
+            counts[ct][tier] = counts[ct].get(tier, 0) + 1
+    return {
+        "claim_types": claim_types,
+        "counts": counts,
+        "research_grade_claims": {
+            ct: counts[ct].get("research_grade", 0) for ct in claim_types
+        },
+    }
+
+
 def _non_research_blocker_classification(rows: list[Row]) -> dict[str, object]:
     domain_counts = {
         "engineering": 0,
@@ -3154,6 +3210,48 @@ def _render_skill_next_actions(actions: list[str], superseded_parameters: list[s
 
 def _str_or_none(value: object) -> str | None:
     return str(value) if value is not None else None
+
+
+_TIER_RANK: dict[str, int] = {
+    "research_grade": 3,
+    "publication_grade": 2,
+    "exploratory": 1,
+    "blocked": 0,
+}
+
+
+def _compute_claim_tier_matrix(payload: dict) -> dict[str, str]:
+    """Return assertion_type → achieved tier for each claim class in the bundle.
+
+    The achieved tier for a class is the highest tier where at least one claim
+    is "allowed" AND no claim of that class is "blocked" at that same tier.
+    Falls back to "blocked" if no tier is fully cleared.
+    """
+    try:
+        bundle = migrate_legacy_bundle(payload)
+    except Exception:
+        return {}
+
+    from collections import defaultdict
+    allowed_at: dict[str, set[str]] = defaultdict(set)
+    blocked_at: dict[str, set[str]] = defaultdict(set)
+    for claim in bundle.claims:
+        atype = claim.assertion_type
+        if claim.status == "allowed":
+            allowed_at[atype].add(claim.claim_tier)
+        else:
+            blocked_at[atype].add(claim.claim_tier)
+
+    all_types = sorted(set(allowed_at) | set(blocked_at))
+    matrix: dict[str, str] = {}
+    for atype in all_types:
+        cleared = allowed_at[atype] - blocked_at[atype]
+        if not cleared:
+            matrix[atype] = "blocked"
+        else:
+            best = max(cleared, key=lambda t: _TIER_RANK.get(t, 0))
+            matrix[atype] = best
+    return matrix
 
 
 def _metadata_note_value(metadata: dict, key: str) -> str | None:
@@ -4127,7 +4225,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--out-root",
-        default="demo_runs/objective_10basin",
+        default="swatplus_runs/objective_10basin",
         help="Root directory containing or receiving per-basin workflow artifacts.",
     )
     parser.add_argument(

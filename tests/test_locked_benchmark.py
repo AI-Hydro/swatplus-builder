@@ -4,31 +4,28 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
 
 from swatplus_builder.calibration.locked_benchmark import (
     BenchmarkLock,
-    CalibrationEvidence,
     ReadinessRow,
-    VerificationResult,
     _diagnostic_calibration_phases,
-    _resolve_lock,
     _phase_candidate_points,
+    _resolve_lock,
     _score_candidate,
+    _volume_gate_passed,
     _write_readiness_markdown,
     build_readiness_table,
     calibrate_against_lock,
     lock_benchmark,
     screen_parameters_against_lock,
     verify_calibration,
-    _volume_gate_passed,
 )
 from swatplus_builder.calibration.real_engine import params_hash
 from swatplus_builder.errors import SwatBuilderInputError, SwatBuilderPipelineError
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -478,6 +475,8 @@ def test_default_diagnostic_phases_include_soft_surface_runoff_lat_ttime_channel
             "ESCO",
             "EPCO",
             "LAT_TTIME",
+            "ALPHA_BF",
+            "RCHG_DP",
             "SURLAG",
             "CH_N2",
             "CH_K2",
@@ -492,7 +491,7 @@ def test_default_diagnostic_phases_include_soft_surface_runoff_lat_ttime_channel
     baseflow = next(row for row in phases if row["phase"] == "baseflow_subsurface")
     peaks = next(row for row in phases if row["phase"] == "peaks_timing")
     assert volume["parameters"] == ["PET_CO", "ESCO", "EPCO", "CN3_SWF", "CN2", "LATQ_CO", "PERCO"]
-    assert baseflow["parameters"] == ["LAT_TTIME", "LATQ_CO", "PERCO"]
+    assert baseflow["parameters"] == ["LAT_TTIME", "LATQ_CO", "PERCO", "ALPHA_BF", "RCHG_DP"]
     assert peaks["parameters"] == ["SURLAG", "CH_N2", "CH_K2", "SFTMP", "SMTMP"]
 
 
@@ -960,6 +959,15 @@ def test_screen_parameters_against_lock_writes_basin_specific_artifact(monkeypat
     assert payload["basis"] == "basin_specific"
     assert payload["parameters"][0]["evidence"]["tested"] is True
     assert Path(evidence.markdown_path).exists()
+    progress = json.loads(
+        (tmp_path / "cal" / "sensitivity_screen_locked" / "sensitivity_screen_progress.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert progress["status"] == "complete"
+    assert progress["completed_parameters"] == 1
+    assert progress["total_parameters"] == 1
+    assert progress["parameters"][0]["parameter"] == "CN2"
 
 
 # ---------------------------------------------------------------------------

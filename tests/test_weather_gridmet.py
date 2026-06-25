@@ -18,7 +18,6 @@ import importlib
 import os
 import sys
 import types
-from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -29,7 +28,6 @@ from swatplus_builder.errors import (
     SwatBuilderPipelineError,
 )
 from swatplus_builder.types import WeatherStation
-
 
 # ---------------------------------------------------------------------------
 # Fake pygridmet
@@ -458,10 +456,11 @@ class TestExternalErrors:
 
         def short(**k):
             dates = k["dates"]
-            # Return 3 rows when caller asked for 5.
-            idx = pd.date_range(dates[0], periods=3, freq="D")
+            # Return 2 rows for a 10-day window — 8 trailing days missing,
+            # which is above the 7-day repair cap and must raise.
+            idx = pd.date_range(dates[0], periods=2, freq="D")
             return pd.DataFrame(
-                {"pr (mm)": [1.0, 1.0, 1.0]}, index=idx
+                {"pr (mm)": [1.0, 1.0]}, index=idx
             )
 
         fake = _FakeClient(lambda **k: None)
@@ -469,12 +468,12 @@ class TestExternalErrors:
         _install_fake_pygridmet(monkeypatch, fake)
 
         with pytest.raises(
-            SwatBuilderPipelineError, match=r"returned 3 rows .* expected 5"
+            SwatBuilderPipelineError, match=r"returned 2 rows .* expected 10"
         ):
             fetch_gridmet(
                 stations=[(41.1, -77.5, 300.0)],
                 start="2015-01-01",
-                end="2015-01-05",
+                end="2015-01-10",
                 variables=["pcp"],
                 cache_dir=tmp_path,
             )
@@ -610,6 +609,199 @@ class TestExternalErrors:
                 variables=["pcp"],
                 cache_dir=tmp_path,
             )
+
+
+# ---------------------------------------------------------------------------
+# _repair_bounded_day_gaps — unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestRepairBoundedDayGaps:
+    """Direct unit tests for the gap-repair helper."""
+
+    def _make_df(self, start: str, n: int) -> pd.DataFrame:
+        import pandas as pd
+        idx = pd.date_range(start, periods=n, freq="D")
+        return pd.DataFrame({"pr (mm)": [1.0] * n}, index=idx)
+
+    def _station(self) -> WeatherStation:
+        return WeatherStation(name="test", lat=40.0, lon=-80.0, elev=200.0)
+
+    def test_no_gap_returns_unchanged(self):
+        from swatplus_builder.weather.gridmet import _repair_bounded_day_gaps
+        df = self._make_df("2015-01-01", 5)
+        result = _repair_bounded_day_gaps(
+            df, station=self._station(),
+            start="2015-01-01", end="2015-01-05", n_days=5,
+        )
+        assert len(result) == 5
+
+    def test_trailing_1_day_gap_is_repaired(self):
+        from swatplus_builder.weather.gridmet import _repair_bounded_day_gaps
+        # Server returned 4 rows for a 5-day window (trailing day clipped)
+        df = self._make_df("2015-01-01", 4)
+        result = _repair_bounded_day_gaps(
+            df, station=self._station(),
+            start="2015-01-01", end="2015-01-05", n_days=5,
+        )
+        assert len(result) == 5
+
+    def test_trailing_5_day_gap_is_repaired(self):
+        """The failing case: server returns 8395 rows for 8400-day window."""
+        import pandas as pd
+
+        from swatplus_builder.weather.gridmet import _repair_bounded_day_gaps
+        idx = pd.date_range("2000-01-01", periods=8395, freq="D")
+        df = pd.DataFrame({"pr (mm)": [2.5] * 8395}, index=idx)
+        expected_end = (pd.Timestamp("2000-01-01") + pd.Timedelta(days=8399)).strftime("%Y-%m-%d")
+        result = _repair_bounded_day_gaps(
+            df, station=self._station(),
+            start="2000-01-01", end=expected_end, n_days=8400,
+        )
+        assert len(result) == 8400
+        # Forward-filled values match the last available row
+        assert result.iloc[-1]["pr (mm)"] == pytest.approx(2.5)
+        assert result.iloc[-5]["pr (mm)"] == pytest.approx(2.5)
+
+    def test_trailing_7_day_gap_is_repaired(self):
+        from swatplus_builder.weather.gridmet import _repair_bounded_day_gaps
+        df = self._make_df("2015-01-01", 3)
+        result = _repair_bounded_day_gaps(
+            df, station=self._station(),
+            start="2015-01-01", end="2015-01-10", n_days=10,
+        )
+        assert len(result) == 10
+
+    def test_trailing_8_day_gap_is_not_repaired(self):
+        """Above the 7-day cap the repair is skipped (validation will raise)."""
+        from swatplus_builder.weather.gridmet import _repair_bounded_day_gaps
+        df = self._make_df("2015-01-01", 2)
+        result = _repair_bounded_day_gaps(
+            df, station=self._station(),
+            start="2015-01-01", end="2015-01-10", n_days=10,
+        )
+        assert len(result) == 2  # unchanged
+
+    def test_leading_gap_is_repaired(self):
+        import pandas as pd
+
+        from swatplus_builder.weather.gridmet import _repair_bounded_day_gaps
+        # Drop the first day
+        idx = pd.date_range("2015-01-02", periods=4, freq="D")
+        df = pd.DataFrame({"pr (mm)": [1.0] * 4}, index=idx)
+        result = _repair_bounded_day_gaps(
+            df, station=self._station(),
+            start="2015-01-01", end="2015-01-05", n_days=5,
+        )
+        assert len(result) == 5
+        assert pd.Timestamp("2015-01-01") in pd.DatetimeIndex(result.index)
+
+    def test_interior_gap_is_averaged(self):
+        import pandas as pd
+
+        from swatplus_builder.weather.gridmet import _repair_bounded_day_gaps
+        # 2015-01-01=2.0, 2015-01-03=4.0; 2015-01-02 missing
+        idx = pd.DatetimeIndex([pd.Timestamp("2015-01-01"), pd.Timestamp("2015-01-03")])
+        df = pd.DataFrame({"pr (mm)": [2.0, 4.0]}, index=idx)
+        result = _repair_bounded_day_gaps(
+            df, station=self._station(),
+            start="2015-01-01", end="2015-01-03", n_days=3,
+        )
+        assert len(result) == 3
+        assert result.loc[pd.Timestamp("2015-01-02"), "pr (mm)"] == pytest.approx(3.0)
+
+    def test_repair_preserves_sort_order(self):
+        from swatplus_builder.weather.gridmet import _repair_bounded_day_gaps
+        df = self._make_df("2015-01-01", 4)
+        result = _repair_bounded_day_gaps(
+            df, station=self._station(),
+            start="2015-01-01", end="2015-01-05", n_days=5,
+        )
+        assert result.index.is_monotonic_increasing
+
+    def test_trailing_gap_logs_warning(self, caplog):
+        """Forward-fill must emit a named warning so the user knows data is synthetic."""
+        import logging
+
+        from swatplus_builder.weather.gridmet import _repair_bounded_day_gaps
+        df = self._make_df("2015-01-01", 4)
+        with caplog.at_level(logging.WARNING, logger="swatplus_builder.weather.gridmet"):
+            _repair_bounded_day_gaps(
+                df, station=self._station(),
+                start="2015-01-01", end="2015-01-05", n_days=5,
+            )
+        assert any("synthetic" in r.message for r in caplog.records), (
+            "Expected a warning mentioning synthetic data; got: "
+            + str([r.message for r in caplog.records])
+        )
+        assert any("test" in r.message for r in caplog.records), (
+            "Warning should name the station"
+        )
+
+    def test_no_gap_does_not_log_warning(self, caplog):
+        """No-op repair must not emit spurious warnings."""
+        import logging
+
+        from swatplus_builder.weather.gridmet import _repair_bounded_day_gaps
+        df = self._make_df("2015-01-01", 5)
+        with caplog.at_level(logging.WARNING, logger="swatplus_builder.weather.gridmet"):
+            _repair_bounded_day_gaps(
+                df, station=self._station(),
+                start="2015-01-01", end="2015-01-05", n_days=5,
+            )
+        assert caplog.records == []
+
+
+# ---------------------------------------------------------------------------
+# _warn_if_end_near_realtime — unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestWarnIfEndNearRealtime:
+    def test_warns_for_recent_end_date(self, caplog):
+        import datetime
+        import logging
+
+        from swatplus_builder.weather.gridmet import _warn_if_end_near_realtime
+        yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+        with caplog.at_level(logging.WARNING, logger="swatplus_builder.weather.gridmet"):
+            _warn_if_end_near_realtime(
+                datetime.date.fromisoformat(yesterday), yesterday
+            )
+        assert any("lag" in r.message.lower() or "coverage" in r.message.lower()
+                   for r in caplog.records)
+
+    def test_no_warning_for_safe_historical_date(self, caplog):
+        import datetime
+        import logging
+
+        from swatplus_builder.weather.gridmet import _warn_if_end_near_realtime
+        safe = "2020-01-01"
+        with caplog.at_level(logging.WARNING, logger="swatplus_builder.weather.gridmet"):
+            _warn_if_end_near_realtime(datetime.date.fromisoformat(safe), safe)
+        assert caplog.records == []
+
+    def test_fetch_gridmet_warns_for_recent_end(self, monkeypatch, tmp_path, caplog):
+        """End-to-end: fetch_gridmet emits the warning before the network call."""
+        import datetime
+        import logging
+
+        from swatplus_builder.weather import fetch_gridmet
+
+        _install_fake_pygridmet(monkeypatch, _FakeClient(_mk_df))
+        # Use today - 3 days which is within the 7-day lag window
+        recent_end = (datetime.date.today() - datetime.timedelta(days=3)).isoformat()
+        recent_start = (datetime.date.today() - datetime.timedelta(days=5)).isoformat()
+        with caplog.at_level(logging.WARNING, logger="swatplus_builder.weather.gridmet"):
+            fetch_gridmet(
+                stations=[(41.1, -77.5, 300.0)],
+                start=recent_start,
+                end=recent_end,
+                variables=["pcp"],
+                cache_dir=tmp_path,
+            )
+        assert any("lag" in r.message.lower() or "coverage" in r.message.lower()
+                   for r in caplog.records)
 
 
 # ---------------------------------------------------------------------------

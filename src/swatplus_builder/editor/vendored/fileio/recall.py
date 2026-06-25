@@ -1,9 +1,9 @@
 from .base import BaseFileModel, FileColumn as col
-import database.project.recall as db
+import _swatplus_db.project.recall as db
 from helpers import utils
 import os.path
-from database.project import base as project_base, simulation
-from database import lib as db_lib
+from _swatplus_db.project import base as project_base, simulation
+from _swatplus_db import lib as db_lib
 import csv
 import datetime
 

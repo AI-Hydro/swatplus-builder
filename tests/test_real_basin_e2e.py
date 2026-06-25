@@ -2,7 +2,7 @@
 
 Opts in via ``SWATPLUS_BUILDER_RUN_REAL_BASIN=1``.
 
-Runs the full Marsh Creek pipeline and asserts:
+Runs the full single-basin pipeline and asserts:
 
 * every stage completes without raising;
 * the project DB is written and has the expected ``gis_*`` counts;
@@ -16,7 +16,7 @@ Requires:
   raw.githubusercontent.com for the real datasets DB).
 * ~3–5 minutes of runtime.
 
-See :file:`examples/real_basin_marsh_creek.py` for a hands-on demo.
+See :file:`examples/single_basin_workflow.py` for a hands-on demo.
 """
 
 from __future__ import annotations
@@ -29,12 +29,13 @@ from pathlib import Path
 
 import pytest
 
+
 @pytest.mark.skipif(
     os.environ.get("SWATPLUS_BUILDER_RUN_REAL_BASIN") != "1",
     reason="Set SWATPLUS_BUILDER_RUN_REAL_BASIN=1 to run the real-basin E2E.",
 )
 @pytest.mark.slow
-def test_marsh_creek_full_pipeline(tmp_path: Path) -> None:
+def test_single_basin_full_pipeline(tmp_path: Path) -> None:
     pytest.importorskip("whitebox")
     pytest.importorskip("py3dep")
     pytest.importorskip("pygeohydro")
@@ -46,14 +47,14 @@ def test_marsh_creek_full_pipeline(tmp_path: Path) -> None:
     examples_dir = Path(__file__).parent.parent / "examples"
     sys.path.insert(0, str(examples_dir))
     try:
-        import real_basin_marsh_creek as demo  # type: ignore
+        import single_basin_workflow as demo  # type: ignore
     finally:
         sys.path.pop(0)
 
     demo.main(tmp_path, run_engine=False)
 
     # -------- post-conditions --------
-    db = tmp_path / "project" / "marsh_creek.sqlite"
+    db = tmp_path / "project" / "swatplus_project.sqlite"
     assert db.exists(), f"project DB missing: {db}"
 
     txtinout = tmp_path / "project" / "Scenarios" / "Default" / "TxtInOut"
@@ -86,12 +87,12 @@ def test_marsh_creek_full_pipeline(tmp_path: Path) -> None:
     )
 
 
-def test_marsh_creek_main_accepts_custom_simulation_window() -> None:
+def test_single_basin_main_accepts_custom_simulation_window() -> None:
     """Custom windows are needed for Phase 3F multi-year evidence runs."""
     examples_dir = Path(__file__).parent.parent / "examples"
     sys.path.insert(0, str(examples_dir))
     try:
-        import real_basin_marsh_creek as demo  # type: ignore
+        import single_basin_workflow as demo  # type: ignore
     finally:
         sys.path.pop(0)
 
@@ -105,7 +106,7 @@ def test_external_soil_profiles_fill_missing_mukeys(tmp_path: Path) -> None:
     examples_dir = Path(__file__).parent.parent / "examples"
     sys.path.insert(0, str(examples_dir))
     try:
-        import real_basin_marsh_creek as demo  # type: ignore
+        import single_basin_workflow as demo  # type: ignore
     finally:
         sys.path.pop(0)
 

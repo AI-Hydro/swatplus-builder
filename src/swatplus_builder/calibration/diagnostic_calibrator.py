@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import shutil
-from dataclasses import dataclass, asdict, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -85,7 +85,11 @@ def run_diagnostic_calibration(
         _write_result(reports / "diagnostic_calibration.json", res)
         return res
 
-    from .locked_benchmark import calibrate_against_lock, screen_parameters_against_lock, verify_calibration
+    from .locked_benchmark import (
+        calibrate_against_lock,
+        screen_parameters_against_lock,
+        verify_calibration,
+    )
     from .real_engine import params_hash
 
     lock_context = _read_lock_context(lock_path)
@@ -957,7 +961,6 @@ def _check_locked_txt_routing_flow(
         "closure_reference": getattr(report, "closure_reference", "basin_wateryld_m3"),
         "hru_wateryld_m3": report.hru_wateryld_m3,
         "ru_outflow_m3": report.ru_outflow_m3,
-        "ru_outflow_to_basin_wateryld_ratio": report.ru_outflow_to_basin_wateryld_ratio,
         "channel_inflow_m3": report.channel_inflow_m3,
         "terminal_outflow_m3": report.terminal_outflow_m3,
         "all_terminal_outflow_m3": report.all_terminal_outflow_m3,
@@ -975,6 +978,9 @@ def _check_locked_txt_routing_flow(
         "json_path": str(Path(out_dir) / "mass_trace.json"),
         "markdown_path": str(Path(out_dir) / "mass_trace.md"),
         "gate_json_path": str(Path(out_dir) / "routing_flow_gates.json"),
+        "extended_diagnostics": {
+            "ru_outflow_to_basin_wateryld_ratio": report.ru_outflow_to_basin_wateryld_ratio,
+        },
         "recommended_next_action": _routing_flow_next_action(
             flags,
             passed=passed,

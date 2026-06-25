@@ -13,7 +13,6 @@ from __future__ import annotations
 import logging
 import shutil
 from pathlib import Path
-from typing import Optional
 
 from .routing_fixes import _normalized_rout_unit_con_parts
 
@@ -28,7 +27,7 @@ def convert_topology(
     txtinout: Path,
     *,
     backup: bool = True,
-    reference_tordera: Optional[Path] = None,
+    reference_tordera: Path | None = None,
 ) -> Path:
     """Convert full-mode TxtInOut from cha to sdc/chandeg routing.
 

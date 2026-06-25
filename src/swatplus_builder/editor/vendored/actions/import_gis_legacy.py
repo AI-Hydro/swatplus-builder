@@ -1,12 +1,12 @@
 from helpers.executable_api import ExecutableApi, Unbuffered
-from database import lib as db_lib
-from database.project import base as project_base, gis, routing_unit, channel, connect, aquifer, hydrology, hru, \
+from _swatplus_db import lib as db_lib
+from _swatplus_db.project import base as project_base, gis, routing_unit, channel, connect, aquifer, hydrology, hru, \
 	reservoir, soils, init, lum, hru_parm_db, exco, regions, recall, decision_table, climate
-from database.project.setup import SetupProjectDatabase
-from database.project.config import Project_config
-from database.datasets.setup import SetupDatasetsDatabase
-from database.datasets import init as ds_init, lum as ds_lum, base as ds_base, hru_parm_db as ds_hru_parm_db
-from database.datasets import definitions
+from _swatplus_db.project.setup import SetupProjectDatabase
+from _swatplus_db.project.config import Project_config
+from _swatplus_db.datasets.setup import SetupDatasetsDatabase
+from _swatplus_db.datasets import init as ds_init, lum as ds_lum, base as ds_base, hru_parm_db as ds_hru_parm_db
+from _swatplus_db.datasets import definitions
 from helpers import utils
 from .import_weather import WeatherImport
 
@@ -152,7 +152,7 @@ class GisImport(ExecutableApi):
 					self.emit_progress(95, "No GIS data to import...")
 			except Exception as err:
 				if self.rollback_db is not None:
-					self.emit_progress(50, "Error occurred. Rolling back database...")
+					self.emit_progress(50, "Error occurred. Rolling back _swatplus_db...")
 					SetupProjectDatabase.rollback(self.project_db_file, self.rollback_db)
 					self.emit_progress(100, "Error occurred.")
 				sys.exit(traceback.format_exc())
@@ -291,7 +291,7 @@ class GisImport(ExecutableApi):
 
 	def insert_routing_units(self):
 		"""
-		Insert routing unit SWAT+ tables from GIS database.
+		Insert routing unit SWAT+ tables from GIS _swatplus_db.
 		"""
 		cnt = get_max_id(gis.Gis_lsus)
 		if routing_unit.Rout_unit_rtu.select().count() == 0:
@@ -679,7 +679,7 @@ class GisImport(ExecutableApi):
 
 	def insert_channels_lte(self):
 		"""
-		Insert channel lte SWAT+ tables from GIS database.
+		Insert channel lte SWAT+ tables from GIS _swatplus_db.
 		"""
 		cnt = get_max_id(gis.Gis_channels)
 		if channel.Channel_lte_cha.select().count() == 0:
@@ -829,7 +829,7 @@ class GisImport(ExecutableApi):
 
 	def insert_reservoirs(self):
 		"""
-		Insert reservoir SWAT+ tables from GIS database.
+		Insert reservoir SWAT+ tables from GIS _swatplus_db.
 		"""
 		cnt = get_max_id(gis.Gis_water)
 		if reservoir.Reservoir_res.select().count() == 0:
@@ -939,7 +939,7 @@ class GisImport(ExecutableApi):
 
 	def insert_exco(self, is_lte_cha_type=False):
 		"""
-		Insert exco (constant point source) SWAT+ tables from GIS database.
+		Insert exco (constant point source) SWAT+ tables from GIS _swatplus_db.
 		"""
 		if exco.Exco_exc.select().count() == 0:
 			exco_query = gis.Gis_points.select().where((gis.Gis_points.ptype == 'P') | (gis.Gis_points.ptype == 'I')).order_by(gis.Gis_points.id)
@@ -1014,7 +1014,7 @@ class GisImport(ExecutableApi):
 
 	def insert_recall(self, is_lte_cha_type=False):
 		"""
-		Insert recall (point source) SWAT+ tables from GIS database.
+		Insert recall (point source) SWAT+ tables from GIS _swatplus_db.
 		"""
 		if recall.Recall_rec.select().count() == 0:
 			rec_query = gis.Gis_points.select().where(
@@ -1329,7 +1329,7 @@ class GisImport(ExecutableApi):
 
 	def insert_hrus(self):
 		"""
-		Insert hru_data.hru SWAT+ data from GIS database.
+		Insert hru_data.hru SWAT+ data from GIS _swatplus_db.
 		"""
 		lum_dict = self.insert_landuse()
 

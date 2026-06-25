@@ -5,7 +5,11 @@ from pathlib import Path
 
 import pandas as pd
 
-from swatplus_builder.diagnostics import diagnose, write_diagnostics_json_report, write_diagnostics_report
+from swatplus_builder.diagnostics import (
+    diagnose,
+    write_diagnostics_json_report,
+    write_diagnostics_report,
+)
 
 
 def _write_alignment(path: Path, obs: list[float], sim: list[float]) -> None:

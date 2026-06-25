@@ -3,11 +3,11 @@ from helpers import utils
 
 from peewee import *
 
-import database.project.simulation as db
-from database.project.regions import Ls_unit_def
-from database.project.connect import Rout_unit_con, Hru_con, Hru_lte_con, Modflow_con, Aquifer2d_con, Aquifer_con, Channel_con, Reservoir_con, Recall_con, Exco_con, Delratio_con, Outlet_con, Chandeg_con
-from database.project.gis import Gis_subbasins, Gis_lsus
-from database.project.recall import Recall_dat, Recall_rec
+import _swatplus_db.project.simulation as db
+from _swatplus_db.project.regions import Ls_unit_def
+from _swatplus_db.project.connect import Rout_unit_con, Hru_con, Hru_lte_con, Modflow_con, Aquifer2d_con, Aquifer_con, Channel_con, Reservoir_con, Recall_con, Exco_con, Delratio_con, Outlet_con, Chandeg_con
+from _swatplus_db.project.gis import Gis_subbasins, Gis_lsus
+from _swatplus_db.project.recall import Recall_dat, Recall_rec
 
 import re
 

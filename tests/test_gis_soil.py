@@ -35,7 +35,6 @@ import rasterio
 from rasterio.transform import from_origin
 from shapely.geometry import Polygon, box
 
-
 # ---------------------------------------------------------------------------
 # Synthetic GeoTIFF fixture
 # ---------------------------------------------------------------------------
@@ -129,10 +128,10 @@ class TestExtractUniqueMukeys:
 
     def test_boundary_reprojects_wgs84_input(self, mukey_raster):
         """Callers routinely pass WGS84 polygons; we reproject internally."""
-        from swatplus_builder.gis.soil import extract_unique_mukeys
-
         # Reproject the top-left 2x2 bbox into WGS84 and pass THAT in.
         from pyproj import Transformer
+
+        from swatplus_builder.gis.soil import extract_unique_mukeys
 
         tf = Transformer.from_crs(_CRS_UTM, _CRS_WGS, always_xy=True)
         minx, miny, maxx, maxy = 500_000, 4_499_940, 500_060, 4_500_000
@@ -231,7 +230,7 @@ class _FakeSearch:
 
 
 class _FakeClient:
-    _singleton: "_FakeClient"
+    _singleton: _FakeClient
 
     def __init__(self, items: list[_FakeItem]):
         self._items = items

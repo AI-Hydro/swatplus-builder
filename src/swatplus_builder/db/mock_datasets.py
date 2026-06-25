@@ -30,8 +30,8 @@ import os
 import subprocess
 import sys
 import textwrap
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 __all__ = ["create_mock_datasets_db"]
 

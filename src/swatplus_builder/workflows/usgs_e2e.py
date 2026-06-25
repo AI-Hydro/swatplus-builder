@@ -9,17 +9,42 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from ..errors import SwatBuilderExternalError
-from ..orchestrate import run_pipeline
 from ..calibration.diagnostic_calibrator import run_diagnostic_calibration
+from ..governance import (
+    benchmark_lock_gate as _benchmark_lock_gate_impl,
+)
+from ..governance import (
+    calibration_improvement_gate as _calibration_improvement_gate_impl,
+)
+from ..governance import (
+    fresh_engine_gate as _fresh_engine_gate_impl,
+)
+from ..governance import (
+    landuse_fidelity_gate as _landuse_fidelity_gate_impl,
+)
+from ..governance import (
+    outlet_provenance_gate as _outlet_provenance_gate_impl,
+)
+from ..governance import (
+    research_metric_gate as _research_metric_gate_impl,
+)
+from ..governance import (
+    sensitivity_gate as _sensitivity_gate_impl,
+)
+from ..governance import (
+    soil_fidelity_gate as _soil_fidelity_gate_impl,
+)
+from ..orchestrate import run_pipeline
 from ..output.et_diagnostics import write_et_partition_diagnostics
+from ..output.landuse_fidelity import build_landuse_fidelity_block
 from ..output.mass_diagnostics import write_mass_balance_diagnostics
 from ..output.mass_trace import classify_terminal_scope_blocker
+from ..output.terrain_climate_defaults import build_terrain_climate_defaults_block
 from ..output.volume_diagnostics import write_volume_bias_diagnostics
 from ..params.governance import (
     FULL_MODE_CORE_PARAMETERS,
@@ -27,6 +52,16 @@ from ..params.governance import (
     FULL_MODE_PARAMETER_GOVERNANCE,
     full_mode_extended_screen_rows,
     full_mode_screen_rows,
+)
+
+# SWAT+-specific sensitivity gate parameters (computed once at import time)
+_SENSITIVITY_REQUIRED: frozenset[str] = frozenset(
+    name for name in FULL_MODE_CORE_PARAMETERS
+    if FULL_MODE_PARAMETER_GOVERNANCE[name].activity_class != "dead"
+)
+_SENSITIVITY_DEAD: frozenset[str] = frozenset(
+    name for name in FULL_MODE_CORE_PARAMETERS
+    if FULL_MODE_PARAMETER_GOVERNANCE[name].activity_class == "dead"
 )
 
 
@@ -43,6 +78,8 @@ class RunUSGSWorkflowRequest:
     accepted_by: str | None = None
     contract_path: str | None = None
     calibrate: bool = True
+    hru_mode: str = "dominant_only"
+    min_hru_fraction: float = 0.0
     virtual_all_terminal_outlet: bool = False
     virtual_outlet_authority: str | None = None
 
@@ -551,12 +588,43 @@ def _claim_lists(
             }
         )
 
+    landuse_gate = _landuse_fidelity_gate(values)
+    if landuse_gate["passed"]:
+        allowed.append(
+            {
+                "claim": "landuse_fidelity_gate_passed",
+                "tier": "research_grade",
+                "basis": landuse_gate["reason"],
+            }
+        )
+    else:
+        blocked.append(
+            {
+                "claim": "landuse_fidelity_gate_passed",
+                "tier": "research_grade",
+                "reason": landuse_gate["reason"],
+            }
+        )
+
     if policy_notes:
         blocked.append(
             {
                 "claim": "higher_tier_time_window_claim",
                 "tier": requested_tier,
                 "reason": ",".join(policy_notes),
+            }
+        )
+
+    terrain_climate = values.get("terrain_climate_defaults")
+    if isinstance(terrain_climate, dict) and terrain_climate.get("diagnostic_flags"):
+        blocked.append(
+            {
+                "claim": "terrain_length_or_lapse_derived_claim",
+                "tier": "research_grade",
+                "reason": (
+                    f"{terrain_climate.get('claim_impact')}: "
+                    + ",".join(str(flag) for flag in terrain_climate.get("diagnostic_flags") or [])
+                ),
             }
         )
 
@@ -621,81 +689,34 @@ def _effective_claim_tier(
     if allowed_tier not in {"research_grade", "publication_grade"}:
         return "diagnostic"
 
-    soil = _soil_fidelity_gate(values)
-    if (
+    if not (
         calibration_success
         and _research_metric_gate(values)["passed"]
         and _calibration_improvement_gate(values)["passed"]
-        and _sensitivity_gate(values)["passed"]
-        and soil["passed"]
     ):
+        return "diagnostic"
+
+    # Calibration and metric gates passed — now check sensitivity + soil + land-use fidelity.
+    # publication_grade requires calibration evidence only (no sensitivity/fidelity requirement).
+    # research_grade additionally requires basin-specific sensitivity, soil, and land-use fidelity.
+    # (C3 decision — documented in DECISIONS.md)
+    soil = _soil_fidelity_gate(values)
+    landuse = _landuse_fidelity_gate(values)
+    if _sensitivity_gate(values)["passed"] and soil["passed"] and landuse["passed"]:
         return "research_grade"
-    return "diagnostic"
+    return "publication_grade"
 
 
 def _research_metric_gate(values: dict[str, Any]) -> dict[str, Any]:
-    metrics = values.get("metrics")
-    if not isinstance(metrics, dict):
-        metrics = {}
-    nse = _as_float(metrics.get("nse", values.get("baseline_nse")))
-    kge = _as_float(metrics.get("kge", values.get("baseline_kge")))
-    pbias = _as_float(metrics.get("pbias", metrics.get("pbias_pct")))
-
-    failures: list[str] = []
-    if kge is None or kge < 0.40:
-        failures.append(f"KGE {kge if kge is not None else 'missing'} < 0.40")
-    if nse is None:
-        failures.append("NSE missing")
-    elif nse < 0.0:
-        timing_documented = bool(values.get("timing_limitation_documented")) or bool(
-            values.get("timing_limitation_basis")
-        )
-        if not (kge is not None and kge >= 0.40 and timing_documented):
-            failures.append(
-                f"NSE {nse:.3f} < 0.00 without documented timing limitation"
-            )
-    if pbias is None:
-        failures.append("PBIAS missing")
-    elif abs(pbias) > 30.0:
-        failures.append(f"|PBIAS| {abs(pbias):.1f}% > 30%")
-
-    return {
-        "passed": not failures,
-        "reason": "metric gates passed" if not failures else "; ".join(failures),
-        "nse": nse,
-        "kge": kge,
-        "pbias": pbias,
-    }
+    return _research_metric_gate_impl(values)
 
 
 def _soil_fidelity_gate(values: dict[str, Any]) -> dict[str, Any]:
-    soil_mode = str(values.get("soil_mode") or "")
-    provenance = str(values.get("soil_provenance_mode") or "")
-    authoritative_provenance = {"gnatsgo_raster"}
-    fallback_value = values.get("pct_fallback_soils")
-    try:
-        fallback = float(fallback_value)
-    except (TypeError, ValueError):
-        fallback = None
-    if (
-        soil_mode == "high_fidelity"
-        and fallback is not None
-        and fallback <= 0.0
-        and provenance in authoritative_provenance
-    ):
-        reason = "soil_mode=high_fidelity"
-        if provenance:
-            reason += f"; soil_provenance_mode={provenance}"
-        return {"passed": True, "reason": reason}
-    fallback_reason = "n/a" if fallback is None else f"{fallback:.2%}"
-    return {
-        "passed": False,
-        "reason": (
-            f"soil provenance degraded: soil_mode={soil_mode}, "
-            f"soil_provenance_mode={provenance or 'n/a'}, "
-            f"pct_fallback_soils={fallback_reason}"
-        ),
-    }
+    return _soil_fidelity_gate_impl(values)
+
+
+def _landuse_fidelity_gate(values: dict[str, Any]) -> dict[str, Any]:
+    return _landuse_fidelity_gate_impl(values)
 
 
 def _metadata_note_value(metadata: dict[str, Any], key: str) -> str | None:
@@ -731,163 +752,27 @@ def _promote_soil_provenance_from_metadata(values: dict[str, Any], run_dir: Path
 
 
 def _fresh_engine_gate(values: dict[str, Any]) -> dict[str, Any]:
-    if values.get("fresh_engine_run") is not True:
-        return {"passed": False, "reason": "fresh_engine_run is not true"}
-    rc = values.get("engine_returncode")
-    if rc is not None:
-        try:
-            if int(rc) != 0:
-                return {"passed": False, "reason": f"engine_returncode={rc}"}
-        except Exception:
-            return {"passed": False, "reason": f"engine_returncode is not numeric: {rc}"}
-    txt = values.get("txtinout_dir")
-    if not txt or not Path(str(txt)).is_dir():
-        return {"passed": False, "reason": "txtinout_dir missing for fresh output verification"}
-    txt_path = Path(str(txt))
-    sim_source = values.get("sim_source_file")
-    candidates: list[Path]
-    if sim_source:
-        source_path = Path(str(sim_source))
-        candidates = [source_path if source_path.is_absolute() else txt_path / source_path]
-    else:
-        candidates = [
-            txt_path / "basin_sd_cha_day.txt",
-            txt_path / "channel_sd_day.txt",
-            txt_path / "channel_day.txt",
-        ]
-    for candidate in candidates:
-        if candidate.is_file() and candidate.stat().st_size > 0:
-            return {"passed": True, "reason": f"fresh simulation output artifact exists: {candidate}"}
-    return {
-        "passed": False,
-        "reason": "fresh simulation output artifact missing",
-    }
+    return _fresh_engine_gate_impl(values)
 
 
 def _calibration_improvement_gate(values: dict[str, Any]) -> dict[str, Any]:
-    if values.get("calibration_success") is not True and values.get(
-        "calibration_locked_verification_succeeded"
-    ) is not True:
-        return {"passed": False, "reason": "locked calibration verification did not succeed"}
-
-    provenance = values.get("calibration_provenance")
-    if not isinstance(provenance, dict):
-        provenance = {}
-    basis = str(provenance.get("verification_improvement_basis") or "").strip().lower()
-    if basis and basis != "none":
-        return {"passed": True, "reason": f"verification_improvement_basis={basis}"}
-
-    delta = values.get("calibration_delta_metrics")
-    if not isinstance(delta, dict):
-        delta = {}
-    delta_nse = _as_float(delta.get("nse"))
-    delta_kge = _as_float(delta.get("kge"))
-    improved = any(v is not None and v > 0.0 for v in (delta_nse, delta_kge))
-    if improved:
-        parts = []
-        if delta_nse is not None:
-            parts.append(f"delta_nse={delta_nse:+.6f}")
-        if delta_kge is not None:
-            parts.append(f"delta_kge={delta_kge:+.6f}")
-        return {"passed": True, "reason": ", ".join(parts)}
-
-    return {
-        "passed": False,
-        "reason": "locked calibration did not record positive NSE or KGE improvement over baseline",
-    }
+    return _calibration_improvement_gate_impl(values)
 
 
 def _benchmark_lock_gate(values: dict[str, Any]) -> dict[str, Any]:
-    path = values.get("benchmark_lock_path")
-    if not path:
-        return {"passed": False, "reason": "benchmark_lock_path missing"}
-    lock = Path(str(path))
-    if not lock.is_file():
-        return {"passed": False, "reason": f"benchmark lock artifact missing: {lock}"}
-    return {"passed": True, "reason": f"benchmark lock artifact exists: {lock}"}
+    return _benchmark_lock_gate_impl(values)
 
 
 def _outlet_provenance_gate(values: dict[str, Any]) -> dict[str, Any]:
-    path = values.get("outlet_provenance_path")
-    if not path or not Path(str(path)).is_file():
-        return {"passed": False, "reason": "outlet_provenance.json missing"}
-    selected = values.get("selected_outlet_gis_id")
-    if selected is None:
-        selected = values.get("outlet_gis_id")
-    if selected is None:
-        return {"passed": False, "reason": "selected outlet GIS id missing from workflow evidence"}
-    return {"passed": True, "reason": f"selected_outlet_gis_id={selected}"}
+    return _outlet_provenance_gate_impl(values)
 
 
 def _sensitivity_gate(values: dict[str, Any]) -> dict[str, Any]:
-    basis = str(values.get("sensitivity_screen_basis") or "")
-    if basis != "basin_specific":
-        return {
-            "passed": False,
-            "reason": f"sensitivity_screen_basis={basis or 'missing'}; basin_specific required for research_grade",
-        }
-
-    classes = values.get("sensitivity_screen_activity_classes")
-    if not isinstance(classes, dict) or not classes:
-        return {"passed": False, "reason": "sensitivity_screen_activity_classes missing"}
-
-    normalized_classes = {str(name).upper(): str(activity) for name, activity in classes.items()}
-    required_core = {
-        name
-        for name in FULL_MODE_CORE_PARAMETERS
-        if FULL_MODE_PARAMETER_GOVERNANCE[name].activity_class != "dead"
-    }
-    dead_core = {
-        name
-        for name in FULL_MODE_CORE_PARAMETERS
-        if FULL_MODE_PARAMETER_GOVERNANCE[name].activity_class == "dead"
-    }
-    missing_core = sorted(required_core - set(normalized_classes))
-    if missing_core:
-        return {
-            "passed": False,
-            "reason": (
-                "basin-specific sensitivity screen missing current governed core parameters: "
-                + ", ".join(missing_core)
-            ),
-        }
-
-    blocked_parameters: set[str] = set()
-    for key in ("blocked_parameters", "calibration_blocked_parameters"):
-        value = values.get(key)
-        if isinstance(value, list):
-            blocked_parameters.update(str(item).upper() for item in value)
-    provenance = values.get("calibration_provenance")
-    if isinstance(provenance, dict) and isinstance(provenance.get("blocked_parameters"), list):
-        blocked_parameters.update(str(item).upper() for item in provenance["blocked_parameters"])
-    unaccounted_dead = sorted(
-        name
-        for name in dead_core
-        if normalized_classes.get(name) != "dead" and name not in blocked_parameters
+    return _sensitivity_gate_impl(
+        values,
+        required_params=_SENSITIVITY_REQUIRED,
+        dead_params=_SENSITIVITY_DEAD,
     )
-    if unaccounted_dead:
-        return {
-            "passed": False,
-            "reason": (
-                "dead or unsupported governed core parameters lack blocked/dead accounting: "
-                + ", ".join(unaccounted_dead)
-            ),
-        }
-
-    active_or_weak = {
-        name
-        for name, activity in normalized_classes.items()
-        if str(activity) in {"active", "weak", "limited"}
-    }
-    if not active_or_weak:
-        return {"passed": False, "reason": "no basin-sensitive calibration parameters found"}
-    return {
-        "passed": True,
-        "reason": (
-            "basin-specific sensitivity evidence covers current governed core set "
-            f"and retained {len(active_or_weak)} active/weak/limited parameters"
-        ),
-    }
 
 
 def _as_float(value: Any) -> float | None:
@@ -1068,6 +953,8 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
         "claim_tier_allowed": allowed_tier,
         "model_family": request.model_family,
         "warmup_years": int(request.warmup_years),
+        "hru_mode_requested": request.hru_mode,
+        "min_hru_fraction_requested": float(request.min_hru_fraction),
         "start": request.start,
         "end": request.end,
         "window_years": datetime.fromisoformat(request.end).year - datetime.fromisoformat(request.start).year + 1,
@@ -1093,6 +980,8 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
                 model_family=request.model_family,
                 warmup_years=request.warmup_years,
                 allow_diagnostic_fallbacks=True,
+                hru_mode=request.hru_mode,
+                min_hru_fraction=request.min_hru_fraction,
             )
             values.update(summary if isinstance(summary, dict) else {"pipeline_summary": str(summary)})
             _promote_soil_provenance_from_metadata(values, out)
@@ -1387,6 +1276,44 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
     outlet_path.write_text(json.dumps(outlet_prov, indent=2) + "\n", encoding="utf-8")
     values["outlet_provenance_path"] = str(outlet_path)
 
+    try:
+        values["landuse_fidelity"] = build_landuse_fidelity_block(
+            out,
+            sim_start=request.start,
+            sim_end=request.end,
+        )
+        _event(
+            "landuse_fidelity",
+            values["landuse_fidelity"].get("status", "unknown"),
+            hru_mode=values["landuse_fidelity"].get("hru_mode"),
+            landuse_classes_present_count=values["landuse_fidelity"].get(
+                "landuse_classes_present_count"
+            ),
+            landuse_classes_retained_count=values["landuse_fidelity"].get(
+                "landuse_classes_retained_count"
+            ),
+        )
+    except Exception as exc:
+        values["landuse_fidelity"] = {"status": "failed", "reason": str(exc)}
+        _event("landuse_fidelity", "failed", error=str(exc)[-500:])
+
+    try:
+        values["terrain_climate_defaults"] = build_terrain_climate_defaults_block(out)
+        terrain_climate_path = _write_json(
+            out / "terrain_climate_defaults.json",
+            values["terrain_climate_defaults"],
+        )
+        values["terrain_climate_defaults_path"] = str(terrain_climate_path)
+        _event(
+            "terrain_climate_defaults",
+            values["terrain_climate_defaults"].get("status", "unknown"),
+            flags=",".join(values["terrain_climate_defaults"].get("diagnostic_flags") or []),
+            claim_impact=values["terrain_climate_defaults"].get("claim_impact"),
+        )
+    except Exception as exc:
+        values["terrain_climate_defaults"] = {"status": "failed", "reason": str(exc)}
+        _event("terrain_climate_defaults", "failed", error=str(exc)[-500:])
+
     volume_diag_payload: dict[str, Any] | None = None
     physical_context_updates = _annotate_parameter_screen_for_physical_context(
         parameter_screen_payload,
@@ -1576,6 +1503,83 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
             values["volume_bias_diagnostics_error"] = str(exc)
             _event("volume_bias_diagnostics", "failed", error=str(exc)[-500:])
 
+    try:
+        from ..output.plots.forcing_context import plot_forcing_context
+        from ..output.plots.landuse_composition import plot_landuse_composition
+        from ..output.plots.spatial import plot_basin_spatial_overview
+        from ..output.plots.water_balance import plot_water_balance
+
+        plots_dir = out / "plots"
+        plots_dir.mkdir(parents=True, exist_ok=True)
+        plot_metadata = {
+            "usgs_id": request.usgs_id,
+            "basin_name": f"USGS {request.usgs_id}",
+            "time_range": f"{request.start[:4]}-{request.end[:4]}",
+            "model_family": request.model_family,
+            "soil_mode": values.get("soil_mode"),
+            "pct_fallback_soils": values.get("pct_fallback_soils"),
+        }
+        generated_plots: list[str] = []
+        generated_plots.extend(
+            plot_basin_spatial_overview(
+                out,
+                plots_dir / "fig_08_basin_spatial_overview",
+                metadata=plot_metadata,
+            )
+        )
+        try:
+            plot_forcing_context(
+                out,
+                plots_dir / "fig_09_forcing_context",
+                metadata=plot_metadata,
+            )
+            generated_plots.extend(["fig_09_forcing_context.png", "fig_09_forcing_context.pdf"])
+        except Exception as exc:
+            values["forcing_context_plot_error"] = str(exc)
+        try:
+            plot_water_balance(
+                out,
+                plots_dir / "fig_10_water_balance",
+                metadata=plot_metadata,
+            )
+            generated_plots.extend(["fig_10_water_balance.png", "fig_10_water_balance.pdf"])
+        except Exception as exc:
+            values["water_balance_plot_error"] = str(exc)
+        try:
+            plot_landuse_composition(
+                out,
+                plots_dir / "fig_11_landuse_composition",
+                metadata=plot_metadata,
+                sim_start=request.start,
+                sim_end=request.end,
+            )
+            generated_plots.extend(["fig_11_landuse_composition.png", "fig_11_landuse_composition.pdf"])
+        except Exception as exc:
+            values["landuse_composition_plot_error"] = str(exc)
+        values["plot_suite"] = {
+            "plots_generated": bool(generated_plots),
+            "n_plots": len(generated_plots),
+            "path": str(plots_dir),
+            "files": generated_plots,
+        }
+        for key, filename in {
+            "basin_spatial_overview_plot": "fig_08_basin_spatial_overview.png",
+            "basin_spatial_overview_plot_pdf": "fig_08_basin_spatial_overview.pdf",
+            "forcing_context_plot": "fig_09_forcing_context.png",
+            "forcing_context_plot_pdf": "fig_09_forcing_context.pdf",
+            "water_balance_plot": "fig_10_water_balance.png",
+            "water_balance_plot_pdf": "fig_10_water_balance.pdf",
+            "landuse_composition_plot": "fig_11_landuse_composition.png",
+            "landuse_composition_plot_pdf": "fig_11_landuse_composition.pdf",
+        }.items():
+            candidate = plots_dir / filename
+            if candidate.is_file():
+                values[key] = str(candidate)
+        _event("plots", "completed", n_plots=len(generated_plots), path=str(plots_dir))
+    except Exception as exc:
+        values["plot_suite"] = {"plots_generated": False, "reason": str(exc)}
+        _event("plots", "failed", error=str(exc)[-500:])
+
     allowed_claims, blocked_claims = _claim_lists(
         requested_tier=request.claim_tier,
         allowed_tier=allowed_tier,
@@ -1631,6 +1635,10 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
         gates_passed.append("soil_fidelity")
     else:
         gates_failed.append("soil_fidelity")
+    if _landuse_fidelity_gate(values)["passed"]:
+        gates_passed.append("landuse_fidelity")
+    else:
+        gates_failed.append("landuse_fidelity")
     if _calibration_improvement_gate(values)["passed"]:
         gates_passed.append("calibration_verification")
     elif values.get("calibration_attempted") or str(values.get("calibration_status") or "").startswith("blocked_by_"):
@@ -1661,6 +1669,14 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
     path = out / "evidence_summary.json"
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     evidence_md_path.write_text(_render_evidence_summary_md(payload), encoding="utf-8")
+
+    # Write schema-versioned evidence bundle alongside the legacy format.
+    try:
+        from ..evidence import write_evidence_v1
+        write_evidence_v1(payload, out)
+    except Exception:
+        pass  # never let v1 write failure abort the run
+
     _event("workflow", "completed", success=bool(success), evidence_summary=str(path))
     manifest_payload = {
         "run_id": run_id,
@@ -1724,6 +1740,56 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
             **(
                 {"volume_bias_diagnostics": str(volume_diag_payload.get("json_path"))}
                 if volume_diag_payload and volume_diag_payload.get("json_path")
+                else {}
+            ),
+            **(
+                {"basin_spatial_overview_plot": str(values.get("basin_spatial_overview_plot"))}
+                if values.get("basin_spatial_overview_plot")
+                else {}
+            ),
+            **(
+                {"basin_spatial_overview_plot_pdf": str(values.get("basin_spatial_overview_plot_pdf"))}
+                if values.get("basin_spatial_overview_plot_pdf")
+                else {}
+            ),
+            **(
+                {"forcing_context_plot": str(values.get("forcing_context_plot"))}
+                if values.get("forcing_context_plot")
+                else {}
+            ),
+            **(
+                {"forcing_context_plot_pdf": str(values.get("forcing_context_plot_pdf"))}
+                if values.get("forcing_context_plot_pdf")
+                else {}
+            ),
+            **(
+                {"water_balance_plot": str(values.get("water_balance_plot"))}
+                if values.get("water_balance_plot")
+                else {}
+            ),
+            **(
+                {"water_balance_plot_pdf": str(values.get("water_balance_plot_pdf"))}
+                if values.get("water_balance_plot_pdf")
+                else {}
+            ),
+            **(
+                {"landuse_composition_plot": str(values.get("landuse_composition_plot"))}
+                if values.get("landuse_composition_plot")
+                else {}
+            ),
+            **(
+                {"landuse_composition_plot_pdf": str(values.get("landuse_composition_plot_pdf"))}
+                if values.get("landuse_composition_plot_pdf")
+                else {}
+            ),
+            **(
+                {"terrain_climate_defaults": str(values.get("terrain_climate_defaults_path"))}
+                if values.get("terrain_climate_defaults_path")
+                else {}
+            ),
+            **(
+                {"subsurface_prior_correction": str(values.get("subsurface_prior_correction_path"))}
+                if values.get("subsurface_prior_correction_path")
                 else {}
             ),
             **{
@@ -2194,7 +2260,6 @@ def _evaluate_routing_flow_gate(run_dir: Path, values: dict[str, Any]) -> dict[s
         "closure_reference": getattr(report, "closure_reference", "basin_wateryld_m3"),
         "hru_wateryld_m3": report.hru_wateryld_m3,
         "ru_outflow_m3": report.ru_outflow_m3,
-        "ru_outflow_to_basin_wateryld_ratio": report.ru_outflow_to_basin_wateryld_ratio,
         "channel_inflow_m3": report.channel_inflow_m3,
         "terminal_outflow_m3": report.terminal_outflow_m3,
         "all_terminal_outflow_m3": report.all_terminal_outflow_m3,
@@ -2211,6 +2276,9 @@ def _evaluate_routing_flow_gate(run_dir: Path, values: dict[str, Any]) -> dict[s
         "mass_trace_terminal_channel_years": report.terminal_channel_years,
         "json_path": str(run_dir / "reports" / "mass_trace.json"),
         "markdown_path": str(run_dir / "reports" / "mass_trace.md"),
+        "extended_diagnostics": {
+            "ru_outflow_to_basin_wateryld_ratio": report.ru_outflow_to_basin_wateryld_ratio,
+        },
         "blocked_tiers": {}
         if passed
         else {

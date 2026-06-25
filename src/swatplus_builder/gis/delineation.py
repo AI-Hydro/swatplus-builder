@@ -40,8 +40,7 @@ from pyproj import Transformer
 from rasterio.crs import CRS
 from rasterio.features import shapes as rasterio_shapes
 from rasterio.warp import Resampling, calculate_default_transform, reproject
-from shapely.geometry import Point, mapping, shape
-from shapely.ops import unary_union
+from shapely.geometry import Point, shape
 
 from ..config import DEFAULT_SETTINGS, Settings
 from ..errors import SwatBuilderExternalError, SwatBuilderInputError, SwatBuilderPipelineError
@@ -156,6 +155,9 @@ def delineate(
     max_channels_per_subbasin: float = 50.0,
     max_terminals: int = 5,
     max_terminal_rate: float = 0.08,
+    dem_conditioning: str = "breach",
+    stream_burn_vector: Path | str | None = None,
+    stream_burn_depth_m: float = 10.0,
     settings: Settings = DEFAULT_SETTINGS,
 ) -> WatershedResult:
     """Delineate subbasins and channels from a DEM and a pour point.
@@ -185,6 +187,13 @@ def delineate(
         max_terminal_rate:      Fraction of subbasins allowed to be terminals. DEM-boundary-
                                 truncated large basins legitimately have boundary terminals.
                                 Default 0.08 (8%).
+        stream_burn_vector:     Optional GeoPackage/Shapefile of river centrelines (e.g. NHD
+                                flowlines) to burn into the DEM before depression conditioning.
+                                Lowers DEM elevation along stream cells by ``stream_burn_depth_m``
+                                so D8 flow direction follows the real channel network on flat
+                                terrain. Effective fix for the multi-terminal C1 failure class.
+        stream_burn_depth_m:    Elevation decrement (metres) applied to stream-vector cells
+                                during DEM burning. Default 10 m.
         settings:               Runtime overrides (backend, verbosity, …).
 
     Returns:
@@ -231,14 +240,28 @@ def delineate(
     log.info("       CRS: %s", proj_crs)
 
     # ------------------------------------------------------------------
+    # 1b. Optional stream burning — lower DEM along NHD/vector flowlines
+    # ------------------------------------------------------------------
+    if stream_burn_vector is not None:
+        log.info("[1b] Burning stream vector into DEM (depth=%.1f m) …", stream_burn_depth_m)
+        dem_proj = _burn_streams_into_dem(
+            dem_proj, Path(stream_burn_vector), rasters, stream_burn_depth_m
+        )
+
+    # ------------------------------------------------------------------
     # 2. Breach/fill depressions (hydrological conditioning)
     # ------------------------------------------------------------------
-    log.info("[2/10] Conditioning DEM (BreachDepressionsLeastCost) …")
     dem_cond = rasters / "dem_conditioned.tif"
-    rc = wbt.breach_depressions_least_cost(
-        str(dem_proj), str(dem_cond), dist=5, fill=True
-    )
-    _check_wbt_output(rc, "BreachDepressionsLeastCost", dem_cond)
+    if dem_conditioning == "fill":
+        log.info("[2/10] Conditioning DEM (FillDepressions) …")
+        rc = wbt.fill_depressions(str(dem_proj), str(dem_cond))
+        _check_wbt_output(rc, "FillDepressions", dem_cond)
+    else:
+        log.info("[2/10] Conditioning DEM (BreachDepressionsLeastCost) …")
+        rc = wbt.breach_depressions_least_cost(
+            str(dem_proj), str(dem_cond), dist=5, fill=True
+        )
+        _check_wbt_output(rc, "BreachDepressionsLeastCost", dem_cond)
 
     # ------------------------------------------------------------------
     # 3 & 4. D8 flow direction + accumulation
@@ -333,6 +356,34 @@ def delineate(
     _attribute_channels(channels_gdf, subbasins_gdf, dem_cond, flow_acc)
     graph = _prune_topology_to_valid_channels(graph, channels_gdf, subbasins_gdf)
 
+    # Prune isolated fragments — single-gauge delineation must be one connected basin.
+    _outlet_lid = _outlet_link_id(
+        stream_links,
+        snap_diag["outlet_snapped_x"],
+        snap_diag["outlet_snapped_y"],
+    )
+    graph, _n_pruned_isolated, _n_pruned_comps = _prune_disconnected_components(
+        graph, _outlet_lid
+    )
+
+    # Prune secondary terminal nodes (DEM-edge artefacts on flat terrain).
+    graph, _n_pruned_boundary = _prune_secondary_terminals(graph, _outlet_lid)
+    if _n_pruned_boundary > 0:
+        _n_pruned_isolated += _n_pruned_boundary
+        _valid_link_ids: set[int] = {int(n) for n in graph.nodes if _positive_int(n) is not None}
+        channels_gdf = channels_gdf[
+            channels_gdf["link_id"].apply(_positive_int).isin(_valid_link_ids)
+        ].copy()
+        _valid_sub_ids: set[int] = {
+            s for s in (
+                _positive_int(v) for v in channels_gdf.get("sub_id", [])
+            ) if s is not None
+        }
+        if "sub_id" in subbasins_gdf.columns and _valid_sub_ids:
+            subbasins_gdf = subbasins_gdf[
+                subbasins_gdf["sub_id"].apply(_positive_int).isin(_valid_sub_ids)
+            ].copy()
+
     # ------------------------------------------------------------------
     # Save vectors + graph
     # ------------------------------------------------------------------
@@ -365,6 +416,7 @@ def delineate(
         "n_channels": float(len(channels_gdf)),
         "n_routing_edges": float(graph.number_of_edges()),
         "n_terminals": float(sum(1 for n in graph.nodes if graph.out_degree(n) == 0)),
+        "n_pruned_isolated_nodes": float(_n_pruned_isolated),
         "total_area_km2": round(total_area_km2, 3),
         "mean_slope_m_m": round(mean_slope, 5),
         "outlet_lon": snapped_lon,
@@ -408,6 +460,27 @@ def delineate(
     log.info("    Subbasins:      %d", int(stats["n_subbasins"]))
     log.info("    Channels:       %d", int(stats["n_channels"]))
     log.info("    Total area:     %.1f km²", stats["total_area_km2"])
+
+    # Enforce package invariant: single-gauge request ⇒ exactly one routing terminal.
+    # Isolated fragments were pruned above; if multiple terminals remain on the main
+    # component the outlet snap failed to reach the main stem.
+    _n_terminals = int(stats["n_terminals"])
+    if _n_terminals != 1:
+        _terminal_nodes = sorted(n for n in graph.nodes if graph.out_degree(n) == 0)
+        raise SwatBuilderPipelineError(
+            f"Single-terminal invariant violated: {_n_terminals} routing terminal(s) "
+            f"remain after pruning {_n_pruned_isolated} isolated node(s) from "
+            f"{_n_pruned_comps} disconnected component(s). "
+            "A single-gauge delineation must drain to exactly one terminal. "
+            "Likely cause: outlet snapped to a side-channel rather than the main stem, "
+            "or stream_threshold_cells too low (fragmented network). "
+            "Try increasing snap_dist_m or raising stream_threshold_cells.",
+            n_terminals=_n_terminals,
+            n_pruned_isolated_nodes=_n_pruned_isolated,
+            terminal_nodes=_terminal_nodes[:10],
+            outlet_lon=outlet.lon,
+            outlet_lat=outlet.lat,
+        )
 
     check_topology_realism(
         stats,
@@ -490,6 +563,74 @@ def resolve_usgs_outlet(usgs_id: str) -> Outlet:
     sites = nldi.getfeature_byid("nwissite", f"USGS-{usgs_id}")
     geom = sites.geometry.iloc[0]
     return Outlet(lon=float(geom.x), lat=float(geom.y), usgs_id=usgs_id)
+
+
+# ---------------------------------------------------------------------------
+# Private helpers — stream burning
+# ---------------------------------------------------------------------------
+
+def _burn_streams_into_dem(
+    dem_proj: Path,
+    stream_vector: Path,
+    rasters_dir: Path,
+    burn_depth_m: float = 10.0,
+) -> Path:
+    """Lower DEM elevation by burn_depth_m along stream vector cells.
+
+    Returns path to the burned DEM GeoTIFF (rasters/dem_stream_burned.tif).
+    The original DEM is not modified.  On flat terrain the burned channel
+    cells guide D8 flow direction to follow the real river network, avoiding
+    the disconnected-subgraph / multi-terminal failure class.
+    """
+    import geopandas as gpd
+    from rasterio.features import rasterize as _rasterize
+
+    streams = gpd.read_file(stream_vector)
+    if streams.empty:
+        log.warning("Stream burn: no features in %s — skipping.", stream_vector.name)
+        return dem_proj
+
+    with rasterio.open(dem_proj) as src:
+        profile = src.profile.copy()
+        dem_arr = src.read(1)
+        nodata = src.nodata
+
+    dem_crs = CRS.from_user_input(profile["crs"])
+    if streams.crs is None or not streams.crs.equals(dem_crs):
+        streams = streams.to_crs(dem_crs)
+
+    valid_geoms = [g for g in streams.geometry if g is not None and not g.is_empty]
+    if not valid_geoms:
+        log.warning("Stream burn: all geometries invalid/empty — skipping.")
+        return dem_proj
+
+    burn_mask = _rasterize(
+        [(g, 1) for g in valid_geoms],
+        out_shape=(profile["height"], profile["width"]),
+        transform=profile["transform"],
+        fill=0,
+        dtype=np.uint8,
+    )
+
+    dem_f = dem_arr.astype(np.float32)
+    if nodata is not None:
+        stream_cells = (burn_mask > 0) & (dem_f != float(nodata))
+    else:
+        stream_cells = burn_mask > 0
+
+    dem_f[stream_cells] -= burn_depth_m
+
+    burned_path = rasters_dir / "dem_stream_burned.tif"
+    out_profile = profile.copy()
+    out_profile.update(dtype="float32")
+    with rasterio.open(burned_path, "w", **out_profile) as dst:
+        dst.write(dem_f, 1)
+
+    log.info(
+        "Stream burn: lowered %d DEM cells by %.1f m along flowline vector.",
+        int(stream_cells.sum()), burn_depth_m,
+    )
+    return burned_path
 
 
 # ---------------------------------------------------------------------------
@@ -799,7 +940,6 @@ def _polygonize_subbasins(
     with rasterio.open(subbasins_r) as src:
         sub_arr = src.read(1).astype(np.int32)
         transform = src.transform
-        nodata = src.nodata or 0
 
     with rasterio.open(watershed_r) as wsrc:
         ws_arr = wsrc.read(1)
@@ -879,7 +1019,7 @@ def _remove_back_edges(G: nx.DiGraph) -> None:
     Removing it breaks the cycle while keeping forward/cross edges intact.
     """
     WHITE, GRAY, BLACK = 0, 1, 2
-    color: dict[int, int] = {n: WHITE for n in G}
+    color: dict[int, int] = dict.fromkeys(G, WHITE)
     back_edges: list[tuple[int, int]] = []
 
     # Iterative DFS to avoid Python recursion limit on large graphs.
@@ -908,6 +1048,48 @@ def _remove_back_edges(G: nx.DiGraph) -> None:
             n_removed += 1
     if n_removed:
         log.info("Removed %d back-edge(s) to make routing graph acyclic.", n_removed)
+
+
+def _augment_topology_from_gpkg(G: nx.DiGraph, edge_set: set, channels_gdf: Any) -> None:
+    """Augment *G* with spatial endpoint-snapping edges derived from *channels_gdf*.
+
+    Mutates *G* and *edge_set* in-place.  The geometry column must contain
+    LineString features with a ``link_id`` attribute.  Connections where the
+    downstream end of channel A is within 150 m of the upstream end of channel B
+    are added as directed edges A → B.
+    """
+    from shapely.geometry import Point as _Point
+
+    if "link_id" not in channels_gdf.columns:
+        return
+
+    ds_pts: dict[int, _Point] = {}
+    us_pts: dict[int, _Point] = {}
+    for _, row in channels_gdf.iterrows():
+        lid = int(row["link_id"])
+        coords = list(row.geometry.coords)
+        if len(coords) >= 2:
+            us_pts[lid] = _Point(coords[0])
+            ds_pts[lid] = _Point(coords[-1])
+
+    snap_tol = 150.0  # metres
+    link_ids_list = list(ds_pts.keys())
+    for a in link_ids_list:
+        best_dist = float("inf")
+        best_b: int | None = None
+        for b in link_ids_list:
+            if b == a or b not in us_pts:
+                continue
+            d = ds_pts[a].distance(us_pts[b])
+            if d < snap_tol and d < best_dist:
+                best_dist = d
+                best_b = b
+        if best_b is not None:
+            edge = (a, best_b)
+            if edge not in edge_set:
+                edge_set.add(edge)
+                G.add_edge(a, best_b)
+                log.debug("topology snap: %d -> %d  (%.1f m)", a, best_b, best_dist)
 
 
 def _build_topology(stream_links: Path, watershed_r: Path, channels_gdf=None) -> nx.DiGraph:
@@ -966,36 +1148,7 @@ def _build_topology(stream_links: Path, watershed_r: Path, channels_gdf=None) ->
     # start (first coordinate).
     if channels_gdf is not None:
         try:
-            from shapely.geometry import Point as _Point
-
-            if "link_id" in channels_gdf.columns:
-                ds_pts: dict[int, _Point] = {}
-                us_pts: dict[int, _Point] = {}
-                for _, row in channels_gdf.iterrows():
-                    lid = int(row["link_id"])
-                    coords = list(row.geometry.coords)
-                    if len(coords) >= 2:
-                        us_pts[lid] = _Point(coords[0])
-                        ds_pts[lid] = _Point(coords[-1])
-
-                snap_tol = 150.0  # metres
-                link_ids_list = list(ds_pts.keys())
-                for a in link_ids_list:
-                    best_dist = float("inf")
-                    best_b: int | None = None
-                    for b in link_ids_list:
-                        if b == a or b not in us_pts:
-                            continue
-                        d = ds_pts[a].distance(us_pts[b])
-                        if d < snap_tol and d < best_dist:
-                            best_dist = d
-                            best_b = b
-                    if best_b is not None:
-                        edge = (a, best_b)
-                        if edge not in edge_set:
-                            edge_set.add(edge)
-                            G.add_edge(a, best_b)
-                            log.debug("topology snap: %d -> %d  (%.1f m)", a, best_b, best_dist)
+            _augment_topology_from_gpkg(G, edge_set, channels_gdf)
         except Exception as exc:
             log.warning("Spatial topology augmentation failed: %s", exc)
     else:
@@ -1090,6 +1243,148 @@ def _positive_int(value: object) -> int | None:
         return None
     return out if out > 0 else None
 
+
+def _outlet_link_id(stream_links: Path, px: float, py: float) -> int | None:
+    """Return the stream link ID at the snapped outlet pixel.
+
+    Returns None when the pixel falls outside the raster, is not on a
+    stream (value ≤ 0), or the read fails for any reason.
+    """
+    try:
+        with rasterio.open(stream_links) as src:
+            row, col = src.index(px, py)
+            row = max(0, min(src.height - 1, row))
+            col = max(0, min(src.width - 1, col))
+            val = int(src.read(1)[row, col])
+            return val if val > 0 else None
+    except Exception:
+        return None
+
+
+def _prune_disconnected_components(
+    graph: nx.DiGraph,
+    outlet_link_id: int | None,
+) -> tuple[nx.DiGraph, int, int]:
+    """Prune the routing graph to a single weakly-connected component.
+
+    Single-gauge delineation should produce one connected drainage basin.
+    Disconnected fragments are artefacts of raster/vector join mismatches
+    (short stream segments that leak through the watershed mask boundary).
+
+    Keeps the component containing ``outlet_link_id`` (the stream link at
+    the snapped outlet pixel).  Falls back to the largest component when
+    ``outlet_link_id`` is None or absent from the graph.
+
+    Returns:
+        (pruned_graph, n_nodes_pruned, n_components_removed)
+    """
+    if graph.number_of_nodes() == 0:
+        return graph, 0, 0
+
+    components = list(nx.weakly_connected_components(graph))
+    if len(components) == 1:
+        return graph, 0, 0
+
+    main_component: set | None = None
+    if outlet_link_id is not None and outlet_link_id in graph:
+        for comp in components:
+            if outlet_link_id in comp:
+                main_component = comp
+                break
+
+    if main_component is None:
+        main_component = max(components, key=len)
+
+    pruned = graph.subgraph(main_component).copy()
+    n_pruned = graph.number_of_nodes() - pruned.number_of_nodes()
+    n_removed_comps = len(components) - 1
+
+    if n_pruned > 0:
+        anchor = (
+            f"outlet link {outlet_link_id}"
+            if outlet_link_id is not None
+            else "largest component"
+        )
+        log.warning(
+            "Pruned %d isolated routing node(s) from %d disconnected component(s) "
+            "(kept %d-node component anchored to %s).",
+            n_pruned, n_removed_comps, pruned.number_of_nodes(), anchor,
+        )
+
+    return pruned, n_pruned, n_removed_comps
+
+
+def _prune_secondary_terminals(
+    graph: nx.DiGraph,
+    outlet_link_id: int | None,
+    max_secondary_fraction: float = 0.20,
+) -> tuple[nx.DiGraph, int]:
+    """Prune secondary terminal nodes and their exclusive upstream subgraphs.
+
+    After back-edge removal and disconnected-component pruning, the main
+    weakly-connected component may still contain multiple sink nodes (out_degree
+    == 0).  These secondary terminals arise from DEM-edge artefacts on flat
+    terrain: a small portion of the basin drains to the grid boundary rather than
+    the gauge outlet, and BreachDepressionsLeastCost / FillDepressions cannot
+    always remedy this.
+
+    Strategy:
+    - Identify the *primary* terminal: the sink that contains ``outlet_link_id``
+      in its upstream subgraph (falls back to the sink with the most ancestors).
+    - For each secondary sink, compute the set of nodes whose ONLY path to a
+      sink goes through that secondary sink (exclusive ancestors).
+    - If exclusive nodes < max_secondary_fraction × total nodes (default 20 %),
+      auto-prune them and log an INFO message.
+    - If any secondary sink's exclusive subgraph is >= 20 % of total, leave it
+      intact so the invariant check below can fire with a clear error.
+
+    Returns (pruned_graph, n_nodes_pruned).
+    """
+    sinks = [n for n in graph.nodes if graph.out_degree(n) == 0]
+    if len(sinks) <= 1:
+        return graph, 0
+
+    # Identify primary terminal.
+    primary: int | None = None
+    if outlet_link_id is not None and outlet_link_id in graph:
+        for sink in sinks:
+            if outlet_link_id in nx.ancestors(graph, sink) or outlet_link_id == sink:
+                primary = sink
+                break
+    if primary is None:
+        primary = max(sinks, key=lambda s: len(nx.ancestors(graph, s)))
+
+    primary_anc: set[int] = nx.ancestors(graph, primary) | {primary}
+    n_total = graph.number_of_nodes()
+    to_prune: set[int] = set()
+
+    for sink in sinks:
+        if sink == primary:
+            continue
+        secondary_anc: set[int] = nx.ancestors(graph, sink) | {sink}
+        exclusive: set[int] = secondary_anc - primary_anc
+        if not exclusive:
+            continue
+        frac = len(exclusive) / n_total
+        if frac < max_secondary_fraction:
+            to_prune |= exclusive
+            log.info(
+                "Pruning secondary routing terminal %s and %d exclusive upstream "
+                "node(s) (%.1f%% of %d total — DEM-edge artefact on flat terrain).",
+                sink, len(exclusive) - 1, frac * 100, n_total,
+            )
+        else:
+            log.warning(
+                "Secondary routing terminal %s has %d exclusive upstream nodes "
+                "(%.1f%% of total) — too large to auto-prune; invariant check will fire.",
+                sink, len(exclusive), frac * 100,
+            )
+
+    if not to_prune:
+        return graph, 0
+
+    pruned = graph.subgraph(set(graph.nodes) - to_prune).copy()
+    return pruned, len(to_prune)
 
 
 # ---------------------------------------------------------------------------

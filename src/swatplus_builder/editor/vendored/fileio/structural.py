@@ -1,11 +1,11 @@
 from .base import BaseFileModel, FileColumn as col
 from helpers import utils
-import database.project.structural as db
-import database.datasets.structural as db_datasets
+import _swatplus_db.project.structural as db
+import _swatplus_db.datasets.structural as db_datasets
 
-from database.project import base as project_base
-from database.datasets import base as datasets_base
-from database import lib as db_lib
+from _swatplus_db.project import base as project_base
+from _swatplus_db.datasets import base as datasets_base
+from _swatplus_db import lib as db_lib
 
 
 class Septic_str(BaseFileModel):
@@ -16,7 +16,7 @@ class Septic_str(BaseFileModel):
 
 	def read(self, database ='project'):
 		"""
-		Read a septic.str text file into the database.
+		Read a septic.str text file into the _swatplus_db.
 		:param database: project or datasets
 		:return:
 		"""
@@ -79,7 +79,7 @@ class Bmpuser_str(BaseFileModel):
 
 	def read(self, database ='project'):
 		"""
-		Read a bmpuser.str text file into the database.
+		Read a bmpuser.str text file into the _swatplus_db.
 		:param database: project or datasets
 		:return:
 		"""
@@ -122,7 +122,7 @@ class Filterstrip_str(BaseFileModel):
 
 	def read(self, database ='project'):
 		"""
-		Read a filterstrip.str text file into the database.
+		Read a filterstrip.str text file into the _swatplus_db.
 		:param database: project or datasets
 		:return:
 		"""
@@ -163,7 +163,7 @@ class Grassedww_str(BaseFileModel):
 
 	def read(self, database ='project'):
 		"""
-		Read a grassedww.str text file into the database.
+		Read a grassedww.str text file into the _swatplus_db.
 		:param database: project or datasets
 		:return:
 		"""
@@ -207,7 +207,7 @@ class Tiledrain_str(BaseFileModel):
 
 	def read(self, database ='project'):
 		"""
-		Read a tiledrain.str text file into the database.
+		Read a tiledrain.str text file into the _swatplus_db.
 		:param database: project or datasets
 		:return:
 		"""

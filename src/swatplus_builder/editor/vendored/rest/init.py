@@ -5,13 +5,13 @@ from playhouse.shortcuts import model_to_dict
 from peewee import *
 
 from .defaults import DefaultRestMethods, RestHelpers
-from database.project import init as db
-from database.project.soils import Nutrients_sol
-from database.project.simulation import Constituents_cs
-from database.project.hru_parm_db import Pesticide_pst, Pathogens_pth
-from database.project.salts import Salt_hru_ini_cs, Salt_module
-from database.project import base as project_base
-from database import lib as db_lib
+from _swatplus_db.project import init as db
+from _swatplus_db.project.soils import Nutrients_sol
+from _swatplus_db.project.simulation import Constituents_cs
+from _swatplus_db.project.hru_parm_db import Pesticide_pst, Pathogens_pth
+from _swatplus_db.project.salts import Salt_hru_ini_cs, Salt_module
+from _swatplus_db.project import base as project_base
+from _swatplus_db import lib as db_lib
 
 bp = Blueprint('init', __name__, url_prefix='/init')
 

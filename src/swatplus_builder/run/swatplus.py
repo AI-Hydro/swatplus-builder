@@ -43,14 +43,14 @@ Typical agent flow
 
 from __future__ import annotations
 
+import json
+import logging
 import os
 import re
 import shutil
 import subprocess
 import sys
 import time
-import json
-import logging
 from pathlib import Path
 
 from ..config import DEFAULT_SETTINGS, Settings
@@ -59,6 +59,7 @@ from ..types import SwatPlusProject, SwatPlusRun
 
 __all__ = [
     "BINARY_CANDIDATES",
+    "ENGINE_BIN_DIR",
     "engine_revision_from_outputs",
     "locate_binary",
     "parse_engine_revision",
@@ -236,11 +237,24 @@ _WELL_KNOWN_OUTPUTS: tuple[str, ...] = (
 # ---------------------------------------------------------------------------
 
 
+ENGINE_BIN_DIR: Path = Path("~/.swatplus_builder/bin").expanduser()
+"""User-local directory where ``swat setup engine`` installs the binary.
+
+Checked automatically by :func:`locate_binary` so agents and agentic
+platforms only need to call ``swat setup engine --path <binary>`` once after
+downloading the SWAT+ engine — no PATH or env-var changes required.
+"""
+
+
 def locate_binary(settings: Settings = DEFAULT_SETTINGS) -> Path:
     """Find the SWAT+ engine binary.
 
-    Resolution order: ``settings.swatplus_exe`` > ``$SWATPLUS_EXE`` env var >
-    :func:`shutil.which` over :data:`BINARY_CANDIDATES`.
+    Resolution order:
+
+    1. ``settings.swatplus_exe`` — explicit config override.
+    2. ``$SWATPLUS_EXE`` — environment variable.
+    3. ``~/.swatplus_builder/bin/`` — user-local install dir (``swat setup engine``).
+    4. ``shutil.which()`` over :data:`BINARY_CANDIDATES` — system PATH.
 
     Args:
         settings: Runtime settings; ``settings.swatplus_exe`` takes priority.
@@ -274,17 +288,24 @@ def locate_binary(settings: Settings = DEFAULT_SETTINGS) -> Path:
             )
         return p
 
-    # 3. PATH scan
+    # 3. user-local install dir (~/.swatplus_builder/bin/)
+    if ENGINE_BIN_DIR.is_dir():
+        for name in BINARY_CANDIDATES:
+            candidate = ENGINE_BIN_DIR / name
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                return candidate.resolve()
+
+    # 4. system PATH scan
     for name in BINARY_CANDIDATES:
         hit = shutil.which(name)
         if hit:
             return Path(hit).resolve()
 
     raise SwatBuilderExternalError(
-        "SWAT+ engine not found. Install it (see docs/ROADMAP.md) and "
-        "either export SWATPLUS_EXE=<path>, pass settings.swatplus_exe=<path>, "
-        "or place one of the engine filenames on $PATH.",
+        "SWAT+ engine not found. Run 'swat setup engine --path <binary>' "
+        "after downloading from https://swat.tamu.edu/software/plus/ .",
         candidates=list(BINARY_CANDIDATES),
+        engine_bin_dir=str(ENGINE_BIN_DIR),
         path=os.environ.get("PATH", ""),
     )
 
@@ -575,11 +596,11 @@ def clean_and_run_solver(
     else:
         try:
             exe_path = locate_binary()
-        except Exception:
+        except Exception as exc:
             raise SwatBuilderExternalError(
                 "SWAT+ engine not found. Set SWATPLUS_EXE or pass exe=<path>.",
                 txtinout_dir=str(txt),
-            )
+            ) from exc
 
     # 1. Delete stale outputs
     _stale_patterns = [
@@ -621,7 +642,7 @@ def clean_and_run_solver(
             if attempt < total_attempts:
                 time.sleep(max(0.0, float(retry_backoff_s)))
                 continue
-            raise last_error
+            raise last_error from exc
 
         # 3. Fail loudly on non-zero exit
         if rc != 0:

@@ -10,9 +10,12 @@ Design:
   calling agent, and any stray ``sys.exit`` the editor does is caught as a
   non-zero return code.
 * **Same interpreter, isolated sys.path.** The child uses ``sys.executable``
-  so it has our installed ``peewee`` etc. We prepend the vendored directory
-  to ``PYTHONPATH`` so the editor's ``from database.project import ...``
-  imports resolve, without polluting our own namespace.
+  so it has our installed ``peewee`` etc. We launch via ``python -c`` with an
+  inline bootstrap that calls ``sys.path.insert(0, vendored_dir)`` before any
+  import fires, then uses ``runpy.run_path`` to execute ``swatplus_api.py``.
+  The vendored SWAT+ Editor's internal package is named ``_swatplus_db/``
+  (renamed from upstream's ``database/``) so it can never clash with the PyPI
+  ``database`` package regardless of what is installed in the host environment.
 * **CWD = vendored dir.** The editor uses a mix of absolute paths (we pass
   those in as args) and relative paths (it sometimes writes logs next to
   itself). Running in the vendored dir avoids surprises.
@@ -47,9 +50,9 @@ import os
 import subprocess
 import sys
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Sequence
 
 from ..config import DEFAULT_SETTINGS, Settings
 from ..errors import SwatBuilderExternalError, SwatBuilderInputError
@@ -193,7 +196,17 @@ def _run(
     """Core subprocess invocation. All helpers below funnel through here."""
     require_available()
 
-    cmd = [sys.executable, str(_API_ENTRY), action, *extra_args]
+    # Use -c bootstrap so sys.path is patched *before* any module-level
+    # import fires.  PYTHONPATH alone can lose to conda/venv .pth files that
+    # inject site-packages first, causing the PyPI 'database' package (if
+    # installed) to shadow our vendored database/ subpackage.
+    _bootstrap = (
+        "import sys; "
+        f"sys.path.insert(0, {str(_VENDORED_DIR)!r}); "
+        "import runpy; "
+        f"runpy.run_path({str(_API_ENTRY)!r}, run_name='__main__')"
+    )
+    cmd = [sys.executable, "-c", _bootstrap, action, *extra_args]
     start = time.monotonic()
     try:
         proc = subprocess.run(

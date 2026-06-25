@@ -5,8 +5,8 @@ from playhouse.shortcuts import model_to_dict
 from peewee import *
 
 from .defaults import DefaultRestMethods, RestHelpers
-from database.project import hru_parm_db as db
-from database.datasets import hru_parm_db as ds
+from _swatplus_db.project import hru_parm_db as db
+from _swatplus_db.datasets import hru_parm_db as ds
 
 bp = Blueprint('db', __name__, url_prefix='/db')
 

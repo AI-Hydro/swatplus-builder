@@ -26,7 +26,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-import examples.real_basin_marsh_creek as demo
+import examples.single_basin_workflow as demo
 
 
 @dataclass
@@ -93,8 +93,17 @@ def parse_object_cnt(txtinout: Path) -> tuple[int | None, int | None]:
 
 
 def parse_terminal_channel_ids(txtinout: Path) -> set[int]:
+    """Return the channel object ids of terminal channels from chandeg.con.
+
+    A terminal channel is one with no downstream routing connection, encoded in
+    SWAT+ editor output as ``out_tot == 0`` (such rows omit the trailing
+    ``obj_typ/obj_id/hyd_typ/frac`` columns entirely). The returned ids are the
+    ``id`` column values, which match the ``unit`` column in channel_sd_day.txt
+    (NOT ``gis_id`` — the two diverge once a channel is dropped from the network).
+    """
     p = txtinout / "chandeg.con"
     if not p.exists():
+        print(f"[diag] chandeg.con NOT FOUND at {p}")
         return set()
     terminals: set[int] = set()
     col_idx: dict[str, int] | None = None
@@ -102,27 +111,34 @@ def parse_terminal_channel_ids(txtinout: Path) -> set[int]:
         parts = line.split()
         if not parts:
             continue
-        if "gis_id" in parts and "obj_typ" in parts:
+        if "id" in parts and "out_tot" in parts and "gis_id" in parts:
             col_idx = {c: i for i, c in enumerate(parts)}
             continue
         if col_idx is None:
-            if len(parts) >= 14 and parts[0].isdigit() and parts[13] == "out":
-                terminals.add(int(parts[0]))
+            continue
+        id_i = col_idx["id"]
+        out_i = col_idx["out_tot"]
+        if len(parts) <= max(id_i, out_i):
             continue
         try:
-            obj_typ = parts[col_idx["obj_typ"]]
-            if obj_typ != "out":
+            if not parts[id_i].isdigit():
                 continue
-            terminals.add(int(parts[col_idx["gis_id"]]))
-        except (KeyError, IndexError, ValueError):
+            if int(parts[out_i]) == 0:
+                terminals.add(int(parts[id_i]))
+        except (IndexError, ValueError):
             continue
+    print(f"[diag] chandeg.con parsed from {p}: terminal_ids={terminals}")
     return terminals
 
 
 def parse_terminal_flow_stats(txtinout: Path, terminal_ids: set[int]) -> tuple[int, int, float, float]:
     p = txtinout / "channel_sd_day.txt"
-    if not p.exists() or not terminal_ids:
+    if not terminal_ids:
+        print(f"[diag] terminal_ids empty — skipping channel_sd_day.txt")
         return 0, 0, 0.0, 0.0
+    if not p.exists():
+        print(f"[diag] channel_sd_day.txt NOT FOUND at {p}")
+        return 0, len(terminal_ids), 0.0, 0.0
 
     lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
     if len(lines) < 4:
@@ -130,7 +146,8 @@ def parse_terminal_flow_stats(txtinout: Path, terminal_ids: set[int]) -> tuple[i
 
     header = lines[1].split()
     if "unit" not in header or "flo_out" not in header:
-        return 0, 0, 0.0, 0.0
+        print(f"[diag] channel_sd_day.txt header missing 'unit'/'flo_out': {header[:10]}")
+        return 0, len(terminal_ids), 0.0, 0.0
 
     uidx = header.index("unit")
     fidx = header.index("flo_out")
@@ -147,9 +164,123 @@ def parse_terminal_flow_stats(txtinout: Path, terminal_ids: set[int]) -> tuple[i
         except ValueError:
             continue
 
+    nz = sum(1 for v in vals if v > 0)
+    print(
+        f"[diag] channel_sd_day.txt: found {len(vals)} rows for terminal_ids={terminal_ids},"
+        f" {nz} non-zero flo_out (max={max(vals) if vals else 0.0:.4g})"
+    )
     if not vals:
         return 0, len(terminal_ids), 0.0, 0.0
-    return sum(1 for v in vals if v > 0), len(terminal_ids), max(vals), (sum(vals) / len(vals))
+    return nz, len(terminal_ids), max(vals), (sum(vals) / len(vals))
+
+
+def write_engine_diag(txtinout: Path, site_dir: Path, terminal_ids: set[int]) -> None:
+    """Write a per-site engine diagnostic file for post-mortem analysis."""
+    lines: list[str] = [f"engine_diag for {site_dir.name}", ""]
+
+    # print.prt control row
+    prt = txtinout / "print.prt"
+    if prt.is_file():
+        prt_lines = prt.read_text(encoding="utf-8", errors="replace").splitlines()
+        lines.append("=== print.prt (lines 0-4) ===")
+        for i, ln in enumerate(prt_lines[:5]):
+            lines.append(f"  [{i}] {ln!r}")
+        chan_rows = [ln for ln in prt_lines if ln.strip().startswith(("channel ", "channel_sd"))]
+        lines.append(f"  channel/channel_sd rows: {chan_rows}")
+    else:
+        lines.append("print.prt: NOT FOUND")
+    lines.append("")
+
+    # time.sim
+    ts = txtinout / "time.sim"
+    if ts.is_file():
+        ts_lines = ts.read_text(encoding="utf-8", errors="replace").splitlines()
+        lines.append("=== time.sim ===")
+        for ln in ts_lines[:4]:
+            lines.append(f"  {ln!r}")
+    else:
+        lines.append("time.sim: NOT FOUND")
+    lines.append("")
+
+    # chandeg.con terminal rows
+    con = txtinout / "chandeg.con"
+    if con.is_file():
+        con_lines = con.read_text(encoding="utf-8", errors="replace").splitlines()
+        lines.append(f"=== chandeg.con terminal_ids={terminal_ids} ===")
+        hdr_row = next((ln for ln in con_lines if "out_tot" in ln.split()), None)
+        if hdr_row:
+            hdr = hdr_row.split()
+            id_i = hdr.index("id") if "id" in hdr else -1
+            out_i = hdr.index("out_tot") if "out_tot" in hdr else -1
+            gis_i = hdr.index("gis_id") if "gis_id" in hdr else -1
+            for ln in con_lines:
+                parts = ln.split()
+                if not parts or not parts[0].isdigit():
+                    continue
+                try:
+                    if id_i >= 0 and out_i >= 0 and int(parts[out_i]) == 0:
+                        lines.append(f"  TERMINAL: {ln.strip()[:120]}")
+                except (ValueError, IndexError):
+                    pass
+    else:
+        lines.append("chandeg.con: NOT FOUND")
+    lines.append("")
+
+    # weather-sta.cli: check station assignment
+    wsta = txtinout / "weather-sta.cli"
+    if wsta.is_file():
+        wsta_lines = wsta.read_text(encoding="utf-8", errors="replace").splitlines()
+        lines.append("=== weather-sta.cli ===")
+        for ln in wsta_lines[:4]:
+            lines.append(f"  {ln!r}")
+        # Check if .pcp file referenced by station exists
+        if len(wsta_lines) >= 3:
+            sta_parts = wsta_lines[2].split()
+            sta_name = sta_parts[0] if sta_parts else "?"
+            pcp = txtinout / f"{sta_name}.pcp"
+            tmp = txtinout / f"{sta_name}.tmp"
+            lines.append(f"  station={sta_name!r}  .pcp exists={pcp.is_file()}  .tmp exists={tmp.is_file()}")
+            if pcp.is_file():
+                pcp_sample = pcp.read_text(encoding="utf-8", errors="replace").splitlines()
+                lines.append(f"  .pcp lines[0-3]: {pcp_sample[:4]}")
+    else:
+        lines.append("weather-sta.cli: NOT FOUND")
+    lines.append("")
+
+    # channel_sd_day.txt: first few rows for terminal unit
+    csd = txtinout / "channel_sd_day.txt"
+    if csd.is_file():
+        csd_lines = csd.read_text(encoding="utf-8", errors="replace").splitlines()
+        lines.append(f"=== channel_sd_day.txt (total lines={len(csd_lines)}) ===")
+        lines.append(f"  header: {csd_lines[1][:120] if len(csd_lines) > 1 else 'MISSING'!r}")
+        hdr = csd_lines[1].split() if len(csd_lines) > 1 else []
+        uidx = hdr.index("unit") if "unit" in hdr else -1
+        fidx = hdr.index("flo_out") if "flo_out" in hdr else -1
+        shown = 0
+        if uidx >= 0 and fidx >= 0:
+            for ln in csd_lines[3:]:
+                parts = ln.split()
+                if len(parts) <= max(uidx, fidx):
+                    continue
+                try:
+                    if int(parts[uidx]) in terminal_ids:
+                        lines.append(f"  unit={parts[uidx]} flo_out={parts[fidx]} | {ln.strip()[:80]}")
+                        shown += 1
+                        if shown >= 5:
+                            lines.append("  ... (first 5 terminal rows shown)")
+                            break
+                except (ValueError, IndexError):
+                    continue
+        if shown == 0:
+            lines.append(f"  (no rows found for terminal_ids={terminal_ids})")
+            # Show first 3 data rows to see what units exist
+            for ln in csd_lines[3:6]:
+                lines.append(f"  sample: {ln.strip()[:120]}")
+    else:
+        lines.append("channel_sd_day.txt: NOT FOUND")
+
+    diag_path = site_dir / "engine_diag.txt"
+    diag_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def read_optional_counts(run_dir: Path) -> tuple[int | None, int | None, int | None, int | None]:
@@ -259,7 +390,7 @@ def run_site(
         "timestamp_utc": now_utc(),
         "iteration": usgs_id,
         "hypothesis": "Current pipeline should run end-to-end on an unseen basin with physically connected channel routing.",
-        "action_taken": "Start full real-basin run using examples.real_basin_marsh_creek main() with dynamic NLDI area guard.",
+        "action_taken": "Start full real-basin run using examples.single_basin_workflow main() with dynamic NLDI area guard.",
         "evidence": "Run started",
         "result": "in_progress",
         "next_step": "Compute basin area and launch pipeline",
@@ -292,6 +423,7 @@ def run_site(
         object_out, _lcha = parse_object_cnt(txtinout)
         terminal_ids = parse_terminal_channel_ids(txtinout)
         nz, nt, vmax, vmean = parse_terminal_flow_stats(txtinout, terminal_ids)
+        write_engine_diag(txtinout, site_dir, terminal_ids)
         n_subbasins, n_channels, n_terminals, n_hrus = read_optional_counts(site_dir)
         eval_diag = load_eval_diagnostics(site_dir)
         metrics = eval_diag.get("metrics", {}) if isinstance(eval_diag.get("metrics"), dict) else {}

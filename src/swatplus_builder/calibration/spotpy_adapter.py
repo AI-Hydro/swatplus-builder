@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import random
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Callable
 
 from .. import __version__
 from ..artifacts import (
@@ -20,7 +20,6 @@ from ..artifacts import (
 )
 from ..output.metadata import try_git_sha
 from ..params import get_parameter, validate_value
-
 
 ObjectiveFn = Callable[[dict[str, float]], dict[str, float]]
 

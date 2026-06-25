@@ -1,10 +1,10 @@
 from .base import BaseFileModel, FileColumn as col
 from peewee import *
 from helpers import utils
-import database.project.soils as db
-import database.datasets.soils as db_ds
-from database.project import base as project_base
-from database.datasets import base as datasets_base
+import _swatplus_db.project.soils as db
+import _swatplus_db.datasets.soils as db_ds
+from _swatplus_db.project import base as project_base
+from _swatplus_db.datasets import base as datasets_base
 
 
 class Nutrients_sol(BaseFileModel):

@@ -1,10 +1,10 @@
 from .base import BaseFileModel, FileColumn as col
 from peewee import *
 from helpers import utils
-from database.project import soils
-from database.project.simulation import Constituents_cs
-from database.project.salts import Salt_hru_ini_cs, Salt_module
-import database.project.init as db
+from _swatplus_db.project import soils
+from _swatplus_db.project.simulation import Constituents_cs
+from _swatplus_db.project.salts import Salt_hru_ini_cs, Salt_module
+import _swatplus_db.project.init as db
 
 
 class Plant_ini(BaseFileModel):

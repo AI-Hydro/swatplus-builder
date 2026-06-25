@@ -4,6 +4,7 @@ from datetime import date
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from swatplus_builder.calibration.calibrator import (
     BackendRequest,
@@ -419,3 +420,64 @@ def test_metric_parity_uses_authoritative_rerun_when_outputs_are_flat(
     )
     log = pd.read_csv(parity_csv)
     assert log["metric_source"].iloc[0] == "evaluate_run_real_objective_rerun"
+
+
+# ---------------------------------------------------------------------------
+# pySWATPlus compatibility contract
+# ---------------------------------------------------------------------------
+
+
+def test_pyswatplus_compatible_constant_exists() -> None:
+    """The supported-upto constant is defined and has the expected shape."""
+    import swatplus_builder.calibration.calibrator as mod
+
+    assert hasattr(mod, "_PY_SWATPLUS_SUPPORTED_UPTO")
+    ver = mod._PY_SWATPLUS_SUPPORTED_UPTO
+    assert isinstance(ver, tuple) and len(ver) == 3
+    assert all(isinstance(v, int) for v in ver)
+    assert ver > (1, 3, 0), "should target at least 1.3.x"
+
+
+def test_assert_pyswatplus_compatible_passes_with_real_module() -> None:
+    """Assertion should pass when applied against the installed pySWATPlus module.
+
+    This is a smoke test: if pySWATPlus is not installed (optional dep), skip.
+    """
+    import swatplus_builder.calibration.calibrator as mod
+
+    try:
+        import pySWATPlus
+    except ImportError:
+        pytest.skip("pySWATPlus not installed (optional dep)")
+
+    # Should not raise.
+    mod._assert_pyswatplus_compatible(pySWATPlus)
+
+
+def test_assert_pyswatplus_compatible_rejects_broken_module() -> None:
+    """Assertion should raise RuntimeError when an expected symbol is missing."""
+    import swatplus_builder.calibration.calibrator as mod
+
+    class _BrokenModule:
+        pass
+
+    with pytest.raises(RuntimeError, match="pySWATPlus API contract mismatch"):
+        mod._assert_pyswatplus_compatible(_BrokenModule())
+
+
+def test_assert_pyswatplus_compatible_reports_missing_submodule() -> None:
+    """Assertion lists all missing symbols, not just the first one."""
+    import swatplus_builder.calibration.calibrator as mod
+
+    class _PartialModule:
+        pass
+
+    with pytest.raises(RuntimeError) as exc:
+        mod._assert_pyswatplus_compatible(_PartialModule())
+    msg = str(exc.value)
+    assert "missing" in msg
+    # Should mention the top-level modules that are absent
+    assert "pySWATPlus.utils" in msg
+    assert "pySWATPlus.cpu" in msg
+    assert "pySWATPlus.txtinout_reader" in msg
+    assert "pySWATPlus.calibration" in msg

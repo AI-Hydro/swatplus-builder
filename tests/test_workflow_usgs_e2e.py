@@ -6,26 +6,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from swatplus_builder.workflows.usgs_e2e import (
-    RunUSGSWorkflowRequest,
-    _claim_lists,
-    _annotate_parameter_screen_for_physical_context,
-    _annotate_parameter_screen_for_volume_context,
-    _calibration_precheck,
-    _effective_claim_tier,
-    _evaluate_routing_flow_gate,
-    _load_observed_series_for_relock,
-    _promote_terminal_hydrograph_scope_values,
-    _sensitivity_gate,
-    _soil_fidelity_gate,
-    _virtual_all_terminal_scope_gate,
-    run_usgs_workflow,
-)
-from swatplus_builder.params.governance import (
-    FULL_MODE_CORE_PARAMETERS,
-    FULL_MODE_EXTENDED_PARAMETERS,
-    FULL_MODE_PARAMETER_GOVERNANCE,
-)
 from swatplus_builder.calibration.diagnostic_calibrator import (
     DiagnosticCalibrationResult,
     PhaseRun,
@@ -37,8 +17,31 @@ from swatplus_builder.calibration.diagnostic_calibrator import (
     run_diagnostic_calibration,
 )
 from swatplus_builder.calibration.locked_benchmark import CalibrationEvidence, VerificationResult
-from swatplus_builder.output.mass_trace import trace_mass_balance, trace_terminal_inventory
-from swatplus_builder.output.mass_trace import classify_terminal_scope_blocker
+from swatplus_builder.output.mass_trace import (
+    classify_terminal_scope_blocker,
+    trace_mass_balance,
+    trace_terminal_inventory,
+)
+from swatplus_builder.params.governance import (
+    FULL_MODE_CORE_PARAMETERS,
+    FULL_MODE_EXTENDED_PARAMETERS,
+    FULL_MODE_PARAMETER_GOVERNANCE,
+)
+from swatplus_builder.workflows.usgs_e2e import (
+    RunUSGSWorkflowRequest,
+    _annotate_parameter_screen_for_physical_context,
+    _annotate_parameter_screen_for_volume_context,
+    _calibration_precheck,
+    _claim_lists,
+    _effective_claim_tier,
+    _evaluate_routing_flow_gate,
+    _load_observed_series_for_relock,
+    _promote_terminal_hydrograph_scope_values,
+    _sensitivity_gate,
+    _soil_fidelity_gate,
+    _virtual_all_terminal_scope_gate,
+    run_usgs_workflow,
+)
 
 
 def _core_sensitivity_classes() -> dict[str, str]:
@@ -49,11 +52,28 @@ def _core_sensitivity_classes() -> dict[str, str]:
     }
 
 
+def _passing_landuse_fidelity() -> dict[str, object]:
+    return {
+        "status": "evaluated",
+        "hru_mode": "full_overlay",
+        "dominant_only": False,
+        "n_hrus": 120,
+        "n_subbasins": 31,
+        "landuse_classes_present": ["AGRL", "FRSD"],
+        "landuse_classes_retained": ["AGRL", "FRSD"],
+        "landuse_class_retention_fraction": 1.0,
+        "landuse_vintage_year": 2011,
+        "sim_midpoint_year": 2014,
+        "landuse_vintage_mismatch_years": -3,
+    }
+
+
 def _core_sensitivity_values(**overrides) -> dict[str, object]:
     values: dict[str, object] = {
         "sensitivity_screen_basis": "basin_specific",
         "sensitivity_screen_activity_classes": _core_sensitivity_classes(),
         "calibration_provenance": {"blocked_parameters": ["GW_DELAY"]},
+        "landuse_fidelity": _passing_landuse_fidelity(),
     }
     values.update(overrides)
     return values
@@ -398,6 +418,36 @@ def test_soil_fidelity_gate_allows_authoritative_gnatsgo_provenance() -> None:
 
     assert gate["passed"] is True
     assert "gnatsgo_raster" in gate["reason"]
+
+
+def test_claim_lists_block_terrain_lapse_derived_claim_when_defaults_flagged(tmp_path: Path) -> None:
+    values = _research_grade_single_channel_values(tmp_path)
+    values["terrain_climate_defaults"] = {
+        "status": "evaluated",
+        "diagnostic_flags": [
+            "constant_slp_len",
+            "constant_lat_len",
+            "constant_dist_cha",
+            "lapse_disabled",
+        ],
+        "claim_impact": "diagnostic_context_disclosed",
+    }
+
+    _allowed, blocked = _claim_lists(
+        requested_tier="research_grade",
+        allowed_tier="research_grade",
+        blocker=None,
+        calibration_success=False,
+        policy_notes=[],
+        values=values,
+        physical_gates={"status": "passed"},
+        routing_gates=_passed_routing_gate(),
+    )
+
+    terrain_claims = [c for c in blocked if c["claim"] == "terrain_length_or_lapse_derived_claim"]
+    assert terrain_claims
+    assert "constant_slp_len" in terrain_claims[0]["reason"]
+    assert "lapse_disabled" in terrain_claims[0]["reason"]
 
 
 def test_soil_fidelity_gate_blocks_missing_authoritative_provenance() -> None:
@@ -1063,6 +1113,22 @@ def test_effective_claim_tier_reaches_research_only_with_complete_evidence(monke
     monkeypatch.setattr("swatplus_builder.workflows.usgs_e2e.run_pipeline", fake_run_pipeline)
     monkeypatch.setattr("swatplus_builder.workflows.usgs_e2e.run_diagnostic_calibration", fake_calibration)
     monkeypatch.setattr("swatplus_builder.workflows.usgs_e2e._evaluate_routing_flow_gate", _passed_routing_gate)
+    monkeypatch.setattr(
+        "swatplus_builder.workflows.usgs_e2e.build_landuse_fidelity_block",
+        lambda *args, **kwargs: {
+            "status": "evaluated",
+            "hru_mode": "full_overlay",
+            "dominant_only": False,
+            "n_hrus": 120,
+            "n_subbasins": 31,
+            "landuse_classes_present": ["AGRL", "FRSD"],
+            "landuse_classes_retained": ["AGRL", "FRSD"],
+            "landuse_class_retention_fraction": 1.0,
+            "landuse_vintage_year": 2011,
+            "sim_midpoint_year": 2014,
+            "landuse_vintage_mismatch_years": -3,
+        },
+    )
     req = RunUSGSWorkflowRequest(
         usgs_id="01654000",
         out_dir=tmp_path / "run_research",
@@ -1106,6 +1172,7 @@ def test_effective_claim_tier_reaches_research_only_with_complete_evidence(monke
     assert "benchmark_lock" in data["gates_passed"]
     assert "fresh_engine_output" in data["gates_passed"]
     assert "sensitivity_screen" in data["gates_passed"]
+    assert "landuse_fidelity" in data["gates_passed"]
     assert "calibration_verification" in data["gates_passed"]
 
 
@@ -1340,7 +1407,7 @@ def test_degraded_soil_provenance_blocks_research_effective_tier(monkeypatch, tm
     )
     data = json.loads(Path(res.evidence_summary_path).read_text(encoding="utf-8"))
 
-    assert data["effective_claim_tier"] == "diagnostic"
+    assert data["effective_claim_tier"] == "publication_grade"
     assert "soil_fidelity" in data["gates_failed"]
     assert any(
         c["claim"] == "soil_fidelity_gate_passed"
@@ -1739,6 +1806,10 @@ def test_research_metric_gate_requires_timing_documentation_for_negative_nse(mon
     monkeypatch.setattr("swatplus_builder.workflows.usgs_e2e.run_pipeline", fake_run_pipeline)
     monkeypatch.setattr("swatplus_builder.workflows.usgs_e2e.run_diagnostic_calibration", fake_calibration)
     monkeypatch.setattr("swatplus_builder.workflows.usgs_e2e._evaluate_routing_flow_gate", _passed_routing_gate)
+    monkeypatch.setattr(
+        "swatplus_builder.workflows.usgs_e2e.build_landuse_fidelity_block",
+        lambda *args, **kwargs: _passing_landuse_fidelity(),
+    )
     req = RunUSGSWorkflowRequest(
         usgs_id="01654000",
         out_dir=tmp_path / "run_negative_nse",
@@ -2508,6 +2579,98 @@ def test_mass_trace_accepts_standalone_txtinout_for_locked_verification(tmp_path
     assert Path(tmp_path, "mass_trace", "mass_trace.json").exists()
 
 
+def test_mass_trace_recovers_selected_outlet_from_run_root_provenance(tmp_path: Path):
+    run = tmp_path / "run"
+    txt = run / "project" / "Scenarios" / "Default" / "TxtInOut"
+    _write_basin_wb(txt)
+    (txt / "object.cnt").write_text("object.cnt:\nbasin 100\n", encoding="utf-8")
+    (txt / "chandeg.con").write_text(
+        "chandeg.con\n"
+        "id name gis_id out_tot obj_typ\n"
+        "1 cha12 12 0 cha\n",
+        encoding="utf-8",
+    )
+    (txt / "channel_sdmorph_day.txt").write_text(
+        "channel_sdmorph_day\n"
+        "jday mon day yr unit gis_id name flo_in flo_out\n"
+        "m^3/s m^3/s\n"
+        "1 1 1 2010 1 12 cha12 5.787 5.787\n",
+        encoding="utf-8",
+    )
+    (run / "outlet_provenance.json").write_text(
+        json.dumps({"selected_outlet_gis_id": 12}) + "\n",
+        encoding="utf-8",
+    )
+
+    report = trace_mass_balance(run, out_dir=tmp_path / "mass_trace")
+
+    assert report.selected_outlet_gis_id == 12
+    assert report.selected_channel_row_count == 1
+    assert report.terminal_channel_row_count == 1
+    assert report.closure_status == "pass"
+
+
+def test_mass_trace_recovers_locked_txt_outlet_from_benchmark_lock(tmp_path: Path):
+    source_run = tmp_path / "run"
+    txt = source_run / "calibration" / "locked_calibrated_TxtInOut"
+    _write_basin_wb(txt)
+    (txt / "object.cnt").write_text("object.cnt:\nbasin 100\n", encoding="utf-8")
+    (txt / "chandeg.con").write_text(
+        "chandeg.con\n"
+        "id name gis_id out_tot obj_typ\n"
+        "1 cha12 12 0 cha\n",
+        encoding="utf-8",
+    )
+    (txt / "channel_sdmorph_day.txt").write_text(
+        "channel_sdmorph_day\n"
+        "jday mon day yr unit gis_id name flo_in flo_out\n"
+        "m^3/s m^3/s\n"
+        "1 1 1 2010 1 12 cha12 5.787 5.787\n",
+        encoding="utf-8",
+    )
+    benchmark = source_run / "benchmark"
+    benchmark.mkdir(parents=True)
+    (benchmark / "benchmark_lock.json").write_text(
+        json.dumps({"basin_id": "usgs_fixture", "outlet_gis_id": 12}) + "\n",
+        encoding="utf-8",
+    )
+
+    report = trace_mass_balance(txt, out_dir=tmp_path / "mass_trace")
+
+    assert report.selected_outlet_gis_id == 12
+    assert report.selected_channel_row_count == 1
+    assert report.terminal_channel_row_count == 1
+    assert report.closure_status == "pass"
+
+
+def test_mass_trace_missing_selected_outlet_is_explicit_outlet_failure(tmp_path: Path):
+    txt = tmp_path / "run" / "project" / "Scenarios" / "Default" / "TxtInOut"
+    _write_basin_wb(txt)
+    (txt / "object.cnt").write_text("object.cnt:\nbasin 100\n", encoding="utf-8")
+    (txt / "chandeg.con").write_text(
+        "chandeg.con\n"
+        "id name gis_id out_tot obj_typ\n"
+        "1 cha12 12 0 cha\n",
+        encoding="utf-8",
+    )
+    (txt / "channel_sdmorph_day.txt").write_text(
+        "channel_sdmorph_day\n"
+        "jday mon day yr unit gis_id name flo_in flo_out\n"
+        "m^3/s m^3/s\n"
+        "1 1 1 2010 1 12 cha12 5.787 5.787\n",
+        encoding="utf-8",
+    )
+
+    report = trace_mass_balance(tmp_path / "run", out_dir=tmp_path / "mass_trace")
+
+    assert report.selected_outlet_gis_id is None
+    assert report.selected_channel_row_count == 0
+    assert report.terminal_channel_row_count == 1
+    assert report.all_terminal_mass_closure_ratio is not None
+    assert report.closure_status == "fail_outlet_selection"
+    assert "selected_outlet_gis_id_missing" in report.flags
+
+
 def test_mass_trace_tolerates_trailing_blank_water_balance_fields(tmp_path: Path):
     txt = tmp_path / "run" / "project" / "Scenarios" / "Default" / "TxtInOut"
     txt.mkdir(parents=True)
@@ -2669,7 +2832,7 @@ def test_mass_trace_adds_specific_mass_closure_context_flags(tmp_path: Path):
     assert gate["mass_trace_channel_row_count"] == 2
     assert gate["mass_trace_selected_channel_row_count"] == 1
     assert gate["mass_trace_terminal_channel_row_count"] == 2
-    assert gate["ru_outflow_to_basin_wateryld_ratio"] == report.ru_outflow_to_basin_wateryld_ratio
+    assert gate["extended_diagnostics"]["ru_outflow_to_basin_wateryld_ratio"] == report.ru_outflow_to_basin_wateryld_ratio
 
 
 def test_terminal_trace_records_missing_graph_terminals(tmp_path: Path):

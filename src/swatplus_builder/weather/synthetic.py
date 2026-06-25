@@ -30,7 +30,7 @@ import datetime as _dt
 import hashlib
 import math
 import random
-from typing import Iterable, Sequence
+from collections.abc import Iterable, Sequence
 
 from ..errors import SwatBuilderInputError
 from ..types import StationSeries, WeatherBundle, WeatherStation

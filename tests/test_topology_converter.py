@@ -1,6 +1,4 @@
 """Tests for full-mode topology converter (cha→sdc/chandeg)."""
-import hashlib
-import shutil
 from pathlib import Path
 
 import pytest

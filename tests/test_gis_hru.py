@@ -28,9 +28,8 @@ import geopandas as gpd
 import numpy as np
 import pytest
 import rasterio
-from rasterio.transform import Affine, from_origin
+from rasterio.transform import from_origin
 from shapely.geometry import LineString, Polygon, box
-
 
 _CRS_UTM = "EPSG:32617"
 
@@ -193,6 +192,24 @@ def mini_watershed(tmp_path):
 # ---------------------------------------------------------------------------
 # Happy path: dominant-HRU mode
 # ---------------------------------------------------------------------------
+
+
+class TestSlopeFromDem:
+    def test_slope_ignores_nodata_boundary_cliffs(self):
+        from swatplus_builder.gis.hru import _slope_percent_from_dem
+
+        dem = np.full((7, 7), np.nan, dtype="float64")
+        rows, cols = np.meshgrid(np.arange(1, 6), np.arange(1, 6), indexing="ij")
+        dem[1:6, 1:6] = 100.0 + rows + cols
+        transform = from_origin(0.0, 0.0, 10.0, 10.0)
+
+        slope = _slope_percent_from_dem(dem, transform)
+        finite = slope[np.isfinite(slope)]
+
+        assert finite.size > 0
+        assert float(finite.max()) == pytest.approx(np.sqrt(2.0) * 10.0)
+        assert np.isnan(slope[1, 1])
+        assert np.isnan(slope[5, 5])
 
 
 class TestDominantMode:
@@ -483,6 +500,33 @@ class TestFullOverlayMode:
             per_lsu.setdefault(h.lsu, []).append(h)
         assert len(per_lsu[1]) == 2
         assert len(per_lsu[2]) == 1
+
+    def test_declared_landuse_nodata_is_excluded(self, mini_watershed):
+        """Full-overlay mode must not turn raster-declared nodata into ``lu_*`` HRUs."""
+        from swatplus_builder.gis.hru import create_hrus, load_lsus_hrus
+
+        lu = np.full(mini_watershed["shape"], 10, dtype="int32")
+        lu[:, 3] = 20
+        lu[:, 4:] = 30
+        lu[0, 0] = 127
+        landuse_with_nodata = _write_raster(
+            Path(mini_watershed["landuse_raster"]).with_name("landuse_nodata_127.tif"),
+            lu,
+            nodata=127,
+            dtype="int32",
+        )
+
+        result = create_hrus(
+            mini_watershed["watershed"],
+            landuse_with_nodata,
+            mini_watershed["soil_raster"],
+            dominant_only=False,
+        )
+        _, hrus = load_lsus_hrus(result)
+        catalog = json.loads(result.catalog_path.read_text(encoding="utf-8"))
+
+        assert "lu_127" not in {h.landuse for h in hrus}
+        assert 127 in catalog["stats"]["landuse_nodata_values"]
 
     def test_min_fraction_filter_drops_minor_hru(self, mini_watershed):
         """LSU 1 has 8/32 = 25% of code 20. ``min_hru_fraction=0.3``

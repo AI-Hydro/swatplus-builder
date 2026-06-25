@@ -18,6 +18,8 @@ import pytest
 from swatplus_builder.errors import SwatBuilderPipelineError
 from swatplus_builder.gis.delineation import (
     _check_wbt_output,
+    _outlet_link_id,
+    _prune_disconnected_components,
     _prune_topology_to_valid_channels,
     check_topology_realism,
 )
@@ -274,3 +276,130 @@ class TestCheckPriority:
                 _stats(total_area_km2=0.1, n_subbasins=1, n_channels=5000),
                 expected_area_km2=3000.0,
             )
+
+
+# ---------------------------------------------------------------------------
+# _outlet_link_id — synthetic raster tests
+# ---------------------------------------------------------------------------
+
+class TestOutletLinkId:
+    def _make_stream_links_raster(self, tmp_path, values):
+        """Write a tiny 3×3 int32 raster with the given 2-D values array."""
+        import numpy as np
+        import rasterio
+        from rasterio.transform import from_bounds
+
+        arr = np.array(values, dtype=np.int32)
+        transform = from_bounds(0.0, 0.0, 3.0, 3.0, arr.shape[1], arr.shape[0])
+        path = tmp_path / "stream_links.tif"
+        with rasterio.open(
+            path, "w", driver="GTiff", height=arr.shape[0], width=arr.shape[1],
+            count=1, dtype="int32", crs="EPSG:32614", transform=transform,
+        ) as dst:
+            dst.write(arr, 1)
+        return path
+
+    def test_returns_link_id_at_stream_pixel(self, tmp_path):
+        # Centre pixel of a 3×3 raster = stream link 5
+        path = self._make_stream_links_raster(tmp_path, [
+            [0, 0, 0],
+            [0, 5, 0],
+            [0, 0, 0],
+        ])
+        # Centre pixel centre coordinates: x=1.5, y=1.5
+        result = _outlet_link_id(path, 1.5, 1.5)
+        assert result == 5
+
+    def test_returns_none_for_non_stream_pixel(self, tmp_path):
+        path = self._make_stream_links_raster(tmp_path, [
+            [0, 0, 0],
+            [0, 0, 0],
+            [0, 7, 0],
+        ])
+        result = _outlet_link_id(path, 1.5, 1.5)  # centre → 0
+        assert result is None
+
+    def test_returns_none_for_bad_path(self, tmp_path):
+        result = _outlet_link_id(tmp_path / "nonexistent.tif", 0.0, 0.0)
+        assert result is None
+
+    def test_clamps_to_raster_bounds(self, tmp_path):
+        # Far-out coordinates clamp to nearest valid pixel
+        path = self._make_stream_links_raster(tmp_path, [
+            [3, 0, 0],
+            [0, 0, 0],
+            [0, 0, 0],
+        ])
+        # Top-left pixel centre: x=0.5, y=2.5  (rasterio origin is top-left)
+        result = _outlet_link_id(path, 0.5, 2.5)
+        assert result == 3
+
+
+# ---------------------------------------------------------------------------
+# _prune_disconnected_components — graph pruning tests
+# ---------------------------------------------------------------------------
+
+class TestPruneDisconnectedComponents:
+    def _make_graph(self, edges, isolated_nodes=()):
+        import networkx as nx
+        G = nx.DiGraph()
+        G.add_edges_from(edges)
+        G.add_nodes_from(isolated_nodes)
+        return G
+
+    def test_single_component_is_no_op(self):
+        G = self._make_graph([(1, 2), (2, 3)])
+        pruned, n_pruned, n_comps = _prune_disconnected_components(G, outlet_link_id=3)
+        assert n_pruned == 0
+        assert n_comps == 0
+        assert set(pruned.nodes) == {1, 2, 3}
+
+    def test_keeps_component_containing_outlet(self):
+        # Two components: 1→2→3 (outlet=3) and 10→11
+        G = self._make_graph([(1, 2), (2, 3), (10, 11)])
+        pruned, n_pruned, n_comps = _prune_disconnected_components(G, outlet_link_id=3)
+        assert set(pruned.nodes) == {1, 2, 3}
+        assert n_pruned == 2
+        assert n_comps == 1
+
+    def test_falls_back_to_largest_component_when_outlet_absent(self):
+        # outlet_link_id=99 not in graph; largest component is 1→2→3→4→5
+        G = self._make_graph([(1, 2), (2, 3), (3, 4), (4, 5), (10, 11)])
+        pruned, n_pruned, n_comps = _prune_disconnected_components(G, outlet_link_id=99)
+        assert set(pruned.nodes) == {1, 2, 3, 4, 5}
+        assert n_pruned == 2
+
+    def test_falls_back_to_largest_when_outlet_is_none(self):
+        G = self._make_graph([(1, 2), (2, 3), (10, 11)])
+        pruned, n_pruned, _ = _prune_disconnected_components(G, outlet_link_id=None)
+        assert set(pruned.nodes) == {1, 2, 3}
+
+    def test_empty_graph_is_no_op(self):
+        import networkx as nx
+        G = nx.DiGraph()
+        pruned, n_pruned, n_comps = _prune_disconnected_components(G, outlet_link_id=None)
+        assert n_pruned == 0
+        assert n_comps == 0
+
+    def test_multiple_fragments_all_pruned(self):
+        # Main: 1→2→3  Fragments: 10, 20→21, 30→31→32
+        G = self._make_graph(
+            [(1, 2), (2, 3), (20, 21), (30, 31), (31, 32)],
+            isolated_nodes=[10],
+        )
+        pruned, n_pruned, n_comps = _prune_disconnected_components(G, outlet_link_id=3)
+        assert set(pruned.nodes) == {1, 2, 3}
+        assert n_pruned == 6   # 10, 20, 21, 30, 31, 32
+        assert n_comps == 3
+
+    def test_pruned_graph_has_correct_edges(self):
+        G = self._make_graph([(1, 2), (2, 3), (10, 11)])
+        pruned, _, _ = _prune_disconnected_components(G, outlet_link_id=2)
+        assert list(pruned.edges) == [(1, 2), (2, 3)]
+
+    def test_outlet_in_smaller_component_kept_not_largest(self):
+        # outlet=99 is in the 2-node component {99, 100}, not the larger {1,2,3,4}
+        G = self._make_graph([(1, 2), (2, 3), (3, 4), (99, 100)])
+        pruned, n_pruned, _ = _prune_disconnected_components(G, outlet_link_id=99)
+        assert set(pruned.nodes) == {99, 100}
+        assert n_pruned == 4

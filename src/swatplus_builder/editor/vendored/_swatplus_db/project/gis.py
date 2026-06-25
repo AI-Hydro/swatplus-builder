@@ -1,6 +1,6 @@
 from peewee import *
 from . import base
-from database import lib
+from _swatplus_db import lib
 
 
 class Gis_aquifers(base.BaseModel):

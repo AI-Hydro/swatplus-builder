@@ -35,7 +35,6 @@ from __future__ import annotations
 import logging
 import math
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +88,7 @@ def _parse_basin_wb_aa(tio: Path) -> dict[str, float]:
 # ── Individual checks ──────────────────────────────────────────────────────────
 
 def _check_zero_surq(wb: dict[str, float]) -> list[str]:
-    surq = wb.get("surq_gen", wb.get("surq", None))
+    surq = wb.get("surq_gen", wb.get("surq"))
     precip = wb.get("precip", 0.0)
     conditions = []
     if surq is not None and precip > 1.0 and surq < _SURQ_MIN_MM:
@@ -102,7 +101,7 @@ def _check_zero_surq(wb: dict[str, float]) -> list[str]:
 
 
 def _check_et_dominated(wb: dict[str, float]) -> list[str]:
-    et = wb.get("et", wb.get("et_act", None))
+    et = wb.get("et", wb.get("et_act"))
     precip = wb.get("precip", 0.0)
     conditions = []
     if et is not None and precip > 1.0:
@@ -147,7 +146,7 @@ def _check_mass_closure(wb: dict[str, float]) -> list[str]:
 
 def _check_skill(
     nse: float,
-    kge: Optional[float] = None,
+    kge: float | None = None,
     *,
     timing_limitation_documented: bool = False,
     timing_limitation_basis: str | None = None,
@@ -180,7 +179,7 @@ def _check_skill(
     return conditions
 
 
-def _check_pbias(pbias: Optional[float]) -> list[str]:
+def _check_pbias(pbias: float | None) -> list[str]:
     if pbias is None or not math.isfinite(pbias):
         return []
     if abs(pbias) <= _PBIAS_MAX:
@@ -241,9 +240,9 @@ def _dominant_condition(codes: list[str]) -> str | None:
 def check_water_balance(
     txtinout: Path | str,
     *,
-    nse: Optional[float] = None,
-    kge: Optional[float] = None,
-    pbias: Optional[float] = None,
+    nse: float | None = None,
+    kge: float | None = None,
+    pbias: float | None = None,
     strict_surq: bool = True,
     timing_limitation_documented: bool = False,
     timing_limitation_basis: str | None = None,
@@ -337,8 +336,8 @@ def assert_tier_allowed(
     txtinout: Path | str,
     tier: str,
     *,
-    nse: Optional[float] = None,
-    pbias: Optional[float] = None,
+    nse: float | None = None,
+    pbias: float | None = None,
 ) -> None:
     """Raise ``WaterBalanceGateError`` if claiming ``tier`` is not allowed.
 

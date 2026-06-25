@@ -10,26 +10,36 @@
   <img src="assets/images/swatplus-builder-readme-thumbnail.png" alt="swatplus-builder: Claim-governed SWAT+ workflows with auditable evidence" width="100%">
 </p>
 
-> **Calibrated SWAT+ models from a single gauge ID — with evidence you can audit.**
+> **A calibrated SWAT+ model from one gauge ID — and a machine-readable record of exactly what you may, and may not, claim about it.**
 
-`swatplus-builder` builds and calibrates SWAT+ hydrologic models in Python,
-starting from one USGS streamgage ID. It can be driven by a person or by an AI
-agent — and either way, the **software, not the operator, decides what each
-result is allowed to claim**, through runtime gates, provenance, locked reruns,
-and evidence-backed claim tiers.
+`swatplus-builder` turns a single USGS streamgage ID into a built, run, and
+calibrated SWAT+ hydrologic model — entirely in Python, with **no desktop GIS**.
+A person or an AI agent can drive it; either way the **software, not the
+operator, decides what each result is allowed to claim**, through runtime gates,
+provenance hashes, independently verified reruns, and explicit claim tiers.
 
-The whole pipeline runs in Python with **no desktop GIS** — no QGIS, PyQGIS, or
-the QSWATPlus plugin. GIS work uses WhiteboxTools + rasterio + geopandas, and
-the SQLite → `TxtInOut` translation uses the vendored
+### What makes it different
+
+Most modeling tools will happily report a number. This one reports a number
+**and the evidence that authorizes it** — and refuses to label a result
+"research-grade" until every gate (physical realism, soil provenance, routing
+closure, verified calibration) actually passes. A blocked claim is not a crash;
+it is *classified evidence*. That makes both the successes and the limitations
+of an automated build inspectable — the core property you need when an LLM agent,
+not a hydrologist, is at the controls.
+
+### Pipeline at a glance
+
+```
+USGS gauge ID
+   └─▶ delineate ─▶ HRUs ─▶ weather + soils ─▶ SWAT+ project ─▶ engine run
+          └─▶ lock benchmark ─▶ gated calibration ─▶ verified locked rerun
+                 └─▶ evidence bundle  { allowed claims · blocked claims · tier }
+```
+
+No QGIS, PyQGIS, or the QSWATPlus plugin: GIS uses WhiteboxTools + rasterio +
+geopandas, and the SQLite → `TxtInOut` translation uses the vendored
 [SWAT+ Editor Python API](https://github.com/swat-model/swatplus-editor).
-
-> **📚 Full documentation: <https://ai-hydro.github.io/swatplus-builder/>**
-> Concepts (claim governance, locked calibration, the evidence bundle), a user
-> guide, the agent/MCP surface, and a CLI/Python/schema reference.
->
-> **New here? Read [`QUICKSTART.md`](QUICKSTART.md).** It covers requirements,
-> install, engine/reference-DB bootstrap, the canonical one-command workflow,
-> and how to operate the pipeline through an AI agent (MCP).
 
 The canonical end-to-end path is a single command:
 
@@ -44,11 +54,16 @@ calibration, independently verifies a locked rerun, and writes a machine-readabl
 **evidence bundle** with explicit allowed/blocked claims. The package — not the
 agent — decides what may be claimed.
 
+> **📚 Full documentation: <https://ai-hydro.github.io/swatplus-builder/>** —
+> concepts (claim governance, locked calibration, the evidence bundle), a user
+> guide, the agent/MCP surface, and a CLI/Python/schema reference.
+> **New here?** Start with [`QUICKSTART.md`](QUICKSTART.md).
+
 ---
 
 ## Status
 
-**Alpha, v0.4.0** — locked-benchmark calibration, 13-tool agent (MCP) surface, container baseline.
+**Alpha, v0.7.4** — locked-benchmark calibration, 13-tool agent (MCP) surface, container baseline.
 
 - [x] Pure-Python GIS (WhiteboxTools, rasterio, geopandas)
 - [x] Automated SWAT+ project generation
@@ -82,13 +97,22 @@ The **lock → calibrate → verify** chain is the only scientifically defensibl
 ```
 1. swat lock-benchmark     # snapshot baseline metrics + alignment CSV
        ↓
-2. swat locked-calibrate   # real-engine DDS on CN2 + ALPHA_BF only
+2. swat locked-calibrate   # real-engine DDS against declared parameters
        ↓                   # (calls verify automatically unless --skip-verify)
 3. metrics reported        # delta NSE/KGE vs locked baseline, independently verified
 ```
 
 **Rules** (enforced by the toolchain):
-- Parameters are restricted to `CN2` and `ALPHA_BF` — no silent scope expansion.
+- Standalone `swat locked-calibrate` defaults to the historical `CN2,ALPHA_BF`
+  scope unless `--parameters` is supplied.
+- The governed end-to-end workflow uses basin-screened full-mode parameters
+  before calibration. Eligible controls currently include volume/process
+  partition parameters (`PET_CO`, `ESCO`, `EPCO`, `CN3_SWF`, `CN2`, `LATQ_CO`,
+  `PERCO`), baseflow/subsurface parameters (`LAT_TTIME`, `ALPHA_BF`,
+  `RCHG_DP`), and timing/channel/snow parameters (`SURLAG`, `CH_N2`, `CH_K2`,
+  `SFTMP`, `SMTMP`), with dead controls excluded.
+- No silent scope expansion: candidate parameters must be declared, screened,
+  recorded, and independently verified before claim use.
 - Calibrated metrics are always delta-reported against the locked baseline.
 - `verify_calibration` is mandatory — it re-runs the best solution independently to confirm reproducibility.
 - `evaluate_run` is the authoritative metric source for all reporting.
@@ -126,7 +150,12 @@ pip install "swatplus-builder[gis,hyriver]"
 pip install -e ".[all]"
 ```
 
-SWAT+ engine binary is **not** a pip dependency — bring your own `swatplus_exe` and mount it at runtime.
+SWAT+ engine binary is **not** a pip dependency. After downloading from
+[swat.tamu.edu/software/plus](https://swat.tamu.edu/software/plus/):
+```bash
+swat setup engine --path /path/to/swatplus_exe   # installs to ~/.swatplus_builder/bin/
+swat setup engine                                 # no args: print status / download help
+```
 
 ---
 
@@ -165,6 +194,10 @@ Volume mounts (configured in `docker-compose.yml`):
 ## CLI (`swat`)
 
 ```bash
+# One-time setup
+swat setup engine --path /path/to/swatplus_exe   # install binary to ~/.swatplus_builder/bin/
+swat setup engine                                 # show download instructions + current status
+
 # Version with git SHA
 swat version
 swat version --json   # machine-readable
@@ -222,7 +255,21 @@ swat mcp-check           # pre-flight: exits 0 if all imports + tools OK
 swat mcp                 # start stdio MCP server
 ```
 
-MCP client config (Claude Desktop / Cursor / any MCP host):
+MCP client config (Claude Desktop / Cursor / any MCP host) — no env vars needed
+when the engine is installed via `swat setup engine --path`:
+
+```json
+{
+  "mcpServers": {
+    "swatplus-builder": {
+      "command": "swat",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+If you installed the engine manually via `SWATPLUS_EXE` instead:
 
 ```json
 {
@@ -230,10 +277,7 @@ MCP client config (Claude Desktop / Cursor / any MCP host):
     "swatplus-builder": {
       "command": "swat",
       "args": ["mcp"],
-      "env": {
-        "SWATPLUS_EXE": "/usr/local/bin/swatplus_exe",
-        "SWATPLUS_BUILDER_ARTIFACTS": "/data/artifacts"
-      }
+      "env": { "SWATPLUS_EXE": "/path/to/swatplus_exe" }
     }
   }
 }
@@ -277,29 +321,11 @@ Use `swat inspect <run_path>` to view persisted metadata.
 
 ---
 
-## Agent-facing API
+## Python API
 
-```python
-from swatplus_builder.tools import (
-    build_watershed,
-    create_hrus,
-    generate_swat_project,
-    run_swat,
-)
-
-ws = build_watershed(
-    dem_path="data/dem.tif",
-    outlet=(-77.123, 41.456),
-    stream_threshold_cells=500,
-    workdir="runs/marsh_creek/",
-)
-
-hrus = create_hrus(ws, "data/nlcd_2019.tif", "data/gnatsgo_mukey.tif")
-project = generate_swat_project(ws, hrus, "data/weather/", "2000-01-01", "2010-12-31", "marsh_creek_v1")
-result = run_swat(project, threads=4)
-```
-
-Locked-benchmark API (for direct Python use):
+The canonical path is the CLI (`swat workflow run`) or MCP (`run_workflow` tool).
+For direct Python use, the locked-benchmark calibration API is the authoritative
+surface:
 
 ```python
 from swatplus_builder.calibration.locked_benchmark import (
@@ -319,7 +345,10 @@ rows = build_readiness_table(locks_root)
 
 ## Phase 3E calibration evidence baseline
 
-As of 2026-04-25, the locked real-engine calibration protocol has been run and independently verified on two USGS basins (CN2 + ALPHA_BF only, real-engine DDS):
+As of 2026-04-25, the historical locked real-engine calibration protocol had
+been run and independently verified on two USGS basins using the two-parameter
+`CN2,ALPHA_BF` scope. These rows are retained as a historical baseline, not as
+the current governed full-mode calibration claim:
 
 | Basin | Baseline NSE | Calibrated NSE | ΔNSE | Baseline KGE | Calibrated KGE | ΔKGE | Status |
 |-------|-------------|----------------|------|-------------|----------------|------|--------|
@@ -357,7 +386,7 @@ If you use swatplus-builder in your research, please cite:
                    modeling from a USGS gauge ID}},
   year         = {2026},
   publisher    = {Zenodo},
-  version      = {0.4.0},
+  version      = {0.7.4},
   doi          = {10.5281/zenodo.20650908},
   url          = {https://doi.org/10.5281/zenodo.20650908}
 }
@@ -373,4 +402,4 @@ reproducible. See [Citing & references](https://ai-hydro.github.io/swatplus-buil
 
 MIT. See [LICENSE](LICENSE).
 
-Vendored: [`swat-model/swatplus-editor`](https://github.com/swat-model/swatplus-editor) (Apache-2.0). Reference databases downloaded at install time from the `ai-hydro/swatplus-reference-data` mirror. pySWATPlus is GPL-3.0 and is an optional dependency — see `DECISIONS.md` for the licensing posture.
+Vendored: [`swat-model/swatplus-editor`](https://github.com/swat-model/swatplus-editor) (Apache-2.0). The SWAT+ reference databases are **not** bundled or auto-downloaded — you supply them from the SWAT+ Editor desktop app (see [Bootstrap](https://ai-hydro.github.io/swatplus-builder/getting-started/bootstrap/)). pySWATPlus is GPL-3.0 and is an optional dependency — see `DECISIONS.md` for the licensing posture.

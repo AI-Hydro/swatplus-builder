@@ -51,7 +51,34 @@ def test_rout_unit_def_negative_element_uses_own_routing_unit_id(tmp_path: Path)
     assert all(row.split()[12] == "2" for row in con_rows)
 
 
-def test_validate_fixes_rejects_duplicate_negative_routing_unit_elements(tmp_path: Path) -> None:
+def test_rout_unit_def_expands_full_overlay_hru_element_ranges(tmp_path: Path) -> None:
+    txt = _make_txtinout(tmp_path)
+    (txt / "rout_unit.def").write_text(
+        "rout_unit.def\n"
+        "id name elem_tot elements\n"
+        "1 rtu01 2 1 -1\n"
+        "2 rtu02 2 4 -2\n",
+        encoding="utf-8",
+    )
+    (txt / "rout_unit.ele").write_text(
+        "rout_unit.ele\n"
+        "id name obj_typ obj_id frac dlr\n"
+        "1 hru0001 hru 1 0.50 0\n"
+        "2 hru0002 hru 2 0.25 0\n"
+        "3 hru0003 hru 3 0.25 0\n"
+        "4 hru0004 hru 4 0.60 0\n"
+        "5 hru0005 hru 5 0.40 0\n",
+        encoding="utf-8",
+    )
+
+    apply_full_routing_fixes(txt)
+
+    rows = (txt / "rout_unit.def").read_text(encoding="utf-8").splitlines()[2:]
+    assert rows[0].split() == ["1", "rtu01", "4", "1", "2", "3", "-1"]
+    assert rows[1].split() == ["2", "rtu02", "3", "4", "5", "-2"]
+
+
+def test_validate_fixes_rejects_wrong_negative_routing_unit_element(tmp_path: Path) -> None:
     txt = _make_txtinout(tmp_path)
     (txt / "rout_unit.def").write_text(
         "rout_unit.def\n"
@@ -68,7 +95,7 @@ def test_validate_fixes_rejects_duplicate_negative_routing_unit_elements(tmp_pat
         encoding="utf-8",
     )
 
-    with pytest.raises(RoutingFixError, match="duplicate negative sdc elements"):
+    with pytest.raises(RoutingFixError, match="expected own negative sdc element -2"):
         _validate_fixes(txt)
 
 

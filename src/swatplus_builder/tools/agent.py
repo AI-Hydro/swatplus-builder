@@ -48,12 +48,25 @@ def build_watershed(
         :class:`~swatplus_builder.types.WatershedResult` — paths to all artifacts.
         Validation metrics are logged; the result is attached as ``result.stats["validation_*"]``.
     """
-    from ..gis.delineation import delineate as _delineate
-    from ..gis.validate import validate_watershed
+    from ..errors import SwatBuilderExternalError, SwatBuilderInputError
+
+    # Validate input before importing the heavy GIS stack so bad paths and
+    # missing-extra installs fail fast with typed, actionable errors.
+    if not Path(dem_path).is_file():
+        raise SwatBuilderInputError(f"DEM not found: {dem_path}")
+    try:
+        from ..gis.delineation import delineate as _delineate
+        from ..gis.validate import validate_watershed
+    except ImportError as exc:
+        raise SwatBuilderExternalError(
+            "The GIS stack is required for build_watershed. "
+            "Install it with: pip install 'swatplus-builder[gis]'."
+        ) from exc
 
     # Resolve workdir
     if workdir is None:
-        import hashlib, json
+        import hashlib
+        import json
         key = json.dumps({"dem": str(dem_path), "outlet": str(outlet)}, sort_keys=True)
         h = hashlib.sha256(key.encode()).hexdigest()[:12]
         workdir = settings.workdir_base / f"run_{h}"
@@ -116,31 +129,6 @@ def create_hrus(
         slope_bands=slope_bands,
         settings=settings,
     )
-
-
-def generate_swat_project(
-    watershed: WatershedResult,
-    hrus: HRUResult,
-    weather_dir: Path | str,
-    *,
-    sim_start: str,
-    sim_end: str,
-    project_name: str,
-    settings: Settings = DEFAULT_SETTINGS,
-) -> SwatPlusProject:
-    """Agent tool: build a complete SWAT+ project (SQLite + TxtInOut).
-
-    Orchestration (see docs/ARCHITECTURE.md §3 for the diagram):
-
-        1. db.project.create_project_db
-        2. db.writer.write_all         (gis_* tables)
-        3. editor.api.create_database
-        4. editor.api.import_gis
-        5. editor.api.import_weather   (wgn + observed)
-        6. editor.api.write_files
-    """
-    # TODO(phase1): implement
-    raise NotImplementedError("tools.generate_swat_project is a Phase 1 deliverable.")
 
 
 def run_swat(

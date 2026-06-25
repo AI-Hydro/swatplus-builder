@@ -17,7 +17,6 @@ from swatplus_builder.calibration.locked_benchmark import (
     _reflect_at_bounds,
 )
 
-
 # ---------------------------------------------------------------------------
 # _reflect_at_bounds
 # ---------------------------------------------------------------------------
@@ -54,7 +53,7 @@ def test_reflect_degenerate_bounds():
 
 
 def _bounds(names):
-    return {n: (0.0, 1.0) for n in names}
+    return dict.fromkeys(names, (0.0, 1.0))
 
 
 def test_propose_stays_in_bounds():
@@ -80,7 +79,7 @@ def test_propose_perturbs_at_least_one_dimension():
     names = ["a", "b"]
     best = {"a": 0.3, "b": 0.7}
     # late iteration -> low inclusion probability, but at least one must change
-    for i in range(1, 50):
+    for _ in range(1, 50):
         cand = _dds_propose(
             best,
             phase_parameters=names,
@@ -111,7 +110,7 @@ def test_propose_preserves_non_phase_parameters():
 def test_propose_selection_probability_decays():
     """Early iterations perturb more dimensions than late ones (statistically)."""
     names = [f"p{k}" for k in range(20)]
-    best = {n: 0.5 for n in names}
+    best = dict.fromkeys(names, 0.5)
     bounds = _bounds(names)
 
     def count_changed(iteration, n_iter, seed):

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import importlib
 import sys
-import types
 
 import pandas as pd
 import pytest
@@ -282,8 +281,8 @@ def test_fill_daymet_calendar_gaps_multiple_leap_years(monkeypatch, tmp_path):
 
 def test_validate_response_shape_too_many_raises_with_direction():
     """got > expected raises SwatBuilderPipelineError with direction=too_many."""
-    from swatplus_builder.weather.daymet import _validate_response_shape
     from swatplus_builder.types import WeatherStation
+    from swatplus_builder.weather.daymet import _validate_response_shape
 
     station = WeatherStation(name="test", lat=40.0, lon=-80.0, elev=200.0)
     df = pd.DataFrame({"x": range(100)})
@@ -293,8 +292,8 @@ def test_validate_response_shape_too_many_raises_with_direction():
 
 def test_validate_response_shape_too_few_raises_with_direction():
     """got < expected raises SwatBuilderPipelineError with direction=too_few."""
-    from swatplus_builder.weather.daymet import _validate_response_shape
     from swatplus_builder.types import WeatherStation
+    from swatplus_builder.weather.daymet import _validate_response_shape
 
     station = WeatherStation(name="test", lat=40.0, lon=-80.0, elev=200.0)
     df = pd.DataFrame({"x": range(4)})

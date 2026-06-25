@@ -1,9 +1,9 @@
 from .base import BaseFileModel, FileColumn as col
 from peewee import *
 from helpers import utils
-from database.project import init
-import database.project.reservoir as db
-from database.project.salts import Salt_res_ini, Salt_module
+from _swatplus_db.project import init
+import _swatplus_db.project.reservoir as db
+from _swatplus_db.project.salts import Salt_res_ini, Salt_module
 
 
 class Reservoir_res(BaseFileModel):

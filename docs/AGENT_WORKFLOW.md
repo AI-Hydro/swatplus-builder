@@ -20,11 +20,15 @@ If policy fails, returns `status=needs_input` with `policy_issues`.
 
 ## 2) Run
 Command:
-`swat workflow run --usgs-id <id> --model-family full --start <YYYY-MM-DD> --end <YYYY-MM-DD> --warmup-years <N> --calibrate --claim-tier <tier> [--contract <path>]`
+`swat workflow run --usgs-id <id> --model-family full --start <YYYY-MM-DD> --end <YYYY-MM-DD> --warmup-years <N> --calibrate --claim-tier <tier> [--hru-mode dominant_only|full_overlay] [--min-hru-fraction <fraction>] [--contract <path>]`
 
 Research-grade CLI runs can pass accepted contract metadata directly with:
 `--contract-status accepted --accepted-by user` or
 `--contract-status accepted --accepted-by policy`.
+
+Research-grade land-use fidelity probes should request `--hru-mode full_overlay`
+and an explicit `--min-hru-fraction`; dominant-only HRUs remain the default
+first-run mode and are disclosed/gated as degraded land-use fidelity.
 
 Behavior:
 1. Enforces runtime claim policy from contract/status.

@@ -5,9 +5,9 @@ from playhouse.shortcuts import model_to_dict
 from peewee import *
 
 from .defaults import DefaultRestMethods, RestHelpers
-from database.project import change as db, connect, gis
-from database.project import base as project_base
-from database import lib as db_lib
+from _swatplus_db.project import change as db, connect, gis
+from _swatplus_db.project import base as project_base
+from _swatplus_db import lib as db_lib
 from helpers import table_mapper
 
 bp = Blueprint('change', __name__, url_prefix='/change')

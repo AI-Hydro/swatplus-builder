@@ -11,9 +11,9 @@ from typing import Protocol
 
 from pydantic import BaseModel, Field
 
+from .calibration.pyswatplus_runtime import ensure_pyswatplus_runtime
 from .errors import SwatBuilderExternalError, SwatBuilderInputError
 from .params import get_parameter
-from .calibration.pyswatplus_runtime import ensure_pyswatplus_runtime
 
 
 class SensitivityIndex(BaseModel):
@@ -70,7 +70,7 @@ class PySwatPlusSensitivityBackend:
         if hasattr(analyzer, "set_txtinout_dir"):
             analyzer.set_txtinout_dir(str(request.txtinout_dir))
         elif hasattr(analyzer, "txtinout_dir"):
-            setattr(analyzer, "txtinout_dir", str(request.txtinout_dir))
+            analyzer.txtinout_dir = str(request.txtinout_dir)
         else:
             raise SwatBuilderExternalError(
                 "pySWATPlus sensitivity adapter missing txtinout configuration surface"

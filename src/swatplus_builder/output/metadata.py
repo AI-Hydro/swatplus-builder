@@ -1,5 +1,6 @@
-from __future__ import annotations
 """Run metadata schema and persistence helpers."""
+
+from __future__ import annotations
 
 import hashlib
 import json

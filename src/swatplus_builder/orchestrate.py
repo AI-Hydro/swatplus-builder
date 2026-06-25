@@ -1,15 +1,15 @@
-from __future__ import annotations
 """End-to-End Orchestration Platform.
 
 Automates the entire SWAT+ workflow from a single USGS streamgage ID.
 """
 
-import time
+from __future__ import annotations
+
 import json
 import logging
-from pathlib import Path
-from typing import Dict, Any, Optional
 from datetime import datetime
+from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -25,7 +25,9 @@ def run_pipeline(
     model_family: str = "full",
     warmup_years: int = 3,
     allow_diagnostic_fallbacks: bool = False,
-) -> Dict[str, Any]:
+    hru_mode: str = "dominant_only",
+    min_hru_fraction: float = 0.0,
+) -> dict[str, Any]:
     """Execute the full end-to-end validation platform for a basin.
     
     Args:
@@ -58,6 +60,8 @@ def run_pipeline(
         "threads": threads,
         "model_family": model_family,
         "warmup_years": int(warmup_years),
+        "hru_mode_requested": hru_mode,
+        "min_hru_fraction_requested": float(min_hru_fraction),
         "status": "FAILED"
     }
 
@@ -74,6 +78,8 @@ def run_pipeline(
                 end_date=end_date,
                 warmup_years=warmup_years,
                 allow_diagnostic_fallbacks=allow_diagnostic_fallbacks,
+                hru_mode=hru_mode,
+                min_hru_fraction=min_hru_fraction,
             )
             run_config["build"] = build_result.to_dict()
             if not build_result.success:
@@ -116,7 +122,12 @@ def run_pipeline(
 
         from .calibration.locked_benchmark import lock_benchmark
         from .calibration.nwis import fetch_usgs_daily_q
+        from .output.eval import _terminal_ids_from_chandeg_con
         from .full_mode.routing_fixes import apply_full_routing_fixes
+        from .full_mode.subsurface_priors import (
+            apply_subsurface_prior_correction,
+            finalize_subsurface_prior_correction,
+        )
         from .run.swatplus import clean_and_run_solver
 
         if model_family == "full":
@@ -151,6 +162,29 @@ def run_pipeline(
         if obs_series is None:
             obs_series = fetch_usgs_daily_q(usgs_id, start_date, end_date, obs_csv)
 
+        if model_family == "full":
+            subsurface_prior = apply_subsurface_prior_correction(
+                outdir,
+                txtinout,
+                obs_series=obs_series,
+            )
+            run_config["subsurface_prior_correction"] = subsurface_prior
+            run_config["subsurface_prior_correction_path"] = subsurface_prior.get("report_path")
+            run_config["subsurface_prior_correction_status"] = subsurface_prior.get("status")
+            if subsurface_prior.get("status") == "applied":
+                rc, stdout_tail, stderr_tail = clean_and_run_solver(
+                    txtinout,
+                    threads=threads,
+                    timeout_s=engine_timeout_s,
+                )
+                subsurface_prior = finalize_subsurface_prior_correction(
+                    outdir,
+                    txtinout,
+                    subsurface_prior,
+                )
+                run_config["subsurface_prior_correction"] = subsurface_prior
+                run_config["subsurface_prior_correction_status"] = subsurface_prior.get("status")
+
         sim_source = _find_sim_source_file(txtinout)
         if sim_source is None:
             run_config.update(
@@ -166,12 +200,19 @@ def run_pipeline(
                 json.dump(run_config, f, indent=2)
             return run_config
 
+        # Derive the terminal outlet from generated topology (chandeg.con)
+        # rather than hardcoding a possibly-invalid GIS ID.  Fall back to 1 if
+        # the file doesn't exist yet — lock_benchmark with outlet_policy="auto"
+        # will still discover the correct terminal.
+        terminal_ids = sorted(_terminal_ids_from_chandeg_con(txtinout))
+        outlet_gis_id = terminal_ids[0] if terminal_ids else 1
+
         lock = lock_benchmark(
             txtinout_dir=txtinout,
             obs_series=obs_series,
             out_dir=outdir,
             basin_id=f"usgs_{usgs_id}",
-            outlet_gis_id=1,
+            outlet_gis_id=outlet_gis_id,
             sim_source_file=sim_source.name,
         )
         metrics_path = Path(lock.benchmark_dir) / "metrics.json"
@@ -275,6 +316,10 @@ def _load_observed_series(obs_csv: Path) -> pd.Series | None:
     if df.empty:
         return None
     column = "obs" if "obs" in df.columns else "discharge" if "discharge" in df.columns else df.columns[0]
-    series = pd.Series(df[column].astype(float), index=pd.to_datetime(df.index).normalize(), name="obs")
+    series = pd.Series(
+        df[column].astype(float).to_numpy(),
+        index=pd.to_datetime(df.index).normalize(),
+        name="obs",
+    )
     series = series.dropna()
     return series if not series.empty else None

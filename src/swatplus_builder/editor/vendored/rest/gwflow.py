@@ -3,8 +3,8 @@ from playhouse.shortcuts import model_to_dict
 
 from .defaults import DefaultRestMethods, RestHelpers
 from .config import RequestHeaders as rh
-from database.project import gwflow, config, connect, setup, reservoir
-from database import lib
+from _swatplus_db.project import gwflow, config, connect, setup, reservoir
+from _swatplus_db import lib
 from fileio.connect import IndexHelper
 import sys
 

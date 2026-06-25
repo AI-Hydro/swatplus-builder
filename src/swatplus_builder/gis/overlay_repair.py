@@ -22,7 +22,6 @@ import rasterio
 import rasterio.warp
 from rasterio.enums import Resampling
 
-
 _LU_NODATA_SENTINELS: frozenset[int] = frozenset({0, 2_147_483_647, 255})
 _MUKEY_NODATA_SENTINELS: frozenset[int] = frozenset({0, 2_147_483_647})
 _DEFAULT_MAX_GAP_FRACTION = 0.15

@@ -25,7 +25,21 @@ which environment, rather than failing silently when the server spawns.
 
 ## Register it with an agent client
 
-Claude Desktop / Claude Code (`claude_desktop_config.json`) — **recommended** form:
+Claude Desktop / Claude Code (`claude_desktop_config.json`) — **recommended** form
+(when engine is installed via `swat setup engine --path`, no env vars needed):
+
+```json
+{
+  "mcpServers": {
+    "swatplus-builder": {
+      "command": "swat",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+If you installed the engine manually via `SWATPLUS_EXE` instead:
 
 ```json
 {
@@ -34,8 +48,7 @@ Claude Desktop / Claude Code (`claude_desktop_config.json`) — **recommended** 
       "command": "swat",
       "args": ["mcp"],
       "env": {
-        "SWATPLUS_EXE": "/usr/local/bin/swatplus_exe",
-        "SWATPLUS_BUILDER_ARTIFACTS": "/data/artifacts"
+        "SWATPLUS_EXE": "/path/to/swatplus_exe"
       }
     }
   }
@@ -139,17 +152,29 @@ actually parsed from the binary banner into its evidence bundle.
 | SWAT+ GitBook docs | [swatplus.gitbook.io/docs](https://swatplus.gitbook.io/docs) |
 | Source / releases | [github.com/swat-model](https://github.com/swat-model) |
 
-Once downloaded:
+Once downloaded, install with one command — no `PATH` or env-var setup needed:
+
+```bash
+swat setup engine --path /path/to/downloaded/swatplus_exe
+```
+
+This copies the binary to `~/.swatplus_builder/bin/` and is found automatically
+on every subsequent run. Run `swat setup engine` (no args) to see current status.
+
+```bash
+swat health                                  # should show "swatplus_exe: ✓"
+```
+
+**Alternative (manual):**
 
 ```bash
 chmod +x swatplus_exe
 export SWATPLUS_EXE=/path/to/swatplus_exe   # or place as 'swatplus' on PATH
-swat health                                  # should show "swatplus_exe: ✓"
 ```
 
-When the agent calls `swat health --json` and sees `"swatplus_exe": false`, it
-should tell the user to download a supported SWAT+ v2023 engine (rev 60.5.7 –
-61.0.2.61; latest recommended) from the link above and set `SWATPLUS_EXE`.
+When the agent calls `swat health --json` and sees `"swatplus_exe": false`,
+run `swat setup engine` (no args) for download instructions, then
+`swat setup engine --path <binary>` to install.
 
 ## Containers
 

@@ -11,7 +11,7 @@ runtime gates, provenance, diagnostics, and machine-readable evidence.
 ## Status
 
 Active hardening toward research-grade production pipeline. Last updated:
-2026-05-25.
+2026-06-17.
 
 ## Where To Read Next
 
@@ -29,8 +29,101 @@ Active hardening toward research-grade production pipeline. Last updated:
 
 ## Current State
 
-- Active phase: Phase 1, canonical workflow authority and locked calibration
-  auditability.
+- Active phase: 2026-06-15 scientific-correctness remediation plan. Phase A
+  slope nodata masking, Phase F.1/F4 spatial/water-balance visuals, Phase D1
+  land-use fidelity disclosure/gating, Phase F6 HRU/land-use composition
+  visualization, Phase F5 forcing-context visualization,
+  Phase D2 vintage-aware NLCD selection/provenance plumbing, Phase D3
+  terrain/climate-default disclosure, and Phase C full-overlay HRU decision
+  evidence,
+  and the first Phase B
+  water-balance/subsurface prior correction are implemented and verified on
+  real `01547700` artifacts. Phase B still needs broader basin validation
+  before it should be treated as generally proven.
+- Latest live remediation run:
+  `swatplus_runs/phaseE_01547700_clean_20260616_2000_2019/` completed a clean
+  20-year `01547700` workflow on 2026-06-16/17 with build, SWAT+ engine
+  execution, benchmark lock, gated calibration, locked verification, and plot
+  generation. The run was requested as `research_grade` with accepted contract
+  metadata, and the package allowed contract, fresh-output, benchmark-lock,
+  outlet-provenance, routing-flow, calibration-improvement, sensitivity, soil
+  fidelity, and locked-verification claims. It still kept
+  `effective_claim_tier=exploratory`: final verified metrics improved from
+  baseline (`NSE=0.0138`, `KGE=0.1127`, `PBIAS=7.18%`) to locked verification
+  (`NSE=0.1742`, `KGE=0.1538`, `PBIAS=-16.65%`), but research skill remains
+  below threshold; land-use fidelity remains degraded because dominant-only
+  HRUs retain 3 of 15 source land-use classes (`retention_fraction=0.20`);
+  and terrain/lapse-derived claims remain diagnostic-only because
+  `dist_cha` is constant and lapse corrections are disabled over about
+  `496 m` relief. The subsurface prior was applied honestly:
+  pre-prior `WYLD/P=0.134` against observed `Q/P=0.453`, post-prior
+  `WYLD/P=0.509`; routing-flow gates passed with selected terminal GIS `29`.
+  The plot suite emitted spatial overview, forcing context, water balance, and
+  HRU/land-use composition figures. Earlier prepared-artifact validations on
+  `03351500` and `01493500` remain useful negative controls showing the
+  subsurface prior is withheld when the package evidence points to ET-dominated
+  deficits rather than excessive percolation.
+- Authoritative objective-suite status as of 2026-06-17:
+  the summarize-only report has been regenerated from existing evidence with
+  the clean `01547700` run and fresher `01493500`/`03351500`/`02129000`
+  overrides. It still reports `research_grade_count=0/11`; blocker domains are
+  `science=6`, `provenance=3`, `diagnostics=2`; the target hypothesis remains
+  `not_supported_by_current_evidence`; and the production compliance audit is
+  `complete` (`17/17`). This is the current suite-level status; older embedded
+  `69/97`, `96/97`, or one-research-grade statements are historical context.
+- Phase C decision evidence now exists for the same real `01547700` F6
+  artifact at
+  `swatplus_runs/realtest_01547700_phaseF6_landuse_composition/reports/phaseC_full_overlay_threshold_probe_nodata_fixed.json`.
+  A full-overlay HRU nodata bug was fixed first: raster-declared land-use
+  nodata, including NLCD-style `127`, is now excluded from HRU combinations
+  and recorded in `hru_catalog.json`. The regenerated threshold sweep has no
+  `lu_127` retained class. For this basin, `min_hru_fraction=0.001` retains all
+  15 source land-use classes with `1871` HRUs in about `19.8 s`; no-filter
+  full overlay retains all 15 classes with `3320` HRUs in about `32.4 s`;
+  `0.005` is smaller (`858` HRUs) but retains only `11/15` classes. The
+  canonical workflow and MCP launcher now expose this as an explicit
+  `--hru-mode full_overlay --min-hru-fraction <fraction>` option for
+  research-grade land-use fidelity probes; the default HRU mode has not been
+  changed.
+- A real canonical full-overlay workflow has now been run through that surface:
+  `swatplus_runs/phaseC_01547700_full_overlay_20260617_2000_2019_nocal/`.
+  The run completed with `--hru-mode full_overlay --min-hru-fraction 0.001`
+  and `--no-calibrate`, producing `1876` HRUs across `31` subbasins and
+  retaining `14/15` source land-use classes (`retention_fraction=0.9333`;
+  missing `UCOM`). The first generated run exposed a package construction bug:
+  `rout_unit.def` referenced only one positive HRU element per routing unit,
+  so most full-overlay HRU elements in `rout_unit.ele` were disconnected from
+  the routing network. That bug produced the near-zero outlet hydrograph
+  (`PBIAS=-98.3%`) while still using the correct terminal outlet GIS `29`.
+  The routing fix now expands each routing unit to all owned HRU elements and
+  validates that every `rout_unit.ele` HRU appears exactly once in
+  `rout_unit.def`. A fixed-copy SWAT+ probe on the same full-overlay
+  `01547700` TxtInOut raised strict outlet GIS `29` simulated volume from
+  `217.8` to `10795.9` m3/s-days over the benchmark alignment and improved
+  baseline metrics to `NSE=0.0997`, `KGE=0.0772`, `PBIAS=-17.4%`. This
+  supersedes the earlier interpretation that the blocker was outlet/channel
+  mass-transfer alone. Full-overlay remains exploratory until the canonical
+  workflow is rerun and locked through the normal evidence path.
+- Full-overlay `01547700` calibration has been attempted against the locked
+  full-overlay benchmark. Direct `locked-calibrate` probes failed honestly in
+  the `volume` phase: baseline outlet metrics were about `NSE=-0.2556`,
+  `KGE=-0.4902`, `PBIAS=-98.33%`; no tested candidate passed the promotion
+  gate `abs(pbias) <= 30`. This means the package is calibrating, but claim
+  governance correctly refuses to promote a calibration while the outlet volume
+  evidence is invalid. The `locked-calibrate --json` failure path now returns
+  structured JSON errors, and locked sensitivity screening now writes live
+  `sensitivity_screen_progress.json` progress artifacts during long screens.
+- New clean builds now select the supported NLCD epoch nearest the simulation
+  midpoint and write `raw/nlcd_selection.json`; land-use fidelity, spatial
+  overview, and volume diagnostics read that selection instead of assuming
+  `nlcd_2021.tif`. Existing remediation runs that already used NLCD 2021 remain
+  historically valid evidence of their own run state.
+- D3 terrain/climate assumptions are now disclosed as evidence rather than
+  implied away. The real `01547700` F6 artifact has 62 topography rows,
+  `slp_len/lat_len` values of `10, 60, 121`, constant `dist_cha=121`, lapse
+  disabled (`lapse=0`, `plaps=0`, `tlaps=0`) over about `496 m` DEM relief, and
+  25 distributed weather stations. This blocks terrain/lapse-derived claims but
+  does not change hydrology.
 - Current canonical command:
 
 ```bash
@@ -449,6 +542,25 @@ swat workflow run \
   gate evaluation, so older high-fidelity rows such as `12031000` and
   `01493500` expose `gnatsgo_raster` provenance directly while genuinely
   degraded or missing provenance still fails `soil_fidelity`.
+  Calibration documentation has been reconciled with current implementation:
+  standalone `swat locked-calibrate` still defaults to the historical
+  `CN2,ALPHA_BF` scope, while the governed end-to-end workflow screens
+  calibration-eligible full-mode parameters and passes retained controls into
+  staged diagnostic phases before independent verification. Historical
+  two-parameter evidence remains a baseline only, not the current full-mode
+  claim.
+  The objective compliance audit has also been refreshed against the moved
+  workspace: it now accepts current objective-row `build_diagnostic_artifacts`
+  when the older single overlay-repair side artifact is absent, while still
+  requiring real artifact paths. The regenerated audit reports `complete`
+  (`17/17` checks).
+  A summarize-only Phase E refresh of the objective report was run from
+  existing evidence with explicit fresher overrides for `01547700`, `01493500`,
+  `03351500`, and `02129000`. It did not launch new basin workflows. Current
+  objective status remains honest: `research_grade_count=0/11`; blocker domains
+  are now `science=6`, `provenance=3`, `diagnostics=2`, showing that the
+  repaired-volume evidence shifted the failure explanation rather than
+  manufacturing a pass.
 - Next step: use the refreshed objective report to target the remaining
   engineering/science blockers: remaining physical volume/ET failures,
   low final skill after successful locked promotion, routed-flow warnings, and

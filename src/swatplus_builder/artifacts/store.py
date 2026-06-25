@@ -17,8 +17,8 @@ from __future__ import annotations
 import json
 import shutil
 from abc import ABC, abstractmethod
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 from .models import (
     ArtifactMetadata,

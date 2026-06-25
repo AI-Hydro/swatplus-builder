@@ -56,7 +56,7 @@ not assertion.*
   formally versioned schema; consume it defensively for now.
 
 !!! note "Version"
-    The current packaged version is `0.4.0`
+    The current packaged version is `0.7.2`
     (`pyproject.toml` / `swatplus_builder.__version__`).
 
 ## The contribution, stated precisely

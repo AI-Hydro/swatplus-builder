@@ -22,7 +22,7 @@ Drives the full ``swatplus-builder`` pipeline against **real data**:
 
 Run:
 
-    python examples/build_real_basin.py /tmp/usgs_basin
+    python examples/usgs_basin_workflow.py /tmp/usgs_basin
 
 Every stage prints the artifact paths it produced so you can inspect
 them on disk.
@@ -42,12 +42,17 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import math
 import os
 import random
 import shutil
 import sys
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from swatplus_builder.types import SoilProfile
 
 logging.basicConfig(
     level=logging.INFO,
@@ -65,6 +70,7 @@ EXPECTED_AREA_KM2 = float(
 SIM_START = "2015-01-01"
 SIM_END = "2015-12-31"
 DEM_RESOLUTION_M = 30
+DEM_BUFFER_M = float(os.environ.get("SWATPLUS_DEM_BUFFER_M", "5000"))
 
 # Resolve binary location
 BIN_DIR = Path(__file__).parent.parent / "bin"
@@ -383,7 +389,7 @@ def _load_external_soil_profiles(json_path: Path, mukeys: list[int]):
 def _valid_hyd_group(value: object) -> str:
     if value is None:
         return "D"
-    if isinstance(value, float) and np.isnan(value):
+    if isinstance(value, float) and math.isnan(value):
         return "D"
     code = str(value).strip().upper()
     if code in {"", "NAN", "NONE", "NULL"}:
@@ -398,7 +404,7 @@ def _normalize_soil_profiles_hydgrp(profiles):
         raw = getattr(p, "hyd_grp", None)
         norm = _valid_hyd_group(raw)
         if raw != norm:
-            setattr(p, "hyd_grp", norm)
+            p.hyd_grp = norm
             fixed += 1
     return fixed
 
@@ -452,13 +458,37 @@ def fetch_basin_boundary(usgs_id: str, out_gpkg: Path, *, dem_path: Path | None 
     return basin, provenance_dict
 
 
-def fetch_dem(basin, out_tif: Path, resolution_m: int = 30):
-    """Fetch 3DEP DEM over ``basin`` polygon as a GeoTIFF."""
+def fetch_dem(
+    basin,
+    out_tif: Path,
+    resolution_m: int = 30,
+    *,
+    buffer_m: float = 5000.0,
+):
+    """Fetch a 3DEP DEM over a buffered rectangular basin extent.
+
+    D8 delineation needs terrain beyond the reference polygon so cells near a
+    clipped edge can follow their natural drainage path. The authoritative
+    basin polygon remains unchanged and is used later for area/IoU validation.
+    """
     import py3dep
 
-    geom = basin.geometry.iloc[0]
     out_tif.parent.mkdir(parents=True, exist_ok=True)
     try:
+        import geopandas as gpd
+        from shapely.geometry import box
+
+        basin_projected = basin.to_crs("EPSG:5070")
+        minx, miny, maxx, maxy = basin_projected.total_bounds
+        request_box = box(
+            minx - buffer_m,
+            miny - buffer_m,
+            maxx + buffer_m,
+            maxy + buffer_m,
+        )
+        geom = gpd.GeoSeries([request_box], crs="EPSG:5070").to_crs("EPSG:4326").iloc[0]
+        reference_area_km2 = float(basin_projected.geometry.area.sum() / 1e6)
+        request_area_km2 = float(request_box.area / 1e6)
         dem = py3dep.get_dem(geom, resolution=resolution_m, crs="EPSG:4326")
     except Exception as exc:
         cached = _find_cached_dem(out_tif)
@@ -472,6 +502,9 @@ def fetch_dem(basin, out_tif: Path, resolution_m: int = 30):
                     "source": "local_authoritative_3dep_cache",
                     "cached_dem": str(cached),
                     "resolution_m": resolution_m,
+                    "dem_buffer_m_requested": buffer_m,
+                    "request_shape": "buffered_bounding_box",
+                    "cache_buffer_verified": False,
                     "reason": f"py3dep_3dep_fetch_failed: {exc}",
                 },
                 indent=2,
@@ -491,6 +524,10 @@ def fetch_dem(basin, out_tif: Path, resolution_m: int = 30):
             {
                 "source": "usgs_3dep_py3dep",
                 "resolution_m": resolution_m,
+                "dem_buffer_m": buffer_m,
+                "request_shape": "buffered_bounding_box",
+                "reference_area_km2": reference_area_km2,
+                "request_area_km2": request_area_km2,
             },
             indent=2,
         )
@@ -584,7 +621,7 @@ def _try_soilgrids_fallback(
     mukeys: list[int],
     outdir: Path,
     boundary_provenance: dict,
-) -> tuple[list["SoilProfile"], int]:
+) -> tuple[list[SoilProfile], int]:
     """Try SoilGrids v2.0 as a coarse soil fallback.
 
     Returns (profiles_list, failed_count).
@@ -724,9 +761,18 @@ def main(
     sim_start: str = SIM_START,
     sim_end: str = SIM_END,
     warmup_years: int = 0,
+    build_config: object = None,
 ):
     import json
 
+    from swatplus_builder.workflows.full_build import FullBuildConfig
+
+    if isinstance(build_config, FullBuildConfig):
+        cfg = build_config
+    else:
+        cfg = None
+
+    from swatplus_builder.calibration.nwis import fetch_usgs_daily_q
     from swatplus_builder.db.project import create_project_db, upsert_project_metadata
     from swatplus_builder.db.seed import seed_minimal_soils
     from swatplus_builder.db.writer import write_all
@@ -738,16 +784,11 @@ def main(
     from swatplus_builder.errors import SwatBuilderPipelineError
     from swatplus_builder.gis.delineation import delineate, resolve_usgs_outlet
     from swatplus_builder.gis.hru import create_hrus
+    from swatplus_builder.gis.landuse import select_nlcd_year_for_simulation
     from swatplus_builder.gis.overlay_repair import repair_overlay_inputs
     from swatplus_builder.gis.soil import extract_unique_mukeys, fetch_mukey_raster
     from swatplus_builder.gis.tables import build_tables
     from swatplus_builder.gis.validate import validate_watershed
-    from swatplus_builder.ref.bootstrap import ensure_datasets_db
-    from swatplus_builder.soil.writer import write_soils
-    from swatplus_builder.weather.daymet import fetch_daymet
-    from swatplus_builder.weather.gridmet import fetch_gridmet
-    from swatplus_builder.weather.writer import write_observed
-    from swatplus_builder.calibration.nwis import fetch_usgs_daily_q
     from swatplus_builder.output.eval import evaluate_run
     from swatplus_builder.output.metadata import (
         RunMetadata,
@@ -758,6 +799,10 @@ def main(
     )
     from swatplus_builder.output.plots.wrapper import generate_all_plots
     from swatplus_builder.soil.sda import fetch_sda_mukeys_for_geometry
+    from swatplus_builder.soil.writer import write_soils
+    from swatplus_builder.weather.daymet import fetch_daymet
+    from swatplus_builder.weather.gridmet import fetch_gridmet
+    from swatplus_builder.weather.writer import write_observed
 
     outdir.mkdir(parents=True, exist_ok=True)
     t_all = time.time()
@@ -791,18 +836,42 @@ def main(
     _section(f"2/11 DEM {DEM_RESOLUTION_M} m from USGS 3DEP")
     dem_tif = outdir / "raw" / "dem.tif"
     t0 = time.time()
-    _, n = _with_retries("fetch_dem", fetch_dem, basin, dem_tif, resolution_m=DEM_RESOLUTION_M)
+    _, n = _with_retries(
+        "fetch_dem",
+        fetch_dem,
+        basin,
+        dem_tif,
+        resolution_m=DEM_RESOLUTION_M,
+        buffer_m=DEM_BUFFER_M,
+    )
     retry_attempts["fetch_dem"] = n
     _ok(f"dem.tif  ({dem_tif.stat().st_size / 1e6:.1f} MB)",
         elapsed=time.time() - t0)
 
     # 3. NLCD landuse
-    _section("3/11 NLCD 2021 landuse from MRLC")
-    nlcd_tif = outdir / "raw" / "nlcd_2021.tif"
+    nlcd_selection = select_nlcd_year_for_simulation(sim_start, sim_end)
+    nlcd_year = int(nlcd_selection["selected_year"])
+    _section(f"3/11 NLCD {nlcd_year} landuse from MRLC")
+    nlcd_tif = outdir / "raw" / f"nlcd_{nlcd_year}.tif"
+    nlcd_selection_path = outdir / "raw" / "nlcd_selection.json"
+    nlcd_selection_path.parent.mkdir(parents=True, exist_ok=True)
+    nlcd_selection_path.write_text(
+        json.dumps(
+            {
+                **nlcd_selection,
+                "source": "MRLC_NLCD_via_pygeohydro.nlcd_bygeom",
+                "raster_path": str(nlcd_tif),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     t0 = time.time()
-    _, n = _with_retries("fetch_nlcd", fetch_nlcd, basin, nlcd_tif, year=2021)
+    _, n = _with_retries("fetch_nlcd", fetch_nlcd, basin, nlcd_tif, year=nlcd_year)
     retry_attempts["fetch_nlcd"] = n
-    _ok(f"nlcd_2021.tif  ({nlcd_tif.stat().st_size / 1e6:.1f} MB)",
+    _ok(f"{nlcd_tif.name}  ({nlcd_tif.stat().st_size / 1e6:.1f} MB)",
         elapsed=time.time() - t0)
 
     # 4. Delineation (WhiteboxTools)
@@ -858,7 +927,9 @@ def main(
                 outlet=outlet,
                 workdir=outdir / "delin",
                 stream_threshold_cells=th,
-                expected_area_km2=EXPECTED_AREA_KM2 if EXPECTED_AREA_KM2 > 0 else None,
+                expected_area_km2=actual_area_km2,
+                dem_conditioning=dem_conditioning,
+                require_domain_margin=True,
             )
         except SwatBuilderPipelineError as exc:
             threshold_attempts.append({
@@ -927,6 +998,61 @@ def main(
             suspicious,
             ",".join(complexity.reasons) or "ok",
         )
+
+    if ws is None:
+        # All threshold attempts raised SwatBuilderPipelineError (typically multi-terminal
+        # on flat terrain). Try once with NHD stream-burned DEM to force D8 connectivity.
+        log.warning(
+            "All delineation thresholds failed for %s — trying NHD stream-burn fallback.",
+            STATION_ID,
+        )
+        _flowlines_gpkg = outdir / "raw" / "nhd_flowlines.gpkg"
+        try:
+            from swatplus_builder.gis.nldi_fallback import fetch_nhd_flowlines
+            _flowlines_path = fetch_nhd_flowlines(STATION_ID, _flowlines_gpkg)
+            if _flowlines_path is not None:
+                _burn_workdir = outdir / "delin_burned"
+                _is_fallback_bnd = boundary_provenance.get("source") not in (
+                    "nldi_authoritative", None
+                )
+                _area_tol_burn = float(os.environ.get("SWATPLUS_AREA_TOLERANCE_PCT", "30.0"))
+                ws_try = delineate(
+                    dem_path=dem_tif,
+                    outlet=outlet,
+                    workdir=_burn_workdir,
+                    stream_threshold_cells=base_threshold,
+                    expected_area_km2=actual_area_km2,
+                    dem_conditioning=dem_conditioning,
+                    stream_burn_vector=_flowlines_path,
+                    stream_burn_depth_m=10.0,
+                    require_domain_margin=True,
+                )
+                _vr = validate_watershed(
+                    ws_try,
+                    reference_polygon=None if _is_fallback_bnd else basin_gpkg,
+                    area_tolerance_pct=_area_tol_burn,
+                )
+                _burn_complexity = assess_topology_complexity(ws_try.stats, complexity_policy)
+                threshold_attempts.append({
+                    "threshold_cells": base_threshold,
+                    "validation_passed": _vr.passed,
+                    "area_diff_pct": _vr.area_diff_pct,
+                    "iou_pct": _vr.iou_pct,
+                    "n_subbasins": ws_try.stats.get("n_subbasins"),
+                    "n_channels": ws_try.stats.get("n_channels"),
+                    "avg_subbasin_area_km2": _burn_complexity.avg_subbasin_area_km2,
+                    "complexity_acceptable": _burn_complexity.acceptable,
+                    "complexity_reasons": list(_burn_complexity.reasons) + ["stream_burn_fallback"],
+                    "topology_suspicious": _topology_suspicious(ws_try.stats),
+                })
+                ws = ws_try
+                validation = _vr
+                selected_threshold = base_threshold
+                log.info("Stream-burn delineation succeeded for %s.", STATION_ID)
+        except SwatBuilderPipelineError as exc:
+            log.warning("Stream-burn delineation also failed for %s: %s", STATION_ID, exc)
+        except Exception as exc:
+            log.warning("Stream-burn fallback error for %s: %s", STATION_ID, exc)
 
     if ws is None or validation is None:
         raise RuntimeError(
@@ -1094,13 +1220,22 @@ def main(
     )
 
     # 6. HRUs
-    _section("6/11 HRU overlay (dominant per LSU)")
+    hru_mode = (cfg.hru_mode if cfg else None) or os.environ.get("SWATPLUS_HRU_MODE", "dominant_only").strip().lower()
+    if hru_mode not in {"dominant_only", "full_overlay"}:
+        raise ValueError("SWATPLUS_HRU_MODE must be one of: dominant_only, full_overlay")
+    hru_dominant_only = hru_mode == "dominant_only"
+    min_hru_fraction = float(cfg.min_hru_fraction if cfg else os.environ.get("SWATPLUS_MIN_HRU_FRACTION", "0.0"))
+    if min_hru_fraction < 0.0:
+        raise ValueError("SWATPLUS_MIN_HRU_FRACTION must be non-negative")
+    _section(f"6/11 HRU overlay ({hru_mode})")
     t0 = time.time()
     hru = create_hrus(
         watershed=ws,
         landuse_raster=nlcd_tif,
         soil_raster=hru_soil_raster,
         constant_soil_mukey=constant_soil_mukey,
+        dominant_only=hru_dominant_only,
+        min_hru_fraction=min_hru_fraction,
     )
     n_sub, n_hru, hru_coverage_ratio = _hru_coverage(hru, ws.stats)
     min_hru_coverage_ratio = float(os.environ.get("SWATPLUS_MIN_HRU_COVERAGE_RATIO", "0.90"))
@@ -1132,6 +1267,8 @@ def main(
                 landuse_raster=repaired_landuse,
                 soil_raster=repaired_soil,
                 constant_soil_mukey=constant_soil_mukey,
+                dominant_only=hru_dominant_only,
+                min_hru_fraction=min_hru_fraction,
             )
             n_sub, n_hru, hru_coverage_ratio = _hru_coverage(hru, ws.stats)
         if hru_coverage_ratio < min_hru_coverage_ratio and hru_soil_raster is not None:
@@ -1169,6 +1306,8 @@ def main(
                 soil_raster=None,
                 constant_soil_mukey=constant_soil_mukey,
                 workdir_subdir="hrus_constant_soil_representative",
+                dominant_only=hru_dominant_only,
+                min_hru_fraction=min_hru_fraction,
             )
             n_sub, n_hru, hru_coverage_ratio = _hru_coverage(hru, ws.stats)
         if hru_coverage_ratio < min_hru_coverage_ratio:
@@ -1200,7 +1339,7 @@ def main(
     t0 = time.time()
     db_path = create_project_db(f"usgs_{STATION_ID}", project_dir, reference_db=datasets_db, overwrite=True)
     write_all(db_path, tables)
-    _ok(f"project.sqlite created", elapsed=time.time() - t0)
+    _ok("project.sqlite created", elapsed=time.time() - t0)
 
     # 8. Soils
     _section("8/11 Soils (SDA + Hybrid Fallback)")
@@ -1211,8 +1350,9 @@ def main(
     soil_mode = "high_fidelity"
     pct_fallback_soils = 0.0
     soil_fallback_warn_threshold = float(os.environ.get("SWATPLUS_SOIL_FALLBACK_WARN_THRESHOLD", "0.25"))
-    allow_synthetic_soils = _truthy_env("SWATPLUS_ALLOW_SYNTHETIC_SOILS", default=False)
-    soil_acquired = False
+    allow_synthetic_soils = (
+        cfg.allow_diagnostic_fallbacks if cfg else _truthy_env("SWATPLUS_ALLOW_SYNTHETIC_SOILS", default=False)
+    )
     try:
         external_soils_json = os.environ.get("SWATPLUS_EXTERNAL_SOILS_JSON")
         if external_soils_json:
@@ -1231,7 +1371,6 @@ def main(
             retry_attempts["fetch_soil_profiles_result"] = n
             soil_profiles = soil_res.profiles
             soil_report = soil_res.soil_report
-        soil_acquired = True
         soil_profiles, soilgrids_partial_replacements, soilgrids_partial_failed = (
             _replace_default_profiles_with_soilgrids(
                 list(soil_profiles),
@@ -1347,7 +1486,6 @@ def main(
                 }
             _write_soil_acquisition_report(outdir, soil_report)
             _write_soil_report(outdir, soil_report)
-            soil_acquired = True
             write_soils(soil_profiles, db_path)
             upsert_project_metadata(db_path, "soil_report", json.dumps(soil_report))
             _ok(f"wrote {len(soil_profiles)} profiles (SoilGrids fallback)", elapsed=time.time() - t0)
@@ -1397,7 +1535,10 @@ def main(
             pct_fallback_soils = 1.0
             _ok("seed_minimal_soils (fallback)")
 
-    max_soil_fallback_ratio = float(os.environ.get("SWATPLUS_MAX_SOIL_FALLBACK_RATIO", "0.00"))
+    max_soil_fallback_ratio = float(
+        (1.0 if cfg and cfg.allow_diagnostic_fallbacks else None)
+        or os.environ.get("SWATPLUS_MAX_SOIL_FALLBACK_RATIO", "0.00")
+    )
     if (soil_mode == "synthetic" or pct_fallback_soils > max_soil_fallback_ratio) and not allow_synthetic_soils:
         raise RuntimeError(
             "Soil realism gate failed: "
@@ -1412,7 +1553,7 @@ def main(
     max_weather_stations = max(1, int(os.environ.get("SWATPLUS_MAX_WEATHER_STATIONS", "25")))
     subs_for_weather = list(tables.subbasins)
     subs_for_weather = _sample_evenly(subs_for_weather, max_weather_stations)
-    from datetime import datetime as _dt, timedelta
+    from datetime import datetime as _dt
     eval_start_dt = _dt.strptime(sim_start, "%Y-%m-%d")
     weather_start = (_dt(eval_start_dt.year - warmup_years, eval_start_dt.month, eval_start_dt.day)
                      if warmup_years > 0 else eval_start_dt)
@@ -1536,6 +1677,10 @@ def main(
                     lte_hru_rows_patched,
                 )
 
+    from swatplus_builder.full_mode.warmup import (
+        reset_and_apply_warmup as _reset_and_apply_warmup,
+    )
+
     if not is_lte:
         # Full SWAT+ mode: apply post-editor routing fixes for engine rev 60.5.7.
         # Editor v3.2.0 generates sdc/chandeg routing natively but needs:
@@ -1548,13 +1693,28 @@ def main(
 
         # Warmup: prepend spin-up years before the evaluation period
         if warmup_years > 0:
-            from swatplus_builder.full_mode.warmup import reset_and_apply_warmup as _reset_and_apply_warmup
             _reset_and_apply_warmup(
                 wf.txtinout_dir,
                 warmup_years=warmup_years,
                 evaluation_start_year=eval_start_dt.year,
             )
             log.info("Applied %d-year spin-up warmup (stale-safe reset)", warmup_years)
+    else:
+        # LTE cold-start: without spin-up, a 1-year simulation starting with zero
+        # soil/GW storage produces zero channel flow on Linux (Intel ifx binary).
+        # Prepend 2 warmup years; the engine uses WGN for those years since the
+        # observed weather files only cover the evaluation period. nyskip=2 ensures
+        # only the evaluation-period output reaches channel_sd_day.txt.
+        _lte_warmup = warmup_years if warmup_years > 0 else 2
+        try:
+            _reset_and_apply_warmup(
+                wf.txtinout_dir,
+                warmup_years=_lte_warmup,
+                evaluation_start_year=eval_start_dt.year,
+            )
+            log.info("Applied %d-year LTE spin-up warmup", _lte_warmup)
+        except Exception as _warmup_err:
+            log.warning("LTE warmup skipped (non-fatal): %s", _warmup_err)
 
     _ok(f"TxtInOut ready ({sum(1 for _ in wf.txtinout_dir.iterdir())} files)", elapsed=time.time() - t0)
 
@@ -1572,6 +1732,7 @@ def main(
         end_jday,   end_year   = d_end.timetuple().tm_yday,   d_end.year
 
         # Read actual yrc_start from time.sim (may differ from sim_start due to warmup)
+        eval_year = d_start.year  # original evaluation year before warmup adjustment
         time_sim = wf.txtinout_dir / "time.sim"
         if time_sim.is_file():
             ts_lines = [l for l in time_sim.read_text(encoding="utf-8", errors="replace").splitlines() if l.strip()]
@@ -1589,8 +1750,9 @@ def main(
             out: list[str] = []
             for i, line in enumerate(lines):
                 if i == 2:
-                    # Rewrite control row; preserve warmup nyskip if set
-                    nskip = warmup_years
+                    # nyskip = years between warmup start and evaluation start.
+                    # max() guards against warmup_years being set explicitly too.
+                    nskip = max(warmup_years, eval_year - start_year)
                     line = (
                         f"{nskip:<12}{start_jday:<11}{start_year:<11}"
                         f"{end_jday:<11}{end_year:<11}{'1':<10}"
@@ -1802,6 +1964,10 @@ def main(
             input_hashes[name] = sha256_file(p)
 
     notes: list[str] = []
+    notes.append(
+        f"nlcd_year={nlcd_year}; sim_midpoint_year={nlcd_selection['sim_midpoint_year']}; "
+        f"landuse_vintage_mismatch_years={nlcd_selection['landuse_vintage_mismatch_years']}"
+    )
     if is_lte:
         if abs(float(lte_scon_scale) - 1.0) > 1e-9:
             notes.append(
@@ -1835,7 +2001,9 @@ def main(
             dem_source = {"source": "unknown"}
         notes.append(
             f"dem_source={dem_source.get('source', 'unknown')}; "
-            f"resolution_m={dem_source.get('resolution_m', DEM_RESOLUTION_M)}"
+            f"resolution_m={dem_source.get('resolution_m', DEM_RESOLUTION_M)}; "
+            f"buffer_m={dem_source.get('dem_buffer_m', dem_source.get('dem_buffer_m_requested', 0))}; "
+            f"request_shape={dem_source.get('request_shape', 'unknown')}"
         )
     datasets_source_path = outdir / "reference_dbs" / "swatplus_datasets.source.json"
     if datasets_source_path.exists():

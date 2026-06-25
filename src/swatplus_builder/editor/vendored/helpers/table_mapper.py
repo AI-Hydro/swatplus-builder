@@ -1,4 +1,4 @@
-from database.project import connect, climate, channel, aquifer, reservoir, hydrology, hru, hru_parm_db, lum, soils, routing_unit, dr, init, decision_table, exco, dr, structural, ops, regions, change, recall, salts, gwflow
+from _swatplus_db.project import connect, climate, channel, aquifer, reservoir, hydrology, hru, hru_parm_db, lum, soils, routing_unit, dr, init, decision_table, exco, dr, structural, ops, regions, change, recall, salts, gwflow
 
 obj_typs = {
 	"hru": connect.Hru_con,

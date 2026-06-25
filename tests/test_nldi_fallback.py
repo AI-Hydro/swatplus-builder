@@ -9,6 +9,7 @@ from shapely.geometry import Polygon
 from swatplus_builder.gis.nldi_fallback import (
     BoundaryProvenance,
     fetch_basin_boundary_cascade,
+    fetch_nhd_flowlines,
 )
 
 
@@ -60,6 +61,56 @@ def test_fetch_basin_boundary_cascade_fails_without_silent_fallback(monkeypatch,
     assert "provider unavailable" in message
 
 
+def test_fetch_nhd_flowlines_saves_gpkg_and_returns_path(monkeypatch, tmp_path: Path) -> None:
+    flowlines = gpd.GeoDataFrame(
+        {"id": [1, 2]},
+        geometry=[Polygon([(0, 0), (1, 0), (1, 1)]), Polygon([(1, 1), (2, 1), (2, 2)])],
+        crs="EPSG:4326",
+    )
+    captured: dict = {}
+
+    class _FakeNLDI:
+        def navigate_byid(self, fsource, fid, nav, data_source, distance=9999):
+            captured["data_source"] = data_source
+            return flowlines
+
+    import pynhd
+    monkeypatch.setattr(pynhd, "NLDI", _FakeNLDI)
+
+    out = tmp_path / "nhd_flowlines.gpkg"
+    result = fetch_nhd_flowlines("03339000", out)
+
+    assert result == out
+    assert out.exists()
+    assert captured["data_source"] == "flowlines", f"invalid source name: {captured['data_source']!r}"
+
+
+def test_fetch_nhd_flowlines_returns_none_when_empty(monkeypatch, tmp_path: Path) -> None:
+    empty = gpd.GeoDataFrame({"id": []}, geometry=[], crs="EPSG:4326")
+
+    class _FakeNLDI:
+        def navigate_byid(self, *args, **kwargs):
+            return empty
+
+    import pynhd
+    monkeypatch.setattr(pynhd, "NLDI", _FakeNLDI)
+
+    result = fetch_nhd_flowlines("03339000", tmp_path / "nhd_flowlines.gpkg")
+    assert result is None
+
+
+def test_fetch_nhd_flowlines_returns_none_on_exception(monkeypatch, tmp_path: Path) -> None:
+    class _FakeNLDI:
+        def navigate_byid(self, *args, **kwargs):
+            raise RuntimeError("network unavailable")
+
+    import pynhd
+    monkeypatch.setattr(pynhd, "NLDI", _FakeNLDI)
+
+    result = fetch_nhd_flowlines("03339000", tmp_path / "nhd_flowlines.gpkg")
+    assert result is None
+
+
 def test_example_fetch_basin_boundary_uses_cascade_without_stale_nldi_import(monkeypatch, tmp_path: Path) -> None:
     basin = gpd.GeoDataFrame(
         {"id": [1]},
@@ -77,8 +128,8 @@ def test_example_fetch_basin_boundary_uses_cascade_without_stale_nldi_import(mon
 
     repo_root = Path(__file__).resolve().parents[1]
     spec = importlib.util.spec_from_file_location(
-        "build_real_basin_under_test",
-        repo_root / "examples" / "build_real_basin.py",
+        "usgs_basin_workflow_under_test",
+        repo_root / "examples" / "usgs_basin_workflow.py",
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

@@ -1,11 +1,11 @@
 from helpers.executable_api import ExecutableApi, Unbuffered
 from helpers import utils
-from database import lib
-from database.project import base as project_base, simulation
-from database.project.config import Project_config
-from database.project.setup import SetupProjectDatabase
-from database.datasets.setup import SetupDatasetsDatabase
-from database.datasets.definitions import Version
+from _swatplus_db import lib
+from _swatplus_db.project import base as project_base, simulation
+from _swatplus_db.project.config import Project_config
+from _swatplus_db.project.setup import SetupProjectDatabase
+from _swatplus_db.datasets.setup import SetupDatasetsDatabase
+from _swatplus_db.datasets.definitions import Version
 from .import_gis import GisImport
 from . import update_project, update_datasets
 
@@ -26,7 +26,7 @@ class ReimportGis(ExecutableApi):
 		if datasets_db is None:
 			conn = lib.open_db(project_db)
 			if not lib.exists_table(conn, 'project_config'):
-				sys.exit('No datasets database provided and the project_config table in your project database does not exist. Please provide either a datasets database file or an existing project database.')
+				sys.exit('No datasets database provided and the project_config table in your project database does not exist. Please provide either a datasets database file or an existing project _swatplus_db.')
 			conn.close()
 			
 			SetupProjectDatabase.init(project_db)
@@ -52,7 +52,7 @@ class ReimportGis(ExecutableApi):
 
 		# Backup original db before beginning
 		try:
-			self.emit_progress(2, 'Backing up project database...')
+			self.emit_progress(2, 'Backing up project _swatplus_db...')
 			filename, file_extension = os.path.splitext(rel_project_db)
 			bak_filename = filename + '_bak_' + time.strftime('%Y%m%d-%H%M%S') + file_extension
 			bak_dir = os.path.join(base_path, 'DatabaseBackups')
