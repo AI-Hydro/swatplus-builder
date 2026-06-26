@@ -104,6 +104,7 @@ def run_pipeline(
                     )
                 with open(outdir / "run_config.json", "w") as f:
                     json.dump(run_config, f, indent=2)
+                _try_dashboard(outdir, run_config)
                 return run_config
             run_config.update(_load_run_metadata_fields(outdir))
             txtinout = _find_prepared_txtinout(outdir)
@@ -118,16 +119,17 @@ def run_pipeline(
                 )
                 with open(outdir / "run_config.json", "w") as f:
                     json.dump(run_config, f, indent=2)
+                _try_dashboard(outdir, run_config)
                 return run_config
 
         from .calibration.locked_benchmark import lock_benchmark
         from .calibration.nwis import fetch_usgs_daily_q
-        from .output.eval import _terminal_ids_from_chandeg_con
         from .full_mode.routing_fixes import apply_full_routing_fixes
         from .full_mode.subsurface_priors import (
             apply_subsurface_prior_correction,
             finalize_subsurface_prior_correction,
         )
+        from .output.eval import terminal_channel_ids
         from .run.swatplus import clean_and_run_solver
 
         if model_family == "full":
@@ -150,6 +152,7 @@ def run_pipeline(
                 )
                 with open(outdir / "run_config.json", "w") as f:
                     json.dump(run_config, f, indent=2)
+                _try_dashboard(outdir, run_config)
                 return run_config
 
         rc, stdout_tail, stderr_tail = clean_and_run_solver(
@@ -198,13 +201,14 @@ def run_pipeline(
             )
             with open(outdir / "run_config.json", "w") as f:
                 json.dump(run_config, f, indent=2)
+            _try_dashboard(outdir, run_config)
             return run_config
 
         # Derive the terminal outlet from generated topology (chandeg.con)
         # rather than hardcoding a possibly-invalid GIS ID.  Fall back to 1 if
         # the file doesn't exist yet — lock_benchmark with outlet_policy="auto"
         # will still discover the correct terminal.
-        terminal_ids = sorted(_terminal_ids_from_chandeg_con(txtinout))
+        terminal_ids = terminal_channel_ids(txtinout)
         outlet_gis_id = terminal_ids[0] if terminal_ids else 1
 
         lock = lock_benchmark(
@@ -252,21 +256,29 @@ def run_pipeline(
         with open(outdir / "run_config.json", "w") as f:
             json.dump(run_config, f, indent=2)
 
-        # Generate interactive HTML dashboard
-        try:
-            from .output.dashboard import build_dashboard
-            dashboard_path = build_dashboard(outdir)
-            run_config["dashboard_html"] = str(dashboard_path)
-        except Exception as dashboard_exc:
-            log.warning("Dashboard generation failed (non-fatal): %s", dashboard_exc)
-
+        _try_dashboard(outdir, run_config)
         return run_config
         
     except Exception as e:
         run_config["error"] = str(e)
         with open(outdir / "run_config.json", "w") as f:
             json.dump(run_config, f, indent=2)
+        _try_dashboard(outdir, run_config)
         raise
+
+
+def _try_dashboard(outdir: Path, run_config: dict[str, Any]) -> None:
+    """Best-effort dashboard generation — never blocks a run."""
+    try:
+        from .output.dashboard import build_dashboard
+        dashboard_path = build_dashboard(outdir)
+        run_config["dashboard_html"] = str(dashboard_path)
+        (outdir / "run_config.json").write_text(
+            json.dumps(run_config, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        log.warning("Dashboard generation failed (non-fatal): %s", exc)
 
 
 def _load_run_metadata_fields(outdir: Path) -> dict[str, Any]:

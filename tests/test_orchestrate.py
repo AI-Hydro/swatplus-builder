@@ -238,6 +238,9 @@ def test_run_pipeline_clean_rerun_locks_existing_prepared_outputs(monkeypatch, t
     assert summary["full_routing_fixes_applied"] is True
     assert summary["fresh_engine_run"] is True
     assert summary["locked_calibration_ready"] is True
+    assert Path(summary["dashboard_html"]).is_file()
+    persisted = json.loads((tmp_path / "run_config.json").read_text(encoding="utf-8"))
+    assert persisted["dashboard_html"] == summary["dashboard_html"]
     assert " tot " not in (txt / "rout_unit.con").read_text(encoding="utf-8")
     assert Path(summary["benchmark_lock_path"]).exists()
     lock = json.loads(Path(summary["benchmark_lock_path"]).read_text(encoding="utf-8"))

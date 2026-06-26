@@ -38,9 +38,12 @@ class FullBuildConfig:
     # Soil fallback controls
     allow_diagnostic_fallbacks: bool = False
     # Delineation defaults (optional — example builder reads most from env)
-    dem_buffer_m: float = 5000.0
+    dem_buffer_m: float = 10000.0
     stream_threshold_cells: int = 2000
     dem_conditioning: str = "breach"
+    area_tolerance_pct: float = 10.0
+    min_iou_pct: float = 70.0
+    expected_area_km2: float | None = None
 
 
 @dataclass(frozen=True)

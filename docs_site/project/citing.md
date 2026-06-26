@@ -16,7 +16,7 @@ When you report a result produced with swatplus-builder, cite the software
                    modeling from a USGS gauge ID}},
   year         = {2026},
   publisher    = {Zenodo},
-  version      = {0.7.2},
+  version      = {0.7.8},
   doi          = {10.5281/zenodo.20650908},
   url          = {https://doi.org/10.5281/zenodo.20650908}
 }
@@ -25,7 +25,7 @@ When you report a result produced with swatplus-builder, cite the software
 ### Plain text
 
 > Galib, M. & Merwade, V. (2026). *swatplus-builder: Claim-governed SWAT+
-> hydrologic modeling from a USGS gauge ID* (v0.4.0). Zenodo.
+> hydrologic modeling from a USGS gauge ID* (v0.7.8). Zenodo.
 > https://doi.org/10.5281/zenodo.20650908
 
 !!! tip "Report the gate context, not just the number"

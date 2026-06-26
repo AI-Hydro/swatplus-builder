@@ -92,6 +92,27 @@ def test_subsurface_prior_skips_when_modeled_water_yield_is_near_observed(tmp_pa
     assert "parameter_changes" not in payload
 
 
+def test_subsurface_prior_reports_already_applied_profile_when_water_yield_is_near_observed(tmp_path: Path) -> None:
+    run = tmp_path / "run"
+    txt = _write_fixture(run, wateryld=100.0)
+    obs = _obs_series_for_annual_depth(100.0, 500.0)
+    first = apply_subsurface_prior_correction(run, txt, obs_series=obs)
+    assert first["status"] == "applied"
+    (txt / "basin_wb_aa.txt").write_text(
+        "basin_wb_aa\n"
+        "jday mon day yr unit gis_id name precip et pet surq_gen latq perc wateryld\n"
+        "mm mm mm mm mm mm mm mm mm mm mm mm mm mm\n"
+        "0 0 0 0 0 0 basin 1000 400 0 10 90 300 410\n",
+        encoding="utf-8",
+    )
+
+    payload = apply_subsurface_prior_correction(run, txt, obs_series=obs)
+
+    assert payload["status"] == "already_applied"
+    assert payload["current_profile_state"]["matches_profile"] is True
+    assert payload["fresh_engine_rerun_required"] is False
+
+
 def test_subsurface_prior_skips_et_dominated_deficits(tmp_path: Path) -> None:
     run = tmp_path / "run"
     txt = _write_fixture(run, wateryld=150.0, et=820.0, perc=25.0)

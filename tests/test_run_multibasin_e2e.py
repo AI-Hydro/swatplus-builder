@@ -7,7 +7,7 @@ from scripts.run_multibasin_e2e import SiteResult, parse_terminal_channel_ids
 from swatplus_builder.errors import SwatBuilderPipelineError
 
 
-def test_parse_terminal_channel_ids_uses_gis_id(tmp_path) -> None:
+def test_parse_terminal_channel_ids_uses_internal_channel_id(tmp_path) -> None:
     txt = tmp_path / "TxtInOut"
     txt.mkdir()
     p = txt / "chandeg.con"
@@ -16,14 +16,14 @@ def test_parse_terminal_channel_ids_uses_gis_id(tmp_path) -> None:
             """\
             chandeg.con
             id name gis_id area lat lon elev lcha wst cst ovfl rule out_tot obj_typ obj_id hyd_typ frac
-            100 cha0100 7 0 0 0 0 1 s 0 0 0 1 out 1 tot 1.0
+            100 cha0100 7 0 0 0 0 1 s 0 0 0 0
             101 cha0101 8 0 0 0 0 1 s 0 0 0 1 sdc 1 tot 1.0
             """
         ),
         encoding="utf-8",
     )
 
-    assert parse_terminal_channel_ids(txt) == {7}
+    assert parse_terminal_channel_ids(txt) == {100}
 
 
 def test_multibasin_cli_accepts_custom_simulation_window(monkeypatch, tmp_path) -> None:

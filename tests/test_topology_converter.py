@@ -144,6 +144,11 @@ class TestTopologyConverter:
         hsl = (tio / "hyd-sed-lte.cha").read_text()
         assert "erod_fact" in hsl
         assert "bankfull_flo" in hsl
+        header = hsl.splitlines()[1].split()
+        len_idx = header.index("len")
+        data_rows = hsl.splitlines()[2:]
+        assert data_rows
+        assert {float(row.split()[len_idx]) for row in data_rows} == {0.0005}
 
     def test_updates_object_cnt(self, tmp_path):
         tio = _make_full_tio(tmp_path)

@@ -125,12 +125,11 @@ class SwatPlusRun(BaseModel):
     )
 
 
-HydType = Literal["tot", "sur", "lat", "til", "aqu"]
+HydType = Literal["tot", "sur", "lat", "til", "aqu", "rhg"]
 """SWAT+ hydrograph types used in ``gis_routing.hyd_typ``.
 
-Mirrors ``QSWATPlus/QSWATTopology.py:82-86`` (``_TOTAL='tot'``, ``_SURFACE='sur'``,
-``_LATERAL='lat'``, ``_TILE='til'``). We additionally allow ``'aqu'`` for
-aquifer → channel baseflow that SWAT+ adds outside the QSWATPlus path.
+Includes total, surface, lateral, tile, aquifer, and recharge hydrograph codes.
+The SWAT+ Editor datasets contract defines ``rhg`` as recharge.
 """
 
 ObjectCat = Literal[

@@ -301,9 +301,12 @@ def test_lock_benchmark_tool_monkeypatched(monkeypatch, tmp_path: Path) -> None:
     """lock_benchmark MCP tool must return a LockBenchmarkResponse via monkeypatched function."""
     import swatplus_builder.mcp.server as mcp_server_mod
 
+    seen: dict[str, int] = {}
+
     def fake_lock_benchmark(txtinout_dir, obs_series, out_dir, *, basin_id, outlet_gis_id, sim_source_file):
         from swatplus_builder.calibration.locked_benchmark import BenchmarkLock
 
+        seen["outlet_gis_id"] = outlet_gis_id
         return BenchmarkLock(
             basin_id=basin_id,
             locked_at_utc="2026-04-24T00:00:00+00:00",
@@ -320,6 +323,12 @@ def test_lock_benchmark_tool_monkeypatched(monkeypatch, tmp_path: Path) -> None:
 
     obs_csv = tmp_path / "obs.csv"
     obs_csv.write_text("date,discharge\n2010-01-01,1.5\n2010-01-02,1.2\n", encoding="utf-8")
+    (tmp_path / "chandeg.con").write_text(
+        "chandeg.con\n"
+        "id name gis_id area lat lon elev lcha wst cst ovfl rule out_tot obj_typ obj_id hyd_typ frac\n"
+        "1 cha0042 42 0 0 0 0 1 s 0 0 0 1 out 1 tot 1.0\n",
+        encoding="utf-8",
+    )
 
     tools = _tool_map()
     # rebuild with monkeypatch active
@@ -333,13 +342,13 @@ def test_lock_benchmark_tool_monkeypatched(monkeypatch, tmp_path: Path) -> None:
             observed_csv=str(obs_csv),
             out_dir=str(tmp_path / "out"),
             basin_id="usgs_test01",
-            outlet_gis_id=1,
             sim_source_file="basin_sd_cha_day.txt",
         )
     )
     assert resp.status == "success"
     assert resp.basin_id == "usgs_test01"
     assert resp.baseline_nse == 0.12
+    assert seen["outlet_gis_id"] == 42
 
 
 def test_readiness_table_tool_empty_dir(tmp_path: Path) -> None:

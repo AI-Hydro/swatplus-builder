@@ -52,6 +52,20 @@ swat locked-calibrate \
   independently; its metrics — not the optimizer's — are authoritative.
 - **`evaluate_run` is the only metric source.** All reported hydrologic metrics
   are routed through `evaluate_run` for parity.
+- **Physical gate is always on.** Every candidate (full-mode and LTE) is
+  checked against the water-balance gate before skill promotion. No physically
+  implausible candidate can be promoted by NSE/KGE alone.
+- **Staged search with BFI.** Calibration phases proceed in order: volume →
+  baseflow/subsurface → peaks/timing → skill finetune. The baseflow phase
+  uses BFI (baseflow index) to constrain groundwater parameters against
+  observed baseflow, not just total-flow KGE.
+- **Multi-seed DDS ensemble.** When `dds_n_seeds > 1`, independent search
+  trajectories quantify equifinality uncertainty; ensemble NSE/KGE spread
+  is recorded in the evidence bundle.
+- **One locked scoring window.** Spin-up exclusion is configured in the
+  prepared SWAT+ simulation before the benchmark is locked. Sensitivity,
+  calibration, and verification then score the exact dates stored in
+  `benchmark/alignment.csv`; no stage may apply a second hidden trim.
 
 ## The Python API
 
@@ -64,7 +78,7 @@ from swatplus_builder.calibration.locked_benchmark import (
 )
 
 lock = lock_benchmark(txtinout_dir, obs_series, out_dir,
-                      basin_id="usgs_01547700", outlet_gis_id=1)
+                      basin_id="usgs_01547700", outlet_gis_id=terminal_gis_id)
 evidence = calibrate_against_lock(lock, base_txtinout, out_dir,
                                   parameters=["CN2", "ALPHA_BF"])
 result = verify_calibration(lock, evidence.best_solution_json, base_txtinout, out_dir)

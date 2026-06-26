@@ -123,7 +123,9 @@ def test_full_mode_governance_registry_and_bridge_are_aligned() -> None:
     assert set(FULL_MODE_CORE_PARAMETERS) == expected
     assert expected.issubset(registry)
     assert expected.issubset(WRITERS)
-    expected_extended = {"SFTMP", "SMTMP", "LAT_TTIME", "CN3_SWF", "CH_N2", "CH_K2"}
+    expected_extended = {
+        "SFTMP", "SMTMP", "LAT_TTIME", "CN3_SWF", "CH_N2", "CH_K2", "GW_REVAP"
+    }
     assert set(FULL_MODE_EXTENDED_PARAMETERS) == expected_extended
     assert set(FULL_MODE_PARAMETER_GOVERNANCE) == expected | set(FULL_MODE_EXTENDED_PARAMETERS)
     assert "GW_DELAY" not in calibration_eligible_full_mode_parameters()

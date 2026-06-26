@@ -72,4 +72,5 @@ def test_extended_process_controls_have_governed_screen_rows() -> None:
         "CN3_SWF": "not_tested",
         "CH_N2": "not_tested",
         "CH_K2": "not_tested",
+        "GW_REVAP": "active",
     }

@@ -274,7 +274,10 @@ class TestLocateBinary:
 
     def test_path_scan_last(self, tmp_path, monkeypatch):
         """When nothing else matches, we fall back to $PATH / shutil.which."""
-        from swatplus_builder.run.swatplus import BINARY_CANDIDATES, locate_binary
+        import swatplus_builder.run.swatplus as swatplus_run
+
+        BINARY_CANDIDATES = swatplus_run.BINARY_CANDIDATES
+        locate_binary = swatplus_run.locate_binary
 
         # Create a binary whose NAME matches one of BINARY_CANDIDATES, put its
         # dir on PATH, and make sure shutil.which picks it up.
@@ -286,17 +289,23 @@ class TestLocateBinary:
         fake.chmod(0o755)
 
         monkeypatch.delenv("SWATPLUS_EXE", raising=False)
+        monkeypatch.setattr(swatplus_run, "ENGINE_BIN_DIR", tmp_path / "missing-user-bin")
         monkeypatch.setenv("PATH", str(fake_dir))
         assert locate_binary().resolve() == fake.resolve()
 
     def test_not_found_raises_actionable(self, monkeypatch):
+        import swatplus_builder.run.swatplus as swatplus_run
         from swatplus_builder.errors import SwatBuilderExternalError
-        from swatplus_builder.run.swatplus import locate_binary
 
         monkeypatch.delenv("SWATPLUS_EXE", raising=False)
+        monkeypatch.setattr(
+            swatplus_run,
+            "ENGINE_BIN_DIR",
+            Path("/definitely/not/a/swatplus-builder-engine-dir"),
+        )
         monkeypatch.setenv("PATH", "")
         with pytest.raises(SwatBuilderExternalError) as ei:
-            locate_binary()
+            swatplus_run.locate_binary()
         assert "candidates" in ei.value.context
 
 

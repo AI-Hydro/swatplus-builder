@@ -140,7 +140,13 @@ class LockBenchmarkRequest(BaseModel):
     observed_csv: str = Field(..., description="Observed discharge CSV (DatetimeIndex + 'discharge' column).")
     out_dir: str = Field(..., description="Root directory for lock artifacts.")
     basin_id: str = Field(..., description="Basin identifier (e.g. usgs_01547700).")
-    outlet_gis_id: int = Field(1, description="Gauge outlet channel GIS ID.")
+    outlet_gis_id: int | None = Field(
+        None,
+        description=(
+            "Gauge outlet channel GIS ID. When omitted, the package accepts the generated "
+            "topology only if it contains exactly one terminal channel."
+        ),
+    )
     sim_source_file: str = Field(
         "basin_sd_cha_day.txt",
         description="Simulation output file to score (basin_sd_cha_day.txt or channel_sd_day.txt).",
@@ -664,6 +670,8 @@ def create_mcp_server() -> FastMCP:
     def mcp_lock_benchmark(req: LockBenchmarkRequest) -> LockBenchmarkResponse:
         import pandas as pd
 
+        from swatplus_builder.output.eval import terminal_channel_ids
+
         obs_df = pd.read_csv(req.observed_csv, index_col=0, parse_dates=True)
         obs_col = "discharge" if "discharge" in obs_df.columns else obs_df.columns[0]
         obs_series = pd.Series(
@@ -671,12 +679,22 @@ def create_mcp_server() -> FastMCP:
             index=pd.to_datetime(obs_df.index).normalize(),
             name="obs",
         ).dropna()
+        outlet_gis_id = req.outlet_gis_id
+        if outlet_gis_id is None:
+            terminal_ids = terminal_channel_ids(req.txtinout_dir)
+            if len(terminal_ids) != 1:
+                raise ValueError(
+                    "outlet_gis_id was omitted, but the prepared topology does not have exactly "
+                    f"one terminal channel (found {terminal_ids}). Supply the authoritative "
+                    "gauge outlet GIS ID explicitly."
+                )
+            outlet_gis_id = terminal_ids[0]
         lock = lock_benchmark(
             txtinout_dir=Path(req.txtinout_dir),
             obs_series=obs_series,
             out_dir=Path(req.out_dir),
             basin_id=req.basin_id,
-            outlet_gis_id=req.outlet_gis_id,
+            outlet_gis_id=outlet_gis_id,
             sim_source_file=req.sim_source_file,
         )
         return LockBenchmarkResponse(

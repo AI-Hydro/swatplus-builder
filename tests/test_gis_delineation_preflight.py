@@ -21,8 +21,60 @@ from swatplus_builder.gis.delineation import (
     _outlet_link_id,
     _prune_disconnected_components,
     _prune_topology_to_valid_channels,
+    _watershed_domain_edge_contact_count,
     check_topology_realism,
 )
+
+
+def test_downstream_split_resolution_keeps_highest_accumulation_receiver() -> None:
+    import networkx as nx
+    import numpy as np
+
+    from swatplus_builder.gis.delineation import (
+        _resolve_downstream_splits_by_flow_accumulation,
+    )
+
+    graph = nx.DiGraph([(4, 1), (4, 38), (1, 38), (38, 39)])
+    max_acc = np.zeros(40, dtype="float64")
+    max_acc[[1, 4, 38, 39]] = [312_620, 312_620, 377_940, 3_432_444]
+
+    removed = _resolve_downstream_splits_by_flow_accumulation(graph, max_acc)
+
+    assert removed == 1
+    assert list(graph.successors(4)) == [38]
+    assert list(graph.successors(1)) == [38]
+    assert nx.is_directed_acyclic_graph(graph)
+
+def test_watershed_domain_edge_contact_count_detects_truncation(tmp_path) -> None:
+    import numpy as np
+    import rasterio
+    from rasterio.transform import from_origin
+
+    profile = {
+        "driver": "GTiff",
+        "height": 5,
+        "width": 5,
+        "count": 1,
+        "dtype": "int16",
+        "crs": "EPSG:5070",
+        "transform": from_origin(0, 5, 1, 1),
+        "nodata": -9999,
+    }
+    dem = tmp_path / "dem.tif"
+    watershed = tmp_path / "watershed.tif"
+    with rasterio.open(dem, "w", **profile) as dst:
+        dst.write(np.ones((5, 5), dtype="int16"), 1)
+    interior = np.zeros((5, 5), dtype="int16")
+    interior[2, 2] = 1
+    with rasterio.open(watershed, "w", **profile) as dst:
+        dst.write(interior, 1)
+    assert _watershed_domain_edge_contact_count(dem, watershed) == 0
+
+    truncated = np.zeros((5, 5), dtype="int16")
+    truncated[0, 2] = 1
+    with rasterio.open(watershed, "w", **profile) as dst:
+        dst.write(truncated, 1)
+    assert _watershed_domain_edge_contact_count(dem, watershed) == 1
 
 
 def _stats(

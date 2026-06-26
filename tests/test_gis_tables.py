@@ -91,9 +91,21 @@ class TestBuildTables:
         assert len(tables.points) == 1
         assert len(tables.water) == 0
 
-        # Routing: 2 HRU->CH + 4 LSU->CH (sur/lat) + 2 CH routes
-        # + 2 AQU->CH + 2 DAQ->X + 1 PT->CH.
-        assert len(tables.routing) == 2 + 4 + 2 + 2 + 2 + 1
+        # Routing: 2 HRU->CH + 4 LSU->CH (sur/lat) + 2 LSU->AQU
+        # recharge + 2 CH routes + 2 AQU->CH + 2 AQU->DAQ recharge
+        # + 2 DAQ->X + 1 PT->CH.
+        assert len(tables.routing) == 2 + 4 + 2 + 2 + 2 + 2 + 2 + 1
+
+        assert {
+            (r.sourceid, r.sinkid)
+            for r in tables.routing
+            if r.sourcecat == "LSU" and r.sinkcat == "AQU" and r.hyd_typ == "rhg"
+        } == {(1, 1), (2, 2)}
+        assert {
+            (r.sourceid, r.sinkid)
+            for r in tables.routing
+            if r.sourcecat == "AQU" and r.sinkcat == "DAQ" and r.hyd_typ == "rhg"
+        } == {(1, 1), (2, 2)}
 
     def test_routing_sums_to_100_per_group(self, mini_watershed):
         """Each ``(sourceid, sourcecat, hyd_typ)`` group must sum to 100
@@ -207,7 +219,7 @@ class TestBuildTables:
         assert counts["aquifers"] == 2
         assert counts["deep_aquifers"] == 2
         assert counts["points"] == 1
-        assert counts["routing"] == 2 + 4 + 2 + 2 + 2 + 1
+        assert counts["routing"] == 2 + 4 + 2 + 2 + 2 + 2 + 2 + 1
 
         # Sanity check: a few rows survived in the DB.
         with sqlite3.connect(db_path) as conn:
@@ -217,7 +229,7 @@ class TestBuildTables:
                 "SELECT delineation_done FROM project_config"
             ).fetchone()
         assert n_hrus == 2
-        assert n_routing == 13
+        assert n_routing == 17
         assert flag_delin == 1
 
     def test_routing_walks_past_dropped_channels(self, mini_watershed, tmp_path):

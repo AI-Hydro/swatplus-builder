@@ -16,7 +16,7 @@ Metrics
 - ``area_diff_pct``        — (delineated − reference) / reference × 100
 - ``iou_pct``              — intersection / union × 100  (Jaccard index)
 - ``centroid_distance_km`` — distance between centroids
-- ``passed``               — abs(area_diff_pct) < ``area_tolerance_pct``
+- ``passed``               — area error and spatial overlap both meet thresholds
 
 Usage
 -----
@@ -74,6 +74,7 @@ class ValidationResult(BaseModel):
 
     passed: bool = Field(False, description="True if abs(area_diff_pct) < area_tolerance_pct.")
     area_tolerance_pct: float = 10.0
+    min_iou_pct: float = 70.0
     notes: list[str] = Field(default_factory=list)
 
     def print_report(self) -> None:
@@ -91,7 +92,10 @@ class ValidationResult(BaseModel):
             sign = "+" if diff > 0 else ""
             print(f"  Area difference   : {sign}{diff:>9.1f} %   (tolerance ±{self.area_tolerance_pct:.0f} %)")
         if self.iou_pct is not None:
-            print(f"  IoU (Jaccard)     : {self.iou_pct:>10.1f} %")
+            print(
+                f"  IoU (Jaccard)     : {self.iou_pct:>10.1f} %"
+                f"   (minimum {self.min_iou_pct:.0f} %)"
+            )
         if self.centroid_distance_km is not None:
             print(f"  Centroid distance : {self.centroid_distance_km:>10.2f} km")
         if self.notes:
@@ -114,6 +118,7 @@ def validate_watershed(
     reference_polygon: Path | str | None = None,
     usgs_id: str | None = None,
     area_tolerance_pct: float = 10.0,
+    min_iou_pct: float = 70.0,
 ) -> ValidationResult:
     """Compare a delineated watershed against a reference.
 
@@ -124,6 +129,7 @@ def validate_watershed(
         usgs_id:              USGS gauge ID. Fetches the NHDPlus basin from the NLDI API.
                               Requires network access and ``pynhd`` (``[hyriver]`` extra).
         area_tolerance_pct:   Pass/fail threshold for |area_diff_pct|. Default 10 %.
+        min_iou_pct:           Minimum intersection-over-union with the reference. Default 70 %.
 
     Returns:
         :class:`ValidationResult` — all metrics plus a ``passed`` flag and a printable report.
@@ -187,7 +193,10 @@ def validate_watershed(
             2,
         )
 
-        passed = abs(area_diff_pct) <= area_tolerance_pct
+        passed = (
+            abs(area_diff_pct) <= area_tolerance_pct
+            and iou_pct >= min_iou_pct
+        )
 
         # Qualitative notes
         if abs(area_diff_pct) > 20:
@@ -221,6 +230,7 @@ def validate_watershed(
         centroid_distance_km=centroid_dist_km,
         passed=passed,
         area_tolerance_pct=area_tolerance_pct,
+        min_iou_pct=min_iou_pct,
         notes=notes,
     )
     return vr

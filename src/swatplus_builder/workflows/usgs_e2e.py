@@ -1802,12 +1802,25 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
     }
     _write_json(run_manifest_path, manifest_payload)
 
-    # Generate interactive HTML dashboard
+    # Generate interactive HTML dashboard and promote it into the evidence bundle.
     try:
         from ..output.dashboard import build_dashboard
         dashboard_path = build_dashboard(out)
         values["dashboard_html"] = str(dashboard_path)
         _event("dashboard", "completed", path=str(dashboard_path))
+        manifest_payload["artifacts"]["dashboard_html"] = str(dashboard_path)
+        manifest_payload["events_recorded"] = len(events)
+        payload["values"] = values
+        payload.pop("provenance_hash", None)
+        payload["provenance_hash"] = _provenance_hash(payload)
+        path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        evidence_md_path.write_text(_render_evidence_summary_md(payload), encoding="utf-8")
+        try:
+            from ..evidence import write_evidence_v1
+            write_evidence_v1(payload, out)
+        except Exception:
+            pass
+        _write_json(run_manifest_path, manifest_payload)
     except Exception as dashboard_exc:
         _event("dashboard", "failed", error=str(dashboard_exc)[:500])
 
@@ -1901,6 +1914,7 @@ def _render_evidence_summary_md(payload: dict[str, Any]) -> str:
         "",
         f"- JSON summary: `{Path(payload.get('artifact_dir', ''), 'evidence_summary.json')}`",
         f"- Run manifest: `{values.get('run_manifest_path') or 'not_written'}`",
+        f"- Dashboard HTML: `{values.get('dashboard_html') or 'not_written'}`",
         f"- Events: `{Path(payload.get('artifact_dir', ''), 'events.jsonl')}`",
     ]
     if values.get("hydrograph_comparison_plot"):

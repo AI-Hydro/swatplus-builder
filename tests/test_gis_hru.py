@@ -501,6 +501,35 @@ class TestFullOverlayMode:
         assert len(per_lsu[1]) == 2
         assert len(per_lsu[2]) == 1
 
+    def test_vector_export_scans_labeled_raster_once(self, mini_watershed, monkeypatch):
+        """Full-overlay vector export must not rescan the raster per HRU."""
+        import rasterio.features
+
+        from swatplus_builder.gis.hru import create_hrus, load_lsus_hrus
+
+        original_shapes = rasterio.features.shapes
+        calls = 0
+
+        def counted_shapes(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            return original_shapes(*args, **kwargs)
+
+        monkeypatch.setattr(rasterio.features, "shapes", counted_shapes)
+        result = create_hrus(
+            mini_watershed["watershed"],
+            mini_watershed["landuse_raster"],
+            mini_watershed["soil_raster"],
+            dominant_only=False,
+        )
+
+        _, hrus = load_lsus_hrus(result)
+        vectors = gpd.read_file(result.hrus_vector)
+        assert calls == 1
+        assert set(vectors["hru_id"].astype(int)) == {hru.id for hru in hrus}
+        assert vectors.geometry.notna().all()
+        assert (vectors.geometry.area > 0).all()
+
     def test_declared_landuse_nodata_is_excluded(self, mini_watershed):
         """Full-overlay mode must not turn raster-declared nodata into ``lu_*`` HRUs."""
         from swatplus_builder.gis.hru import create_hrus, load_lsus_hrus
@@ -530,7 +559,7 @@ class TestFullOverlayMode:
 
     def test_min_fraction_filter_drops_minor_hru(self, mini_watershed):
         """LSU 1 has 8/32 = 25% of code 20. ``min_hru_fraction=0.3``
-        should drop it, leaving just the dominant one."""
+        should drop it and redistribute its area to the dominant HRU."""
         from swatplus_builder.gis.hru import create_hrus, load_lsus_hrus
 
         result = create_hrus(
@@ -540,10 +569,59 @@ class TestFullOverlayMode:
             dominant_only=False,
             min_hru_fraction=0.3,
         )
-        _, hrus = load_lsus_hrus(result)
+        lsus, hrus = load_lsus_hrus(result)
         lsu1 = [h for h in hrus if h.lsu == 1]
         assert len(lsu1) == 1
         assert lsu1[0].landuse == "lu_10"  # fallback naming
+        assert lsu1[0].arslp == pytest.approx(2.88)
+        assert sum(h.arslp for h in hrus) == pytest.approx(sum(lsu.area for lsu in lsus))
+
+        stats = json.loads(result.catalog_path.read_text(encoding="utf-8"))["stats"]
+        assert stats["total_filtered_valid_area_ha"] == pytest.approx(0.72)
+        assert stats["total_redistributed_area_ha"] == pytest.approx(0.72)
+        assert stats["total_modeled_hru_area_ha"] == pytest.approx(
+            stats["total_lsu_area_ha"]
+        )
+
+    def test_full_overlay_filter_redistributes_proportionally(self, mini_watershed):
+        """Retained HRUs keep their relative shares while conserving LSU area."""
+        from swatplus_builder.gis.hru import create_hrus, load_lsus_hrus
+
+        lu = np.full(mini_watershed["shape"], 10, dtype="int32")
+        lu[:, 2:4] = 20
+        lu[:, 4:] = 30
+        landuse = _write_raster(
+            Path(mini_watershed["landuse_raster"]).with_name("landuse_three_classes.tif"),
+            lu,
+            nodata=0,
+            dtype="int32",
+        )
+        result = create_hrus(
+            mini_watershed["watershed"],
+            landuse,
+            mini_watershed["soil_raster"],
+            dominant_only=False,
+            min_hru_fraction=0.2,
+        )
+        lsus, hrus = load_lsus_hrus(result)
+
+        for lsu in lsus:
+            owned = [h for h in hrus if h.lsu == lsu.id]
+            assert sum(h.arslp for h in owned) == pytest.approx(lsu.area)
+            assert sum(h.arslp / h.arlsu for h in owned) == pytest.approx(1.0)
+
+    def test_min_hru_fraction_above_one_is_rejected(self, mini_watershed):
+        from swatplus_builder.errors import SwatBuilderInputError
+        from swatplus_builder.gis.hru import create_hrus
+
+        with pytest.raises(SwatBuilderInputError, match="between 0 and 1"):
+            create_hrus(
+                mini_watershed["watershed"],
+                mini_watershed["landuse_raster"],
+                mini_watershed["soil_raster"],
+                dominant_only=False,
+                min_hru_fraction=1.1,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -562,6 +640,7 @@ class TestErrors:
                 mini_watershed["watershed"].workdir / "does_not_exist.tif",
                 mini_watershed["soil_raster"],
             )
+
 
     def test_non_monotonic_slope_bands_rejected(self, mini_watershed):
         from swatplus_builder.errors import SwatBuilderInputError
@@ -611,6 +690,28 @@ class TestErrors:
                 bad_lu,
                 mini_watershed["soil_raster"],
             )
+
+
+def test_channel_lookup_uses_link_id_when_spatial_join_is_missing() -> None:
+    from swatplus_builder.gis.hru import _channel_attrs_by_sub
+
+    channels = gpd.GeoDataFrame(
+        {
+            "sub_id": [np.nan],
+            "link_id": [17],
+            "length_m": [24.85],
+            "slope_m_m": [0.006691],
+            "width_m": [78.774],
+            "depth_m": [2.016],
+        },
+        geometry=[LineString([(0, 0), (1, 1)])],
+        crs=_CRS_UTM,
+    )
+
+    lookup = _channel_attrs_by_sub(channels)
+
+    assert lookup[17]["channel_id"] == 17
+    assert lookup[17]["length_m"] == pytest.approx(24.85)
 
 
 # ---------------------------------------------------------------------------

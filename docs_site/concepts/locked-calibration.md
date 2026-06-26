@@ -36,10 +36,27 @@ drift — any change to the inputs is detectable.
 
 Calibration (real-engine DDS, restricted by default to effective parameters
 such as `CN2` and `ALPHA_BF`) evaluates each candidate on a **fresh copy** of
-the inputs. A **volume gate runs first**: a candidate that fails gross water
-balance is rejected before its skill metric is ever considered. This prevents
-the optimizer from chasing a good-looking NSE that is built on a broken mass
-balance.
+the inputs. Three gates run in sequence before skill is considered:
+
+1. **Volume gate** — rejects any candidate with `|PBIAS| > 30%` so the
+   optimizer cannot chase a good-looking NSE built on broken mass balance.
+2. **Physical gate** — runs the water-balance gate on every candidate (both
+   full-mode and LTE) to catch physically implausible states (zero surface
+   runoff, ET-dominated basins, mass imbalance) before skill promotion.
+3. **BFI gate** (baseflow phase) — rewards simulated baseflow index that
+   tracks the observed BFI, penalising flashy models that overfit KGE.
+
+The search is **staged**: volume → baseflow/subsurface → peaks/timing →
+skill finetune. Each phase only opens the parameters assigned to it while
+preserving the best settings carried forward from earlier phases. A
+**multi-seed DDS ensemble** (Tolson & Shoemaker 2007) runs independent
+trajectories to quantify equifinality uncertainty.
+
+Spin-up is handled when the prepared simulation is built: `time.sim` starts
+before the evaluation period and `print.prt` excludes the configured warm-up
+years from scored outputs. Once `benchmark/alignment.csv` is sealed, candidate
+search, sensitivity screening, and independent verification use those exact
+locked dates. They do not silently trim the observed series again.
 
 ### 3. Promote
 

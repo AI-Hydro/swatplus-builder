@@ -61,8 +61,11 @@ def build_figure_title(base_title: str, metrics: dict | None, metadata: dict | N
             meta_str.append(basin_name)
         if usgs_id and not (has_usgs_in_name or has_usgs_bare):
             meta_str.append(f"({usgs_id})")
-        if metadata.get("time_range"):
-            meta_str.append(f"| {metadata['time_range']}")
+        time_range = metadata.get("time_range")
+        if not time_range and metadata.get("start_date") and metadata.get("end_date"):
+            time_range = f"{metadata['start_date']} to {metadata['end_date']}"
+        if time_range:
+            meta_str.append(f"| {time_range}")
         
         if meta_str:
             parts.append(" ".join(meta_str))

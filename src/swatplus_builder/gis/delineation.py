@@ -158,6 +158,7 @@ def delineate(
     dem_conditioning: str = "breach",
     stream_burn_vector: Path | str | None = None,
     stream_burn_depth_m: float = 10.0,
+    require_domain_margin: bool = False,
     settings: Settings = DEFAULT_SETTINGS,
 ) -> WatershedResult:
     """Delineate subbasins and channels from a DEM and a pour point.
@@ -171,8 +172,10 @@ def delineate(
         stream_threshold_cells: Minimum flow-accumulation (cells) to define a stream.
                                 Lower → denser network; higher → fewer, longer channels.
                                 Typical range: 100 (small basin, fine DEM) – 5000 (large basin).
-        snap_dist_m:            Outlet snap radius in metres. The outlet point is moved to the
-                                nearest high-accumulation cell within this radius.
+        snap_dist_m:            Outlet snap radius in metres. With an expected basin area, the
+                                outlet is moved to the nearby stream cell whose contributing
+                                area best matches that reference; otherwise the highest-
+                                accumulation nearby stream cell is used.
         expected_area_km2:      NLDI or user-provided basin area in km². When supplied, the
                                 gate raises if the delineated area is < ``min_area_ratio``
                                 of this value.
@@ -194,6 +197,9 @@ def delineate(
                                 terrain. Effective fix for the multi-terminal C1 failure class.
         stream_burn_depth_m:    Elevation decrement (metres) applied to stream-vector cells
                                 during DEM burning. Default 10 m.
+        require_domain_margin:  Refuse a watershed that touches the valid DEM data boundary.
+                                Full workflows should enable this when the DEM was fetched
+                                over a buffered extent. Default False for low-level compatibility.
         settings:               Runtime overrides (backend, verbosity, …).
 
     Returns:
@@ -324,7 +330,16 @@ def delineate(
         flow_dir, flow_acc, stream_links, subbasins_r,
         outlet_raw, outlet_snapped, watershed_r,
         effective_snap_m,
+        expected_area_km2=expected_area_km2,
     )
+    if require_domain_margin and snap_diag["domain_edge_contact_count"] > 0:
+        raise SwatBuilderPipelineError(
+            "Delineated watershed touches the valid DEM boundary; fetch a larger "
+            "buffered DEM before using this model.",
+            domain_edge_contact_count=int(snap_diag["domain_edge_contact_count"]),
+            dem_path=str(dem_path),
+            snap_dist_m=float(effective_snap_m),
+        )
 
     # ------------------------------------------------------------------
     # 9. Polygonize subbasins (masked to watershed)
@@ -370,19 +385,25 @@ def delineate(
     graph, _n_pruned_boundary = _prune_secondary_terminals(graph, _outlet_lid)
     if _n_pruned_boundary > 0:
         _n_pruned_isolated += _n_pruned_boundary
-        _valid_link_ids: set[int] = {int(n) for n in graph.nodes if _positive_int(n) is not None}
-        channels_gdf = channels_gdf[
-            channels_gdf["link_id"].apply(_positive_int).isin(_valid_link_ids)
+
+    # Persist only rows represented by the final routing graph. WBT vectorizes
+    # the full stream-link raster, including channels outside the clipped
+    # watershed; keeping those rows creates contradictory GIS/database artifacts.
+    _valid_link_ids: set[int] = {
+        int(n) for n in graph.nodes if _positive_int(n) is not None
+    }
+    channels_gdf = channels_gdf[
+        channels_gdf["link_id"].apply(_positive_int).isin(_valid_link_ids)
+    ].copy()
+    _valid_sub_ids: set[int] = {
+        sub_id
+        for sub_id in (_positive_int(v) for v in channels_gdf.get("sub_id", []))
+        if sub_id is not None
+    }
+    if "sub_id" in subbasins_gdf.columns and _valid_sub_ids:
+        subbasins_gdf = subbasins_gdf[
+            subbasins_gdf["sub_id"].apply(_positive_int).isin(_valid_sub_ids)
         ].copy()
-        _valid_sub_ids: set[int] = {
-            s for s in (
-                _positive_int(v) for v in channels_gdf.get("sub_id", [])
-            ) if s is not None
-        }
-        if "sub_id" in subbasins_gdf.columns and _valid_sub_ids:
-            subbasins_gdf = subbasins_gdf[
-                subbasins_gdf["sub_id"].apply(_positive_int).isin(_valid_sub_ids)
-            ].copy()
 
     # ------------------------------------------------------------------
     # Save vectors + graph
@@ -427,13 +448,14 @@ def delineate(
         "snap_dist_actual_m": snap_diag["snap_dist_actual_m"],
         "flow_acc_raw_km2": snap_diag["flow_acc_raw_km2"],
         "flow_acc_snapped_km2": snap_diag["flow_acc_snapped_km2"],
+        "domain_edge_contact_count": snap_diag["domain_edge_contact_count"],
     }
 
     # Write snap diagnostic artifact — standalone JSON for traceability
     snap_artifact = workdir / "snap_diagnostic.json"
     snap_artifact_data: dict[str, object] = {
         "usgs_id": outlet.usgs_id if hasattr(outlet, "usgs_id") else None,
-        "snap_strategy": "max_accumulation",
+        "snap_strategy": snap_diag["snap_strategy"],
         "snap_radius_m": snap_diag["snap_radius_m"],
         "snap_dist_actual_m": snap_diag["snap_dist_actual_m"],
         "outlet_raw": {
@@ -449,8 +471,11 @@ def delineate(
             "y_proj": snap_diag["outlet_snapped_y"],
             "flow_acc_cells": snap_diag["flow_acc_snapped_cells"],
             "flow_acc_km2": snap_diag["flow_acc_snapped_km2"],
+            "area_relative_error": snap_diag["snap_area_relative_error"],
+            "stream_link_id": int(snap_diag["stream_link_id"]),
         },
         "dem_resolution_m": snap_diag["dem_resolution_m"],
+        "domain_edge_contact_count": int(snap_diag["domain_edge_contact_count"]),
         "expected_area_km2": expected_area_km2,
         "generated_area_km2": round(total_area_km2, 3),
     }
@@ -840,6 +865,88 @@ def _snap_to_max_accumulation(
         return float(snapped_px), float(snapped_py), acc_raw, acc_snapped, dist_m
 
 
+def _snap_to_area_target(
+    flow_acc: Path,
+    stream_links: Path,
+    px: float,
+    py: float,
+    radius_m: float,
+    expected_area_km2: float,
+) -> tuple[float, float, float, float, float, float, int]:
+    """Snap to a nearby stream cell using drainage-area agreement first.
+
+    The nearest or highest-accumulation cell can belong to the wrong tributary
+    or a larger downstream basin. When an authoritative reference area is
+    available, contributing-area error is therefore the primary score and
+    distance is a secondary penalty.
+    """
+    with rasterio.open(flow_acc) as src, rasterio.open(stream_links) as streams:
+        if (
+            src.width != streams.width
+            or src.height != streams.height
+            or src.transform != streams.transform
+            or src.crs != streams.crs
+        ):
+            raise SwatBuilderPipelineError(
+                "Flow-accumulation and stream-link rasters are not aligned.",
+                flow_acc=str(flow_acc),
+                stream_links=str(stream_links),
+            )
+
+        res_m = math.sqrt(abs(src.res[0] * src.res[1]))
+        radius_cells = int(math.ceil(radius_m / max(res_m, 1e-9)))
+        row, col = src.index(px, py)
+        row = max(0, min(src.height - 1, row))
+        col = max(0, min(src.width - 1, col))
+        acc_raw = float(src.read(1, window=rasterio.windows.Window(col, row, 1, 1))[0, 0])
+
+        r0 = max(0, row - radius_cells)
+        r1 = min(src.height, row + radius_cells + 1)
+        c0 = max(0, col - radius_cells)
+        c1 = min(src.width, col + radius_cells + 1)
+        window = rasterio.windows.Window(c0, r0, c1 - c0, r1 - r0)
+        acc = src.read(1, window=window, masked=True).filled(np.nan).astype(np.float64)
+        links = streams.read(1, window=window, masked=True).filled(0)
+
+        rr = np.arange(r0, r1) - row
+        cc = np.arange(c0, c1) - col
+        dist_m = np.hypot(rr[:, None], cc[None, :]) * res_m
+        inside = dist_m <= radius_m
+        valid = inside & np.isfinite(acc) & (acc > 0)
+        candidates = valid & (links > 0)
+        if not candidates.any():
+            candidates = valid
+        if not candidates.any():
+            return px, py, acc_raw, acc_raw, 0.0, float("nan"), 0
+
+        target_cells = expected_area_km2 * 1e6 / max(res_m**2, 1.0)
+        # Ordinary relative error is asymmetric for snapping: a near-zero
+        # tributary is bounded near 1.0 error, while a 2x downstream basin is
+        # slightly above 1.0. Use log-ratio error so under- and over-shoots are
+        # scored symmetrically by multiplicative distance from the target area.
+        area_error = np.abs(np.log(np.maximum(acc, 1.0) / max(target_cells, 1.0)))
+        distance_penalty = dist_m / max(radius_m, 1.0)
+        score = area_error + 0.35 * distance_penalty
+        score = np.where(candidates, score, np.inf)
+        snap_r_local, snap_c_local = np.unravel_index(int(np.argmin(score)), score.shape)
+        snap_row = r0 + snap_r_local
+        snap_col = c0 + snap_c_local
+        acc_snapped = float(acc[snap_r_local, snap_c_local])
+        snapped_px, snapped_py = src.xy(snap_row, snap_col)
+        actual_dist_m = math.hypot(snapped_px - px, snapped_py - py)
+        relative_error = abs(acc_snapped - target_cells) / max(target_cells, 1.0)
+        stream_link_id = int(links[snap_r_local, snap_c_local])
+        return (
+            float(snapped_px),
+            float(snapped_py),
+            acc_raw,
+            acc_snapped,
+            actual_dist_m,
+            float(relative_error),
+            stream_link_id,
+        )
+
+
 def _snap_and_watershed(
     wbt: Any,
     outlet: Outlet,
@@ -852,8 +959,10 @@ def _snap_and_watershed(
     outlet_snapped: Path,
     watershed_r: Path,
     snap_dist_m: float,
-) -> tuple[float, float, dict[str, float]]:
-    """Snap outlet to highest-accumulation cell, delineate watershed.
+    *,
+    expected_area_km2: float | None = None,
+) -> tuple[float, float, dict[str, Any]]:
+    """Snap outlet to a defensible stream cell and delineate watershed.
 
     Returns (snapped_lon, snapped_lat, snap_diagnostic_dict).
     """
@@ -874,20 +983,43 @@ def _snap_and_watershed(
                 dem_bounds=(bounds.left, bounds.bottom, bounds.right, bounds.top),
             )
 
-    # Snap to the highest-accumulation cell within snap_dist_m (main-stem robust)
-    snapped_px, snapped_py, acc_raw, acc_snapped, snap_dist_actual = (
-        _snap_to_max_accumulation(flow_acc, px, py, snap_dist_m)
-    )
+    if expected_area_km2 is not None and expected_area_km2 > 0:
+        (
+            snapped_px,
+            snapped_py,
+            acc_raw,
+            acc_snapped,
+            snap_dist_actual,
+            snap_area_relative_error,
+            stream_link_id,
+        ) = _snap_to_area_target(
+            flow_acc,
+            stream_links,
+            px,
+            py,
+            snap_dist_m,
+            expected_area_km2,
+        )
+        snap_strategy = "expected_area_target"
+    else:
+        snapped_px, snapped_py, acc_raw, acc_snapped, snap_dist_actual = (
+            _snap_to_max_accumulation(flow_acc, px, py, snap_dist_m)
+        )
+        snap_area_relative_error = float("nan")
+        stream_link_id = 0
+        snap_strategy = "max_accumulation"
 
     log.info(
-        "       Snap: raw acc=%.0f cells (%.2f km²), snapped acc=%.0f cells (%.2f km²), dist=%.0f m",
+        "       Snap (%s): raw acc=%.0f cells (%.2f km²), snapped acc=%.0f cells "
+        "(%.2f km²), dist=%.0f m",
+        snap_strategy,
         acc_raw,   acc_raw   * res_m ** 2 / 1e6,
         acc_snapped, acc_snapped * res_m ** 2 / 1e6,
         snap_dist_actual,
     )
 
-    snap_diag: dict[str, float] = {
-        "snap_strategy": 0.0,          # 0 = max_accumulation
+    snap_diag: dict[str, Any] = {
+        "snap_strategy": snap_strategy,
         "outlet_raw_x": px,
         "outlet_raw_y": py,
         "outlet_snapped_x": snapped_px,
@@ -898,6 +1030,12 @@ def _snap_and_watershed(
         "flow_acc_snapped_cells": acc_snapped,
         "flow_acc_raw_km2": round(acc_raw   * res_m ** 2 / 1e6, 4),
         "flow_acc_snapped_km2": round(acc_snapped * res_m ** 2 / 1e6, 2),
+        "snap_area_relative_error": (
+            round(snap_area_relative_error, 6)
+            if math.isfinite(snap_area_relative_error)
+            else None
+        ),
+        "stream_link_id": stream_link_id,
         "dem_resolution_m": round(res_m, 2),
     }
 
@@ -916,12 +1054,46 @@ def _snap_and_watershed(
     # Delineate watershed above snapped outlet
     rc = wbt.watershed(str(flow_dir), str(outlet_snapped), str(watershed_r))
     _check_wbt_output(rc, "Watershed", watershed_r)
+    snap_diag["domain_edge_contact_count"] = float(
+        _watershed_domain_edge_contact_count(flow_acc, watershed_r)
+    )
 
     # Back-transform snapped point to WGS84
     inv_transformer = Transformer.from_crs(proj_crs, "EPSG:4326", always_xy=True)
     snapped_lon, snapped_lat = inv_transformer.transform(snapped_px, snapped_py)
 
     return float(snapped_lon), float(snapped_lat), snap_diag
+
+
+def _watershed_domain_edge_contact_count(
+    dem_domain_raster: Path,
+    watershed_raster: Path,
+) -> int:
+    """Count watershed cells adjacent to invalid DEM data or the array edge."""
+    with rasterio.open(dem_domain_raster) as src:
+        valid = ~np.ma.getmaskarray(src.read(1, masked=True))
+    with rasterio.open(watershed_raster) as src:
+        watershed = src.read(1, masked=True).filled(0) > 0
+
+    if valid.shape != watershed.shape:
+        raise SwatBuilderPipelineError(
+            "DEM domain and watershed rasters have different shapes.",
+            dem_shape=valid.shape,
+            watershed_shape=watershed.shape,
+        )
+
+    padded = np.pad(valid, 1, mode="constant", constant_values=False)
+    adjacent_invalid = np.zeros(valid.shape, dtype=bool)
+    nrows, ncols = valid.shape
+    for dr in (-1, 0, 1):
+        for dc in (-1, 0, 1):
+            if dr == 0 and dc == 0:
+                continue
+            adjacent_invalid |= ~padded[
+                1 + dr : 1 + dr + nrows,
+                1 + dc : 1 + dc + ncols,
+            ]
+    return int(np.count_nonzero(watershed & adjacent_invalid))
 
 
 # ---------------------------------------------------------------------------
@@ -1003,6 +1175,16 @@ def _vectorize_channels(
     cha_centroids = gpd.GeoDataFrame(channels.drop(columns=["geometry"]), geometry="centroid", crs=proj_crs)
     joined = gpd.sjoin(cha_centroids, subbasins_gdf[["sub_id", "geometry"]], how="left", predicate="within")
     channels["sub_id"] = joined["sub_id"].values
+
+    # StreamLinkIdentifier and Subbasins use the same raster link ids. Very
+    # short channel segments can have a centroid exactly on a polygon boundary,
+    # making the strict ``within`` join return NaN even though the link id is
+    # authoritative. Restore that native id only when it exists among retained
+    # subbasins; unrelated/pruned links remain unassigned.
+    valid_sub_ids = set(subbasins_gdf["sub_id"].dropna().astype(int))
+    missing = channels["sub_id"].isna()
+    link_fallback = channels["link_id"].where(channels["link_id"].isin(valid_sub_ids))
+    channels.loc[missing, "sub_id"] = link_fallback.loc[missing]
 
     return channels.drop(columns=["centroid"], errors="ignore").reset_index(drop=True)
 
@@ -1162,6 +1344,22 @@ def _build_topology(stream_links: Path, watershed_r: Path, channels_gdf=None) ->
             except Exception as exc:
                 log.warning("Spatial topology (disk fallback) failed: %s", exc)
 
+    # Junction pixels can create reciprocal or split D8 link transitions while
+    # endpoint snapping contributes the physically downstream continuation.
+    # A channel must have one downstream receiver. Resolve competing successors
+    # with the flow-accumulation ordering before generic cycle removal; otherwise
+    # DFS order can preserve an upstream-facing edge and turn real tributaries
+    # into secondary terminals that are later pruned with their basin area.
+    flow_acc_path = stream_links.parent / "d8_flow_acc.tif"
+    if flow_acc_path.is_file():
+        with rasterio.open(flow_acc_path) as src:
+            flow_acc = src.read(1).astype("float64")
+        valid_links = links > 0
+        max_link_id = int(links[valid_links].max()) if valid_links.any() else 0
+        max_acc = np.full(max_link_id + 1, float("-inf"), dtype="float64")
+        np.maximum.at(max_acc, links[valid_links], flow_acc[valid_links])
+        _resolve_downstream_splits_by_flow_accumulation(G, max_acc)
+
     # Validate DAG, remove back-edges in a single O(V+E) coloring DFS.
     # The prior iterative approach (find_cycle + remove one edge, repeat) is
     # O(k × (V+E)) and hangs for large basins with many cycles.
@@ -1175,6 +1373,47 @@ def _build_topology(stream_links: Path, watershed_r: Path, channels_gdf=None) ->
         sum(1 for n in G.nodes if G.out_degree(n) == 0),
     )
     return G
+
+
+def _resolve_downstream_splits_by_flow_accumulation(
+    graph: nx.DiGraph,
+    max_accumulation_by_link: np.ndarray,
+) -> int:
+    """Keep one receiver per channel using downstream accumulation rank.
+
+    Stream networks do not bifurcate under the D8 routing used here. When
+    raster junction adjacency and endpoint snapping disagree, the receiver
+    whose link reaches the greatest flow accumulation is the downstream path.
+    The graph is mutated in place and the number of removed edges is returned.
+    """
+    removed = 0
+    for node in list(graph.nodes):
+        successors = list(graph.successors(node))
+        if len(successors) <= 1:
+            continue
+
+        def rank(successor: object) -> tuple[float, int]:
+            link_id = _positive_int(successor)
+            accumulation = (
+                float(max_accumulation_by_link[link_id])
+                if link_id is not None and link_id < len(max_accumulation_by_link)
+                else float("-inf")
+            )
+            return accumulation, link_id or -1
+
+        receiver = max(successors, key=rank)
+        for successor in successors:
+            if successor == receiver:
+                continue
+            graph.remove_edge(node, successor)
+            removed += 1
+
+    if removed:
+        log.info(
+            "Resolved %d ambiguous downstream edge(s) using link flow accumulation.",
+            removed,
+        )
+    return removed
 
 
 def _prune_topology_to_valid_channels(

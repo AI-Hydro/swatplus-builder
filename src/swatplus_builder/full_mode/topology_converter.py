@@ -233,11 +233,18 @@ def _convert_hydrology_cha_to_lte(tio: Path) -> None:
         "        n_conc        p_conc         p_bio  description",
     ]
 
+    # In the converted sdc/chandeg topology, SWAT+ treats hyd-sed-lte.cha:len
+    # as part of the LTE transfer representation. Real channel lengths from
+    # hydrology.cha over-delay small-basin event pulses in this engine/topology
+    # combination; prior validated LTE runs used a near-zero transfer length.
+    # Preserve physical channel geometry in the source GIS/channel tables, but
+    # use the stabilized transfer length for this compatibility file.
+    lte_transfer_len = "0.00050"
+
     for name, parts in sorted(hyd_data.items()):
         wd = parts[1] if len(parts) > 1 else "75.0"
         dp = parts[2] if len(parts) > 2 else "2.0"
         slp = parts[3] if len(parts) > 3 else "0.003"
-        len_ = parts[4] if len(parts) > 4 else "5.0"
         mann = parts[5] if len(parts) > 5 else "0.05"
         k = parts[6] if len(parts) > 6 else "1.0"
         out_lines.append(
@@ -245,7 +252,7 @@ def _convert_hydrology_cha_to_lte(tio: Path) -> None:
             f"      {wd:>12}"
             f"    {dp:>12}"
             f"    {slp:>12}"
-            f"    {len_:>12}"
+            f"    {lte_transfer_len:>12}"
             f"    {mann:>12}"
             f"    {k:>12}"
             f"       0.01000       0.00500       1.05000       0.00100"

@@ -15,6 +15,12 @@ from swatplus_builder.output.reader import read_output_file
 log = logging.getLogger(__name__)
 _SECONDS_PER_DAY = 86400.0
 
+
+def terminal_channel_ids(txtinout_dir: Path | str) -> list[int]:
+    """Return sorted terminal channel GIS IDs from ``chandeg.con``."""
+    return sorted(_terminal_ids_from_chandeg_con(Path(txtinout_dir)))
+
+
 def evaluate_run(
     sim_channel_path: Path | str, 
     obs_series: pd.Series, 
@@ -149,13 +155,22 @@ def evaluate_run(
     if return_diagnostics:
         source_name = diagnostics.get("sim_source_file")
         source_path = sim_channel_path.parent / str(source_name) if isinstance(source_name, str) else sim_channel_path
-        diagnostics.update(
-            _terminal_scope_metric_diagnostics(
-                source_path,
-                obs_series,
-                selected_outlet_gis_id=int(diagnostics.get("selected_outlet_gis_id", outlet_gis_id)),
+        if diagnostics.get("outlet_scope") == "terminal_inflow_sum":
+            diagnostics.update(
+                {
+                    "terminal_scope_metrics_available": False,
+                    "terminal_scope_metric_reason": "terminal_inflow_sum_is_effective_selected_hydrograph",
+                    "terminal_scope_metric_claim_impact": "selected_outlet_uses_topology_owned_terminal_inflow_sum",
+                }
             )
-        )
+        else:
+            diagnostics.update(
+                _terminal_scope_metric_diagnostics(
+                    source_path,
+                    obs_series,
+                    selected_outlet_gis_id=int(diagnostics.get("selected_outlet_gis_id", outlet_gis_id)),
+                )
+            )
 
     if out_alignment_csv:
         out_path = Path(out_alignment_csv)
@@ -275,6 +290,94 @@ def _extract_flo_out_rows(table, outlet_gis_id: int) -> pd.DataFrame:
     return df
 
 
+def _terminal_inflow_channel_gis_ids(txtinout_dir: Path, terminal_gis_id: int) -> list[int]:
+    """Return immediate upstream channel GIS IDs feeding a terminal channel.
+
+    In converted full-mode projects, ``chandeg.con`` downstream ``sdc`` targets
+    use channel object IDs, while the output tables expose GIS IDs.  A terminal
+    row may therefore have a tiny local state-table hydrograph even though its
+    immediate upstream channel transfers carry the gauge-adjacent routed flow.
+    """
+
+    p = txtinout_dir / "chandeg.con"
+    if not p.exists():
+        return []
+    rows: list[dict[str, int | str | None]] = []
+    col_idx: dict[str, int] | None = None
+    for line in p.read_text(encoding="utf-8", errors="ignore").splitlines():
+        parts = line.split()
+        if not parts:
+            continue
+        if "gis_id" in parts and "obj_typ" in parts:
+            col_idx = {c: i for i, c in enumerate(parts)}
+            continue
+        if col_idx is None or not parts[0].isdigit():
+            continue
+        try:
+            row = {
+                "id": int(parts[col_idx["id"]]),
+                "gis_id": int(parts[col_idx["gis_id"]]),
+                "out_tot": int(parts[col_idx["out_tot"]]) if "out_tot" in col_idx else None,
+                "obj_typ": parts[col_idx["obj_typ"]] if "obj_typ" in col_idx and col_idx["obj_typ"] < len(parts) else None,
+                "obj_id": int(parts[col_idx["obj_id"]])
+                if "obj_id" in col_idx and col_idx["obj_id"] < len(parts) and parts[col_idx["obj_id"]].isdigit()
+                else None,
+            }
+        except (IndexError, KeyError, ValueError):
+            continue
+        rows.append(row)
+
+    terminal_unit_id: int | None = None
+    for row in rows:
+        if int(row["gis_id"]) == int(terminal_gis_id):
+            terminal_unit_id = int(row["id"])
+            break
+    if terminal_unit_id is None:
+        return []
+
+    parent_ids: list[int] = []
+    for row in rows:
+        if row.get("obj_typ") != "sdc":
+            continue
+        if row.get("obj_id") != terminal_unit_id:
+            continue
+        gid = int(row["gis_id"])
+        if gid != int(terminal_gis_id):
+            parent_ids.append(gid)
+    return sorted(set(parent_ids))
+
+
+def _terminal_inflow_sum_rows(
+    table,
+    txtinout_dir: Path,
+    terminal_gis_id: int,
+    source_name: str,
+) -> tuple[pd.DataFrame, list[int], float] | None:
+    """Build a terminal-inflow hydrograph from immediate channel parents."""
+
+    parent_ids = _terminal_inflow_channel_gis_ids(txtinout_dir, terminal_gis_id)
+    if not parent_ids:
+        return None
+
+    series: list[pd.Series] = []
+    used_ids: list[int] = []
+    for gid in [*parent_ids, int(terminal_gis_id)]:
+        df = _extract_flo_out_rows(table, gid)
+        if df.empty:
+            continue
+        sim = _normalize_discharge_units(df["sim"], source_name)
+        if float(sim.abs().sum()) <= 0.0:
+            continue
+        series.append(sim.rename(str(gid)))
+        used_ids.append(int(gid))
+
+    if len(series) < 2:
+        return None
+    summed = pd.concat(series, axis=1).sum(axis=1).to_frame("sim")
+    parent_sum = float(pd.concat(series[:-1], axis=1).sum(axis=1).abs().sum()) if len(series) > 1 else 0.0
+    return summed, used_ids, parent_sum
+
+
 def _terminal_ids_from_chandeg_con(txtinout_dir: Path) -> set[int]:
     """Best-effort parse of terminal channel IDs from ``chandeg.con``.
 
@@ -324,6 +427,7 @@ def _candidate_sim_paths(sim_channel_path: Path) -> list[Path]:
     txtinout_dir = sim_channel_path.parent
     for alt in (
         "basin_sd_cha_day.txt",
+        "channel_sdmorph_day.txt",
         "channel_sd_day.txt",
         "basin_cha_day.txt",
         "channel_day.txt",
@@ -547,6 +651,25 @@ def _read_sim_discharge(
             diagnostics["requested_outlet_is_terminal"] = int(outlet_gis_id) in terminal_ids
         df = _extract_flo_out_rows(table, outlet_gis_id)
         if df.empty:
+            if allow_dry_autodetect:
+                best_gid = _pick_best_flowing_gis_id(table, outlet_gis_id, txtinout_dir)
+                if best_gid is not None:
+                    alt = _extract_flo_out_rows(table, best_gid)
+                    if not alt.empty:
+                        alt["sim"] = _normalize_discharge_units(alt["sim"], cand.name)
+                        if float(alt["sim"].abs().sum()) > 0.0:
+                            log.warning(
+                                "Configured outlet GIS ID %s is absent from %s; using GIS ID %s.",
+                                outlet_gis_id,
+                                cand.name,
+                                best_gid,
+                            )
+                            diagnostics["selected_outlet_gis_id"] = int(best_gid)
+                            diagnostics["outlet_autodetected"] = True
+                            diagnostics["outlet_selection_reason"] = "requested_outlet_missing"
+                            diagnostics["sim_source_file"] = cand.name
+                            diagnostics["sim_source_sha256"] = _sha256_file(cand)
+                            return alt, diagnostics
             last_df = df
             continue
         df["sim"] = _normalize_discharge_units(df["sim"], cand.name)
@@ -559,6 +682,31 @@ def _read_sim_discharge(
             requested_is_terminal = (
                 terminal_ids and int(outlet_gis_id) in terminal_ids
             )
+            if requested_is_terminal:
+                inflow = _terminal_inflow_sum_rows(
+                    table,
+                    txtinout_dir,
+                    int(outlet_gis_id),
+                    cand.name,
+                )
+                if inflow is not None:
+                    inflow_df, inflow_ids, parent_sum = inflow
+                    terminal_sum = float(df["sim"].abs().sum())
+                    ratio = parent_sum / terminal_sum if terminal_sum > 0.0 else float("inf")
+                    if ratio >= 10.0:
+                        diagnostics["selected_outlet_gis_id"] = int(outlet_gis_id)
+                        diagnostics["selected_outlet_gis_ids"] = inflow_ids
+                        diagnostics["outlet_scope"] = "terminal_inflow_sum"
+                        diagnostics["outlet_selection_reason"] = "terminal_inflow_sum"
+                        diagnostics["terminal_state_flow_sum"] = terminal_sum
+                        diagnostics["terminal_parent_flow_sum"] = parent_sum
+                        diagnostics["terminal_parent_to_state_flow_ratio"] = float(ratio)
+                        diagnostics["terminal_inflow_parent_gis_ids"] = [
+                            gid for gid in inflow_ids if gid != int(outlet_gis_id)
+                        ]
+                        diagnostics["sim_source_file"] = cand.name
+                        diagnostics["sim_source_sha256"] = _sha256_file(cand)
+                        return inflow_df, diagnostics
             if allow_dry_autodetect and not requested_is_terminal and terminal_ids:
                 best_gid = _pick_best_flowing_gis_id(table, outlet_gis_id, txtinout_dir)
                 if best_gid is not None:

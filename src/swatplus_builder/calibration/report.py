@@ -6,6 +6,7 @@ import csv
 import json
 import os
 import tempfile
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -15,13 +16,21 @@ from ..output.metrics import kge, pbias
 from ..params import get_parameter
 from .spotpy_adapter import CalibrationIterationResult
 
+# Protects os.environ mutation during matplotlib config dir setup.
+# os.environ is a process-global dict and is not thread-safe.
+_MPLCONFIG_LOCK = threading.Lock()
+
 
 def _ensure_matplotlib_config_dir() -> None:
     if os.environ.get("MPLCONFIGDIR"):
         return
-    cfg = Path(tempfile.gettempdir()) / "swatplus_builder_mplconfig"
-    cfg.mkdir(parents=True, exist_ok=True)
-    os.environ["MPLCONFIGDIR"] = str(cfg)
+    with _MPLCONFIG_LOCK:
+        # Re-check after acquiring lock (double-checked locking pattern)
+        if os.environ.get("MPLCONFIGDIR"):
+            return
+        cfg = Path(tempfile.gettempdir()) / "swatplus_builder_mplconfig"
+        cfg.mkdir(parents=True, exist_ok=True)
+        os.environ["MPLCONFIGDIR"] = str(cfg)
 
 
 def write_calibration_reports(

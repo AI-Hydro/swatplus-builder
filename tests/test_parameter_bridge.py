@@ -14,6 +14,7 @@ from swatplus_builder.full_mode.parameter_bridge import (
     _apply_cn2,
     _apply_cn3_swf,
     _apply_esco,
+    _apply_gw_revap,
     _apply_lat_ttime,
     _apply_pet_co,
     _apply_rchg_dp,
@@ -21,6 +22,7 @@ from swatplus_builder.full_mode.parameter_bridge import (
     _apply_smtmp,
     _apply_surlag,
     _rewrite_column_for_rows,
+    apply_cn2_delta_to_landuse,
     apply_parameters_to_full_swat_txtinout,
 )
 
@@ -110,6 +112,37 @@ def _write_urban_inputs(tio: Path) -> None:
 
 
 class TestParameterBridge:
+    def test_cn2_landuse_delta_changes_only_referenced_row(self, tmp_path):
+        path = _write_cntable(tmp_path)
+        text = path.read_text().replace(
+            "urban                 98.00000      98.00000      98.00000      98.00000  Paved ----\n",
+            "rc_strow_g            67.00000      78.00000      85.00000      89.00000  Row_crop Straight Good\n"
+            "urban                 98.00000      98.00000      98.00000      98.00000  Paved ----\n",
+        )
+        path.write_text(text)
+        (tmp_path / "landuse.lum").write_text(
+            "landuse.lum: fixture\n"
+            "name cal_group plnt_com mgt cn2 cons_prac urban urb_ro ov_mann tile sep vfs grww bmp\n"
+            "agrl_lum null agrl_comm agrl_rot rc_strow_g cross_slope null null convtill_res null null null null null\n"
+            "urmd_lum null null null urban up_down_slope urmd buildup_washoff urban_asphalt null null null null null\n"
+        )
+
+        report = apply_cn2_delta_to_landuse(
+            tmp_path,
+            landuse_name="agrl_lum",
+            delta=4.0,
+        )
+
+        rows = {
+            line.split()[0]: line.split()[1:5]
+            for line in path.read_text().splitlines()[2:]
+            if line.split()
+        }
+        assert rows["rc_strow_g"] == ["71.00000", "82.00000", "89.00000", "93.00000"]
+        assert rows["urban"] == ["98.00000"] * 4
+        assert report["curve_number_reference"] == "rc_strow_g"
+        assert report["other_landuses_changed"] is False
+
     def test_cn2_shifts_wood_rows_by_delta_to_target(self, tmp_path):
         _write_cntable(tmp_path)
         _apply_cn2(tmp_path, 80.0)  # target cn_b = 80; wood_f goes from cn_b=60 to 80 (delta +20)
@@ -191,6 +224,24 @@ class TestParameterBridge:
         toks = lines[2].split()
         rchg_dp_idx = lines[1].split().index("rchg_dp")
         assert float(toks[rchg_dp_idx]) == 0.0
+
+    def test_gw_revap_writes_shallow_aquifer_only(self, tmp_path):
+        path = _write_aquifer(tmp_path)
+        with path.open("a") as handle:
+            handle.write(
+                " 2  aqu_deep01 initaqu1 0.00000 40.00000 20.00000 0.00000 0.00000 "
+                "0.50000 50.00000 1.00000 0.05000 0.02000 0.00000 0.05000 "
+                "30.00000 3.00000 5.00000\n"
+            )
+
+        _apply_gw_revap(tmp_path, 0.0)
+
+        lines = path.read_text().splitlines()
+        revap_idx = lines[1].split().index("revap")
+        assert float(lines[2].split()[revap_idx]) == 0.0
+        assert float(lines[3].split()[revap_idx]) == 0.02
+        with pytest.raises(ParameterBridgeError, match="out of range"):
+            _apply_gw_revap(tmp_path, 1.1)
 
     def test_surlag_uses_documented_parameters_bsn_range(self, tmp_path):
         _write_parameters_bsn(tmp_path)

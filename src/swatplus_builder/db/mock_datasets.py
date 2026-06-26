@@ -47,8 +47,8 @@ from pathlib import Path
 db_path  = sys.argv[1]
 landuses = json.loads(sys.argv[2])   # list[str] of lower-case plant names
 
-from database.datasets.setup import SetupDatasetsDatabase
-from database.datasets import (
+from _swatplus_db.datasets.setup import SetupDatasetsDatabase
+from _swatplus_db.datasets import (
     definitions, hru_parm_db, soils as ds_soils,
     decision_table, lum as ds_lum, basin, init as ds_init,
 )
@@ -367,7 +367,7 @@ definitions.Print_prt.create(
     interval=1, csvout=False, dbout=False, cdfout=False,
     crop_yld='b', mgtout=False, hydcon=False, fdcout=False,
 )
-from database.datasets import definitions as _defs  # already imported
+from _swatplus_db.datasets import definitions as _defs  # already imported
 # Print_prt_object is in definitions module
 print_prt_objects = [
     'basin_wb','basin_nb','basin_ls','basin_pw','basin_aqu','basin_res',

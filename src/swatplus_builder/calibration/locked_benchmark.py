@@ -87,6 +87,8 @@ class CalibrationEvidence(BaseModel):
     ensemble_best_kge_per_seed: list[float] = Field(default_factory=list)
     ensemble_nse_spread: float | None = None
     ensemble_kge_spread: float | None = None
+    nyskip_years: int = 0
+    screening_window: dict[str, str] | None = None
 
 
 class LockedSensitivityEvidence(BaseModel):
@@ -337,11 +339,18 @@ def calibrate_against_lock(
     dds_r: float = 0.2,
     dds_n_seeds: int = 1,
     validation_period: tuple[str, str] | None = None,
+    nyskip_years: int = 0,
+    simulation_start: str | None = None,
+    simulation_end: str | None = None,
+    score_start: str | None = None,
+    score_end: str | None = None,
 ) -> CalibrationEvidence:
     """Run real-engine DDS calibration against a locked benchmark.
 
-    Loads observed alignment from ``benchmark/alignment.csv`` to ensure
-    objective scoring uses the exact same observed series as the lock.
+    Loads observed alignment from ``benchmark/alignment.csv`` so objective
+    scoring uses the exact same dates and observed values as the lock. Warm-up
+    exclusion must happen before the benchmark is sealed; locked calibration
+    must not silently trim the locked series.
 
     Args:
         lock:            :class:`BenchmarkLock` or path to ``benchmark_lock.json``.
@@ -414,7 +423,15 @@ def calibrate_against_lock(
         objective_outlet_policy=_objective_outlet_policy_for_lock(lock),
         parameter_mode=parameter_mode,
         keep_workdirs=False,
-        include_physical_gate=str(parameter_mode).strip().lower() == "full",
+        # Decoupled from parameter_mode: every real-engine calibration candidate
+        # must pass the water-balance gate.  LTE models cannot bypass physical
+        # process governance — the gate adapts to available outputs.
+        include_physical_gate=True,
+        nyskip_years=nyskip_years,
+        simulation_start=simulation_start,
+        simulation_end=simulation_end,
+        score_start=score_start,
+        score_end=score_end,
     )
 
     # Deterministic staged diagnostic search. Each phase only opens the
@@ -443,6 +460,49 @@ def calibrate_against_lock(
     current_params: dict[str, float] = {}
     eval_idx = 0
     phase_failure: SwatBuilderPipelineError | None = None
+    progress_path = cal_dir / "calibration_progress.json"
+
+    def _write_calibration_progress(
+        *,
+        status: str,
+        phase: dict[str, Any] | None = None,
+        phase_order: int | None = None,
+        point: dict[str, float] | None = None,
+        metrics: dict[str, Any] | None = None,
+        error: str | None = None,
+    ) -> None:
+        payload = {
+            "basin_id": lock.basin_id,
+            "status": status,
+            "eval_idx": eval_idx,
+            "completed_evaluations": len(
+                [ev for ev in evaluations if ev.get("status") == "evaluated"]
+            ),
+            "recorded_events": len(evaluations),
+            "total_budget": int(n_evaluations),
+            "phase": None if phase is None else phase.get("phase"),
+            "phase_order": phase_order,
+            "phase_objective": None if phase is None else phase.get("objective"),
+            "parameters": point or {},
+            "metrics": metrics or {},
+            "best_parameters": best_params,
+            "best_metrics": best_metrics,
+            "screening_window": {
+                key: value
+                for key, value in {
+                    "simulation_start": simulation_start,
+                    "simulation_end": simulation_end,
+                    "score_start": score_start,
+                    "score_end": score_end,
+                }.items()
+                if value is not None
+            },
+            "error": error,
+            "updated_at_utc": datetime.now(timezone.utc).isoformat(),
+        }
+        tmp_progress_path = progress_path.with_suffix(".json.tmp")
+        tmp_progress_path.write_text(json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8")
+        tmp_progress_path.replace(progress_path)
 
     for phase_index, phase in enumerate(active_phases, start=1):
         phase_parameters = [p for p in phase["parameters"] if p in parameters]
@@ -515,6 +575,13 @@ def calibrate_against_lock(
 
         phase_objective = str(phase["objective"])
         phase_budget = max(1, int(phase["budget"]))
+        phase_anchor_points = _sensitivity_guided_anchor_points(
+            cal_dir.parent / "sensitivity_screen_locked" / "sensitivity_screen.json",
+            current_params=current_params,
+            phase_parameters=phase_parameters,
+            param_bounds=param_bounds,
+            max_points=min(8, max(4, phase_budget)),
+        )
 
         def _evaluate_and_record(
             point: dict[str, float],
@@ -528,6 +595,12 @@ def calibrate_against_lock(
             is recorded identically (gates, condition codes, eval index).
             """
             nonlocal eval_idx
+            _write_calibration_progress(
+                status="evaluating",
+                phase=_phase,
+                phase_order=_phase_index,
+                point=point,
+            )
             try:
                 metrics = objective(point)
             except Exception as e:
@@ -557,7 +630,25 @@ def calibrate_against_lock(
                 }
             )
             eval_idx += 1
+            _write_calibration_progress(
+                status="evaluated",
+                phase=_phase,
+                phase_order=_phase_index,
+                point=point,
+                metrics=metrics,
+            )
             return metrics
+
+        for anchor_point in phase_anchor_points:
+            metrics = _evaluate_and_record(anchor_point)
+            volume_gate_passed = _volume_gate_passed(metrics)
+            score = _score_candidate(metrics, objective=phase_objective)
+            if not volume_gate_passed or score == float("-inf"):
+                continue
+            if score > phase_best_score:
+                phase_best_score = score
+                phase_best_metrics = {k: float(v) for k, v in metrics.items() if isinstance(v, (int, float))}
+                phase_best_params = dict(anchor_point)
 
         if search_method == "dds":
             phase_best_params, phase_best_metrics, phase_best_score = _dds_search(
@@ -566,10 +657,15 @@ def calibrate_against_lock(
                 feasible_fn=_volume_gate_passed,
                 phase_parameters=phase_parameters,
                 param_bounds=param_bounds,
-                start_params=current_params,
-                budget=phase_budget,
+                start_params=phase_best_params or current_params,
+                budget=max(1, phase_budget - len(phase_anchor_points)),
                 rng=rng,
                 r=dds_r,
+                initial_best=(
+                    None
+                    if phase_best_params is None
+                    else (phase_best_params, phase_best_metrics, phase_best_score)
+                ),
             )
         else:
             points = _phase_candidate_points(
@@ -675,47 +771,79 @@ def calibrate_against_lock(
             writer.writerow(row)
 
     if phase_failure is not None:
+        failure_context = getattr(phase_failure, "context", {})
+        _write_calibration_progress(
+            status="failed",
+            phase={"phase": failure_context.get("phase")},
+            error=str(phase_failure),
+        )
         raise phase_failure
 
     # --- Multi-seed DDS refinement ensemble (C4.4) -------------------------
-    # Run additional DDS passes from the primary best_params with distinct
-    # random seeds. Records per-seed KGE/NSE for uncertainty quantification
-    # and updates best_params if a secondary seed finds a better feasible point.
-    # Secondary evals call objective() directly (not recorded in history CSV).
+    # Each seed traces a complete phased diagnostic path (volume → baseflow →
+    # peaks → finetune) from a fresh random starting point.  This captures the
+    # equifinality landscape: different random seeds may converge to different
+    # local optima with comparable skill but different parameter profiles.
+    # The primary seed's evaluations are already recorded in ``evaluations``;
+    # secondary-seed evaluations are not recorded in the history CSV (they are
+    # refinement runs that inform uncertainty, not protocol trace).
     import math as _math
 
     ensemble_nse_per_seed: list[float] = [float(best_metrics.get("nse", float("nan")))]
     ensemble_kge_per_seed: list[float] = [float(best_metrics.get("kge", float("nan")))]
 
     if search_method == "dds" and dds_n_seeds > 1:
-        final_phase = active_phases[-1]
-        final_phase_obj = str(final_phase["objective"])
-        final_phase_params = [p for p in final_phase["parameters"] if p in parameters]
-        final_phase_budget = max(1, int(final_phase["budget"]))
+        # Per-seed budget: divide the primary budget across seeds.
+        # Secondary seeds use a condensed budget so the ensemble remains
+        # computationally tractable while still exploring distinct basins.
+        seed_budget = max(4, int(n_evaluations) // max(1, dds_n_seeds))
 
         for seed_idx in range(1, max(2, dds_n_seeds)):
             seed_rng = random.Random(42 + seed_idx * 13)
-            refine_params, refine_metrics, _s = _dds_search(
-                evaluate=objective,
-                score_fn=lambda m, _obj=final_phase_obj: _score_candidate(m, objective=_obj),
-                feasible_fn=_volume_gate_passed,
-                phase_parameters=final_phase_params,
-                param_bounds=param_bounds,
-                start_params=best_params,
-                budget=final_phase_budget,
-                rng=seed_rng,
-                r=dds_r,
+            seed_active_phases = _diagnostic_calibration_phases(
+                parameters,
+                calibration_phases,
+                n_evaluations=seed_budget,
             )
-            if refine_params is not None:
-                seed_nse = float(refine_metrics.get("nse", float("nan")))
-                seed_kge = float(refine_metrics.get("kge", float("nan")))
+            seed_params: dict[str, float] = {}
+            seed_metrics: dict[str, float] = {}
+            seed_failure = False
+
+            for phase in seed_active_phases:
+                phase_parameters = [p for p in phase["parameters"] if p in parameters]
+                if not phase_parameters:
+                    continue
+                phase_objective = str(phase["objective"])
+                phase_budget = max(1, int(phase["budget"]))
+
+                refine_params, refine_metrics, _s = _dds_search(
+                    evaluate=objective,
+                    score_fn=lambda m, _obj=phase_objective: _score_candidate(m, objective=_obj),
+                    feasible_fn=_volume_gate_passed,
+                    phase_parameters=phase_parameters,
+                    param_bounds=param_bounds,
+                    start_params=seed_params,
+                    budget=phase_budget,
+                    rng=seed_rng,
+                    r=dds_r,
+                )
+                if refine_params is None:
+                    seed_failure = True
+                    break
+                seed_params = dict(refine_params)
+                seed_metrics = {k: float(v) for k, v in refine_metrics.items() if isinstance(v, (int, float))}
+
+            if not seed_failure and seed_metrics:
+                seed_nse = float(seed_metrics.get("nse", float("nan")))
+                seed_kge = float(seed_metrics.get("kge", float("nan")))
                 ensemble_nse_per_seed.append(seed_nse)
                 ensemble_kge_per_seed.append(seed_kge)
-                refine_score = _score_candidate(refine_metrics, objective=final_phase_obj)
+                final_phase_obj = str(seed_active_phases[-1]["objective"])
+                refine_score = _score_candidate(seed_metrics, objective=final_phase_obj)
                 primary_score = _score_candidate(best_metrics, objective=final_phase_obj)
                 if _math.isfinite(refine_score) and refine_score > primary_score:
-                    best_params = dict(refine_params)
-                    best_metrics = dict(refine_metrics)
+                    best_params = dict(seed_params)
+                    best_metrics = dict(seed_metrics)
 
     def _finite_std(vals: list[float]) -> float | None:
         finite = [v for v in vals if _math.isfinite(v)]
@@ -743,6 +871,12 @@ def calibrate_against_lock(
                 objective_outlet_policy=_objective_outlet_policy_for_lock(lock),
                 parameter_mode=parameter_mode,
                 keep_workdirs=True,
+                include_physical_gate=True,
+                nyskip_years=0,
+                simulation_start=simulation_start,
+                simulation_end=simulation_end,
+                score_start=score_start,
+                score_end=score_end,
             )
             val_evidence = val_objective(best_params)
         except Exception as _e:  # noqa: BLE001
@@ -764,6 +898,7 @@ def calibrate_against_lock(
         "benchmark_baseline_nse": lock.baseline_nse,
         "benchmark_baseline_kge": lock.baseline_kge,
         "selection_policy": "staged_volume_baseflow_peaks_then_nse_kge",
+        "calibration_strategy": "diagnostic_guided_dds_window_screen_then_locked_verify",
         "volume_gate": "abs(pbias) <= 30",
         "kge_nse_finetune_gate": (
             "candidate calibration process gates must pass when available; "
@@ -771,6 +906,18 @@ def calibrate_against_lock(
         ),
         "calibration_protocol": active_phases,
     }
+    screening_window = {
+        key: value
+        for key, value in {
+            "simulation_start": simulation_start,
+            "simulation_end": simulation_end,
+            "score_start": score_start,
+            "score_end": score_end,
+        }.items()
+        if value is not None
+    }
+    if screening_window:
+        best_solution_payload["screening_window"] = screening_window
     if validation_period is not None:
         best_solution_payload["validation_period"] = list(validation_period)
         best_solution_payload["validation_metrics"] = val_evidence
@@ -782,6 +929,11 @@ def calibrate_against_lock(
         best_solution_payload["ensemble_nse_spread"] = _finite_std(ensemble_nse_per_seed)
         best_solution_payload["ensemble_kge_spread"] = _finite_std(ensemble_kge_per_seed)
     best_json.write_text(json.dumps(best_solution_payload, indent=2) + "\n", encoding="utf-8")
+    _write_calibration_progress(
+        status="complete",
+        metrics=best_metrics,
+        point=best_params,
+    )
 
     # Write summary markdown.
     summary_lines = [
@@ -793,8 +945,15 @@ def calibrate_against_lock(
         f"- Delta NSE/KGE: `{best_nse_val - lock.baseline_nse:+.6f}` / `{best_kge_val - lock.baseline_kge:+.6f}`",
         f"- Evaluations: `{len(evaluations)}`",
         f"- Parameters: `{', '.join(parameters)}`",
+        f"- Warm-up (nyskip): `{nyskip_years}` years",
         "- Selection policy: `staged_volume_baseflow_peaks_then_nse_kge`",
     ]
+    if screening_window:
+        summary_lines += [
+            f"- Screening simulation window: `{screening_window.get('simulation_start', 'lock-start')}` to `{screening_window.get('simulation_end', 'lock-end')}`",
+            f"- Screening score window: `{screening_window.get('score_start', 'lock-start')}` to `{screening_window.get('score_end', 'lock-end')}`",
+            "- Final authority: full locked verification rerun, not the screening-window candidate score",
+        ]
     if validation_period is not None:
         val_nse = val_evidence.get("nse", float("nan"))
         val_kge = val_evidence.get("kge", float("nan"))
@@ -831,6 +990,8 @@ def calibrate_against_lock(
         ensemble_best_kge_per_seed=ensemble_kge_per_seed if dds_n_seeds > 1 else [],
         ensemble_nse_spread=_finite_std(ensemble_nse_per_seed) if dds_n_seeds > 1 else None,
         ensemble_kge_spread=_finite_std(ensemble_kge_per_seed) if dds_n_seeds > 1 else None,
+        nyskip_years=nyskip_years,
+        screening_window=screening_window or None,
     )
 
 
@@ -843,6 +1004,10 @@ def screen_parameters_against_lock(
     binary: Path | str | None = None,
     timeout_s: float = 3600.0,
     parameter_mode: str = "full",
+    simulation_start: str | None = None,
+    simulation_end: str | None = None,
+    score_start: str | None = None,
+    score_end: str | None = None,
 ) -> LockedSensitivityEvidence:
     """Run a basin-specific one-at-a-time sensitivity screen against a lock.
 
@@ -880,10 +1045,19 @@ def screen_parameters_against_lock(
         objective_outlet_policy=_objective_outlet_policy_for_lock(lock),
         parameter_mode=parameter_mode,
         keep_workdirs=False,
+        nyskip_years=0,
+        simulation_start=simulation_start,
+        simulation_end=simulation_end,
+        score_start=score_start,
+        score_end=score_end,
     )
 
-    defaults = {name: get_parameter(name).default for name in parameters}
-    baseline_metrics = objective(defaults)
+    # The lock represents the generated model, whose spatially distributed
+    # values do not necessarily equal one scalar registry default. Applying
+    # every registry default here would alter unrelated parameters before the
+    # one-at-a-time screen even starts (for example, heterogeneous PERCO rows).
+    baseline_parameters: dict[str, float] = {}
+    baseline_metrics = objective(baseline_parameters)
     rows: list[dict[str, Any]] = []
     warnings: list[str] = []
 
@@ -897,7 +1071,7 @@ def screen_parameters_against_lock(
             "current_parameter": current_parameter,
             "completed_parameters": len(rows),
             "total_parameters": len(parameters),
-            "baseline_parameters": defaults,
+            "baseline_parameters": baseline_parameters,
             "baseline_metrics": baseline_metrics,
             "parameters": rows,
             "warnings": warnings,
@@ -924,8 +1098,7 @@ def screen_parameters_against_lock(
         try:
             bound_results: list[dict[str, Any]] = []
             for bound, perturbed_value in bound_values:
-                point = dict(defaults)
-                point[name] = perturbed_value
+                point = {name: perturbed_value}
                 metrics = objective(point)
                 metric_nse = _optional_float(metrics.get("nse"))
                 base_nse = _optional_float(baseline_metrics.get("nse"))
@@ -986,7 +1159,7 @@ def screen_parameters_against_lock(
                     "activity_class": activity,
                     "evidence": {
                         "basis": "fresh_locked_objective_two_bound_perturbation",
-                        "baseline_parameters": defaults,
+                        "baseline_parameters": baseline_parameters,
                         "perturbed_value": max_effect.get("value"),
                         "perturbed_bound": max_effect.get("bound"),
                         "baseline_metrics": baseline_metrics,
@@ -1012,7 +1185,7 @@ def screen_parameters_against_lock(
                     "activity_class": "not_tested",
                     "evidence": {
                         "basis": "fresh_locked_objective_two_bound_perturbation",
-                        "baseline_parameters": defaults,
+                        "baseline_parameters": baseline_parameters,
                         "tested_bounds": bound_values,
                         "tested": False,
                         "error": str(exc),
@@ -1221,6 +1394,7 @@ def _dds_search(
     budget: int,
     rng: Any,
     r: float = 0.2,
+    initial_best: tuple[dict[str, float], dict[str, float], float] | None = None,
 ) -> tuple[dict[str, float] | None, dict[str, float], float]:
     """Run DDS over ``phase_parameters``, seeded from ``start_params``.
 
@@ -1258,18 +1432,24 @@ def _dds_search(
     best_feasible_metrics: dict[str, float] = {}
     best_feasible_score = float("-inf")
 
-    # Seed evaluation: the carried-forward baseline (no perturbation).
-    seed_metrics = evaluate(dict(start_params))
     walk_best_point = dict(start_params)
-    walk_best_score = _walk_score(seed_metrics)
-    if feasible_fn(seed_metrics):
-        s = score_fn(seed_metrics)
-        if math.isfinite(s):
-            best_feasible_params = dict(start_params)
-            best_feasible_metrics = {
-                k: float(v) for k, v in seed_metrics.items() if isinstance(v, (int, float))
-            }
-            best_feasible_score = s
+    if initial_best is not None:
+        best_feasible_params = dict(initial_best[0])
+        best_feasible_metrics = dict(initial_best[1])
+        best_feasible_score = float(initial_best[2])
+        walk_best_score = best_feasible_score
+    else:
+        # Seed evaluation: the carried-forward baseline (no perturbation).
+        seed_metrics = evaluate(dict(start_params))
+        walk_best_score = _walk_score(seed_metrics)
+        if feasible_fn(seed_metrics):
+            s = score_fn(seed_metrics)
+            if math.isfinite(s):
+                best_feasible_params = dict(start_params)
+                best_feasible_metrics = {
+                    k: float(v) for k, v in seed_metrics.items() if isinstance(v, (int, float))
+                }
+                best_feasible_score = s
 
     for i in range(1, max(int(budget), 1) + 1):
         candidate = _dds_propose(
@@ -1330,6 +1510,106 @@ def _phase_candidate_points(
     return points[:target_count]
 
 
+def _sensitivity_guided_anchor_points(
+    sensitivity_json: Path,
+    *,
+    current_params: dict[str, float],
+    phase_parameters: list[str],
+    param_bounds: dict[str, tuple[float, float]],
+    max_points: int = 8,
+) -> list[dict[str, float]]:
+    """Construct deterministic calibration anchors from locked sensitivity evidence.
+
+    One-at-a-time sensitivity can reveal strong basin-specific directions before
+    DDS happens to sample their combinations. These anchors remain governed by
+    the same objective and gates; they only decide which candidates to evaluate
+    first.
+    """
+
+    if max_points <= 0 or not sensitivity_json.is_file():
+        return []
+    try:
+        payload = json.loads(sensitivity_json.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    rows = payload.get("parameters")
+    if not isinstance(rows, list):
+        return []
+    baseline_pbias = None
+    candidates: list[dict[str, Any]] = []
+    phase_set = set(phase_parameters)
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("parameter") or "")
+        if name not in phase_set:
+            continue
+        evidence = row.get("evidence")
+        if not isinstance(evidence, dict):
+            continue
+        baseline_metrics = evidence.get("baseline_metrics")
+        if baseline_pbias is None and isinstance(baseline_metrics, dict):
+            raw_baseline_pbias = baseline_metrics.get("pbias")
+            if isinstance(raw_baseline_pbias, (int, float)):
+                baseline_pbias = float(raw_baseline_pbias)
+        value = evidence.get("best_score_value")
+        if not isinstance(value, (int, float)):
+            continue
+        lo, hi = param_bounds.get(name, (None, None))
+        if lo is None or hi is None:
+            continue
+        value = float(value)
+        if value < float(lo) or value > float(hi):
+            continue
+        metrics = evidence.get("best_score_metrics")
+        pbias = metrics.get("pbias") if isinstance(metrics, dict) else None
+        if not isinstance(pbias, (int, float)):
+            continue
+        pbias = float(pbias)
+        if baseline_pbias is not None and abs(pbias) >= abs(float(baseline_pbias)):
+            continue
+        candidates.append(
+            {
+                "parameter": name,
+                "value": value,
+                "abs_pbias": abs(pbias),
+                "score_delta": float(evidence.get("best_score_delta") or 0.0),
+            }
+        )
+    candidates.sort(key=lambda row: (row["abs_pbias"], -row["score_delta"], row["parameter"]))
+
+    anchors: list[dict[str, float]] = []
+    seen: set[tuple[tuple[str, float], ...]] = set()
+
+    def add(point: dict[str, float]) -> None:
+        key = tuple(sorted((name, round(float(value), 12)) for name, value in point.items()))
+        if key in seen:
+            return
+        seen.add(key)
+        anchors.append(point)
+
+    cumulative = dict(current_params)
+    for row in candidates:
+        point = dict(current_params)
+        point[str(row["parameter"])] = float(row["value"])
+        add(point)
+        cumulative[str(row["parameter"])] = float(row["value"])
+        add(dict(cumulative))
+        if len(anchors) >= max_points:
+            return anchors[:max_points]
+
+    top = candidates[:4]
+    for i, left in enumerate(top):
+        for right in top[i + 1 :]:
+            point = dict(current_params)
+            point[str(left["parameter"])] = float(left["value"])
+            point[str(right["parameter"])] = float(right["value"])
+            add(point)
+            if len(anchors) >= max_points:
+                return anchors[:max_points]
+    return anchors[:max_points]
+
+
 def _score_candidate(metrics: dict[str, Any], *, objective: str) -> float:
     import math
 
@@ -1338,6 +1618,7 @@ def _score_candidate(metrics: dict[str, Any], *, objective: str) -> float:
         kge = float(metrics.get("kge", float("nan")))
         log_kge_val = float(metrics.get("log_kge", float("nan")))
         pbias = float(metrics.get("pbias", float("nan")))
+        bfi_sim = float(metrics.get("bfi_sim", float("nan")))
     except Exception:
         return float("-inf")
 
@@ -1347,6 +1628,9 @@ def _score_candidate(metrics: dict[str, Any], *, objective: str) -> float:
         process_gate = _candidate_calibration_process_gate_passed(metrics)
         if process_gate is None:
             process_gate = _candidate_physical_gate_passed(metrics)
+        # Gate keys are always present with include_physical_gate=True.
+        # A None state means a test/mock objective didn't include gates;
+        # in production the real engine always populates these keys.
         if process_gate is False:
             return float("-inf")
     nse_term = nse if math.isfinite(nse) else -10.0
@@ -1366,6 +1650,31 @@ def _score_candidate(metrics: dict[str, Any], *, objective: str) -> float:
     if "pbias" in objective or "volume" in objective:
         preferred_volume_bonus = 1.0 if abs(pbias) <= 15.0 else 0.0
         return preferred_volume_bonus + 0.5 * kge_term + 0.2 * nse_term + 0.01 * volume_term
+    # Baseflow / subsurface phase: reward BFI that tracks the observed
+    # baseflow index.  evaluate_run emits both bfi_obs and bfi_sim, so the
+    # target is basin-specific.  Falls back to 0.55 (humid-temperate prior)
+    # when observed BFI is unavailable.
+    # Note: requires evaluate_run to emit "bfi_sim" and "bfi_obs" keys.
+    if "bfi" in objective:
+        bfi_obs = float(metrics.get("bfi_obs", float("nan")))
+        bfi_target = bfi_obs if math.isfinite(bfi_obs) else 0.55
+        bfi_term = 0.0
+        if math.isfinite(bfi_sim):
+            bfi_error = abs(bfi_sim - bfi_target)
+            # Reward close BFI match; penalty grows beyond 0.25 error.
+            if bfi_error <= 0.10:
+                bfi_term = 0.15 * (1.0 - bfi_error / 0.10)
+            elif bfi_error <= 0.25:
+                bfi_term = 0.05 * (1.0 - (bfi_error - 0.10) / 0.15)
+            else:
+                bfi_term = -0.15
+        return (
+            0.3 * kge_term
+            + 0.15 * (log_kge_term if math.isfinite(log_kge_val) else 0.0)
+            + 0.05 * nse_term
+            + 0.01 * volume_term
+            + bfi_term
+        )
     return nse_term + 0.1 * kge_term + 0.05 * volume_term
 
 
@@ -1556,6 +1865,8 @@ def verify_calibration(
         parameter_mode=parameter_mode,
         keep_workdirs=True,
         force_fresh=True,
+        include_physical_gate=True,
+        nyskip_years=0,
     )
 
     verified_metrics = objective(best_params)

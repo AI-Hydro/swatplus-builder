@@ -137,6 +137,50 @@ def test_evaluate_run_autodetects_flowing_outlet_when_gis1_is_dry(tmp_path):
     assert diag["outlet_selection_reason"] == "requested_outlet_dry"
 
 
+def test_evaluate_run_autodetects_terminal_when_requested_gis_is_missing(tmp_path):
+    from swatplus_builder.output.eval import evaluate_run
+
+    txt = tmp_path / "TxtInOut"
+    txt.mkdir()
+
+    _write(
+        txt / "channel_sd_day.txt",
+        """\
+        channel_sd_day
+        jday mon day yr unit gis_id name flo_out
+        n/a n/a n/a n/a n/a n/a n/a m3/s
+        1 1 1 2015 7 29 cha29 1.5
+        2 1 2 2015 7 29 cha29 2.5
+        """,
+    )
+    _write(
+        txt / "chandeg.con",
+        """\
+        chandeg.con
+        id name gis_id area lat lon elev lcha wst cst ovfl rule out_tot obj_typ obj_id hyd_typ frac
+        7 cha0029 29 0 0 0 0 7 s 0 0 0 1 out 1 tot 1.0
+        """,
+    )
+    obs = pd.Series(
+        [1.0, 2.0],
+        index=pd.to_datetime(["2015-01-01", "2015-01-02"]),
+        name="obs",
+    )
+
+    df, _, diag = evaluate_run(
+        txt / "channel_sd_day.txt",
+        obs,
+        outlet_gis_id=1,
+        return_diagnostics=True,
+    )
+
+    assert df["sim"].tolist() == pytest.approx([1.5, 2.5])
+    assert diag["requested_outlet_gis_id"] == 1
+    assert diag["selected_outlet_gis_id"] == 29
+    assert diag["outlet_autodetected"] is True
+    assert diag["outlet_selection_reason"] == "requested_outlet_missing"
+
+
 def test_evaluate_run_prefers_terminal_when_requested_outlet_is_non_terminal(tmp_path):
     from swatplus_builder.output.eval import evaluate_run
 
@@ -389,8 +433,62 @@ def test_evaluate_run_reports_single_terminal_fraction_as_one(tmp_path):
     assert diag["all_terminal_volume_gate_passes_diagnostic"] is True
 
 
+def test_evaluate_run_uses_terminal_inflow_sum_when_terminal_state_is_not_accumulated(tmp_path):
+    from swatplus_builder.output.eval import evaluate_run
+
+    txt = tmp_path / "TxtInOut"
+    txt.mkdir()
+
+    _write(
+        txt / "channel_sd_day.txt",
+        """\
+        channel_sd_day
+        jday mon day yr unit gis_id name flo_out
+        n/a n/a n/a n/a n/a n/a n/a m3/s
+        1 1 1 2015 226 231 cha231 10.0
+        2 1 2 2015 226 231 cha231 20.0
+        1 1 1 2015 242 247 cha247 1.0
+        2 1 2 2015 242 247 cha247 2.0
+        1 1 1 2015 254 259 cha259 0.1
+        2 1 2 2015 254 259 cha259 0.1
+        """,
+    )
+    _write(
+        txt / "chandeg.con",
+        """\
+        chandeg.con
+        id name gis_id area lat lon elev lcha wst cst ovfl rule out_tot obj_typ obj_id hyd_typ frac
+        226 cha231 231 0 0 0 0 226 s 0 0 0 1 sdc 254 tot 1.0
+        242 cha247 247 0 0 0 0 242 s 0 0 0 1 sdc 254 tot 1.0
+        254 cha259 259 0 0 0 0 254 s 0 0 0 0
+        """,
+    )
+    obs = pd.Series(
+        [11.1, 22.1],
+        index=pd.to_datetime(["2015-01-01", "2015-01-02"]),
+        name="obs",
+    )
+
+    df, metrics, diag = evaluate_run(
+        txt / "channel_sd_day.txt",
+        obs,
+        outlet_gis_id=259,
+        outlet_policy="strict",
+        return_diagnostics=True,
+    )
+
+    assert df["sim"].tolist() == pytest.approx([11.1, 22.1])
+    assert metrics["pbias"] == pytest.approx(0.0)
+    assert diag["selected_outlet_gis_id"] == 259
+    assert diag["selected_outlet_gis_ids"] == [231, 247, 259]
+    assert diag["outlet_scope"] == "terminal_inflow_sum"
+    assert diag["outlet_selection_reason"] == "terminal_inflow_sum"
+    assert diag["terminal_inflow_parent_gis_ids"] == [231, 247]
+    assert diag["terminal_scope_metric_reason"] == "terminal_inflow_sum_is_effective_selected_hydrograph"
+
+
 def test_terminal_parser_uses_gis_id_not_internal_id(tmp_path):
-    from swatplus_builder.output.eval import _terminal_ids_from_chandeg_con
+    from swatplus_builder.output.eval import terminal_channel_ids
 
     txt = tmp_path / "TxtInOut"
     txt.mkdir()
@@ -405,8 +503,8 @@ def test_terminal_parser_uses_gis_id_not_internal_id(tmp_path):
         """,
     )
 
-    terms = _terminal_ids_from_chandeg_con(txt)
-    assert terms == {10}
+    terms = terminal_channel_ids(txt)
+    assert terms == [10]
 
 
 def test_evaluate_run_strict_policy_keeps_requested_outlet_when_dry(tmp_path):

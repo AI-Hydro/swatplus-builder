@@ -35,13 +35,23 @@ def run_diagnostic_calibration(
     *,
     claim_tier: str,
     strict: bool = True,
+    screening_window_years: int | None = 6,
+    screening_warmup_years: int = 3,
 ) -> DiagnosticCalibrationResult:
     source_run = Path(source_run).expanduser().resolve()
     reports = source_run / "reports"
     reports.mkdir(parents=True, exist_ok=True)
+    progress_path = _calibration_progress_path(source_run)
+    _write_calibration_progress(
+        progress_path,
+        status="started",
+        stage="diagnostic_calibration",
+        message="starting locked diagnostic calibration orchestration",
+        claim_tier=claim_tier,
+    )
 
     screen = source_run / "reports" / "sensitivity_screen.json"
-    if strict and claim_tier != "exploratory" and screen.exists():
+    if strict and screen.exists():
         data = json.loads(screen.read_text(encoding="utf-8"))
         governance_blocked = [
             p["parameter"] for p in data.get("parameters", []) if p.get("activity_class") == "dead"
@@ -72,6 +82,7 @@ def run_diagnostic_calibration(
             ],
             provenance={
                 "calibration_method": "locked_diagnostic_full_mode",
+                "calibration_strategy": "diagnostic_guided_dds_window_screen_then_locked_verify",
                 "claim_tier": claim_tier,
                 "strict": strict,
                 "source_run": str(source_run),
@@ -83,6 +94,15 @@ def run_diagnostic_calibration(
             },
         )
         _write_result(reports / "diagnostic_calibration.json", res)
+        _write_standalone_calibration_provenance(source_run, res)
+        _write_calibration_progress(
+            progress_path,
+            status="blocked",
+            stage="locked_calibration_eligibility",
+            message="locked calibration requires existing lock and prepared TxtInOut",
+            claim_tier=claim_tier,
+            missing_artifacts=missing,
+        )
         return res
 
     from .locked_benchmark import (
@@ -93,6 +113,21 @@ def run_diagnostic_calibration(
     from .real_engine import params_hash
 
     lock_context = _read_lock_context(lock_path)
+    screening_window = _build_screening_window(
+        source_run=source_run,
+        txtinout=txtinout,
+        score_years=screening_window_years,
+        warmup_years=screening_warmup_years,
+    )
+    _write_calibration_progress(
+        progress_path,
+        status="screening",
+        stage="sensitivity_screen",
+        message="screening governed calibration parameters against the locked objective",
+        claim_tier=claim_tier,
+        screening_window=screening_window or None,
+        eligible_parameters=eligible_parameters,
+    )
     runs = [
         PhaseRun(1, "volume", "passed", "volume gate authority inherited from benchmark lock", "benchmark_lock"),
         PhaseRun(2, "sensitivity_screen", "pending", f"eligible parameters: {', '.join(eligible_parameters)}", "locked_benchmark"),
@@ -106,6 +141,7 @@ def run_diagnostic_calibration(
             out_dir=source_run / "calibration",
             parameters=eligible_parameters,
             parameter_mode="full",
+            **screening_window,
         )
         sensitivity_classes = {
             str(row.get("parameter")): str(row.get("activity_class"))
@@ -120,6 +156,17 @@ def run_diagnostic_calibration(
             eligible_parameters,
             sensitivity_classes,
             governance_blocked,
+        )
+        _write_calibration_progress(
+            progress_path,
+            status="screened",
+            stage="sensitivity_screen",
+            message="basin-specific sensitivity screen completed",
+            claim_tier=claim_tier,
+            screening_window=screening_window or None,
+            eligible_parameters=eligible_parameters,
+            screened_parameters=screened_parameters,
+            blocked_parameters=blocked_parameters,
         )
         runs[1] = PhaseRun(
             2,
@@ -145,14 +192,35 @@ def run_diagnostic_calibration(
         )
         if not screened_parameters:
             raise RuntimeError("No basin-specific active/weak eligible parameters; calibration search blocked.")
+        _write_calibration_progress(
+            progress_path,
+            status="searching",
+            stage="candidate_search",
+            message="running diagnostic-guided candidate search; candidate metrics are provisional",
+            claim_tier=claim_tier,
+            screening_window=screening_window or None,
+            screened_parameters=screened_parameters,
+        )
         evidence = calibrate_against_lock(
             lock=lock_path,
             base_txtinout=txtinout,
             out_dir=source_run / "calibration",
             parameters=screened_parameters,
             parameter_mode="full",
+            **screening_window,
         )
         best_solution = json.loads(Path(evidence.best_solution_json).read_text(encoding="utf-8"))
+        _write_calibration_progress(
+            progress_path,
+            status="verifying",
+            stage="locked_verification",
+            message="running independent locked verification of the selected candidate",
+            claim_tier=claim_tier,
+            screening_window=screening_window or None,
+            screened_parameters=screened_parameters,
+            best_solution_json=evidence.best_solution_json,
+            history_csv=evidence.history_csv,
+        )
         verification = verify_calibration(
             lock=lock_path,
             best_solution_json=evidence.best_solution_json,
@@ -221,9 +289,16 @@ def run_diagnostic_calibration(
             phases=runs,
             provenance={
                 "calibration_method": "locked_diagnostic_full_mode",
+                "calibration_strategy": "diagnostic_guided_dds_window_screen_then_locked_verify",
+                "diagnostic_guidance": {
+                    "basis": "SWAT-DG-style staged reasoning adapted into SWAT+ Builder-owned gates",
+                    "phases": ["volume", "baseflow_subsurface", "peaks_timing", "kge_nse_finetune"],
+                    "claim_rule": "screening candidates are provisional; final metrics must come from locked verification",
+                },
                 "claim_tier": claim_tier,
                 "strict": strict,
                 "source_run": str(source_run),
+                "screening_window": screening_window or None,
                 "blocked_parameters": blocked_parameters,
                 "eligible_parameters": eligible_parameters,
                 "screened_parameters": screened_parameters,
@@ -236,6 +311,7 @@ def run_diagnostic_calibration(
                 "calibration_protocol": best_solution.get("calibration_protocol", []),
                 "history_csv": evidence.history_csv,
                 "best_solution_json": evidence.best_solution_json,
+                "calibration_progress_json": str(progress_path),
                 "verification_summary": verification.verification_summary_path,
                 "verification_improvement_basis": verification.improvement_basis,
                 "benchmark_metrics": {
@@ -280,6 +356,27 @@ def run_diagnostic_calibration(
                 "temporary_candidate_metrics_allowed_as_final": False,
             },
         )
+        _write_calibration_progress(
+            progress_path,
+            status="complete" if res.success else "claim_blocked",
+            stage="final_claim_gates",
+            message=(
+                "locked calibration verified and final gates passed"
+                if res.success
+                else "locked calibration finished, but final claim gates did not pass"
+            ),
+            claim_tier=claim_tier,
+            screening_window=screening_window or None,
+            screened_parameters=screened_parameters,
+            best_solution_json=evidence.best_solution_json,
+            history_csv=evidence.history_csv,
+            verification_summary=verification.verification_summary_path,
+            verification_metrics={
+                "nse": verification.verified_nse,
+                "kge": verification.verified_kge,
+                "pbias": verification.verified_pbias,
+            },
+        )
     except Exception as exc:
         error_context = exc.context if isinstance(getattr(exc, "context", None), dict) else {}
         history_csv = error_context.get("history_csv") if isinstance(error_context.get("history_csv"), str) else None
@@ -300,9 +397,11 @@ def run_diagnostic_calibration(
             phases=runs,
             provenance={
                 "calibration_method": "locked_diagnostic_full_mode",
+                "calibration_strategy": "diagnostic_guided_dds_window_screen_then_locked_verify",
                 "claim_tier": claim_tier,
                 "strict": strict,
                 "source_run": str(source_run),
+                "screening_window": locals().get("screening_window") or None,
                 "blocked_parameters": locals().get("blocked_parameters", governance_blocked),
                 "eligible_parameters": eligible_parameters,
                 "screened_parameters": locals().get("screened_parameters", []),
@@ -315,13 +414,125 @@ def run_diagnostic_calibration(
                 "error": str(exc),
                 "error_context": error_context,
                 "history_csv": history_csv,
+                "calibration_progress_json": str(progress_path),
                 "n_evaluations": n_evaluations,
                 "promotion_gate": promotion_gate,
                 "phase": failure_phase,
             },
         )
+        _write_calibration_progress(
+            progress_path,
+            status="failed",
+            stage=failure_phase or "diagnostic_calibration",
+            message=str(exc)[-400:],
+            claim_tier=claim_tier,
+            screening_window=locals().get("screening_window") or None,
+            screened_parameters=locals().get("screened_parameters", []),
+            history_csv=history_csv,
+            error_context=error_context,
+        )
     _write_result(reports / "diagnostic_calibration.json", res)
+    _write_standalone_calibration_provenance(source_run, res)
     return res
+
+
+def _calibration_progress_path(source_run: Path) -> Path:
+    return source_run / "calibration" / "calibration_reports_locked" / "calibration_progress.json"
+
+
+def _write_calibration_progress(path: Path, **payload: Any) -> None:
+    from datetime import datetime, timezone
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    current: dict[str, Any] = {}
+    if path.is_file():
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                current = loaded
+        except Exception:
+            current = {}
+    merged = {
+        **current,
+        **payload,
+        "updated_at_utc": datetime.now(timezone.utc).isoformat(),
+    }
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(merged, indent=2, default=str) + "\n", encoding="utf-8")
+    tmp.replace(path)
+
+
+def _build_screening_window(
+    *,
+    source_run: Path,
+    txtinout: Path,
+    score_years: int | None,
+    warmup_years: int,
+) -> dict[str, str]:
+    """Return an explicit calibration screen window, preserving full verification.
+
+    Long daily records make real-engine DDS expensive and can let one era dominate
+    the search.  This helper selects a recent scoring slice for candidate search
+    only; verify_calibration still reruns the chosen parameters against the full
+    locked benchmark.
+    """
+
+    if score_years is None or int(score_years) <= 0:
+        return {}
+    alignment_csv = source_run / "benchmark" / "alignment.csv"
+    if not alignment_csv.is_file():
+        return {}
+    try:
+        import pandas as pd
+
+        data = pd.read_csv(alignment_csv, usecols=["date"])
+        dates = pd.to_datetime(data["date"], errors="coerce").dropna()
+    except Exception:
+        return {}
+    if dates.empty:
+        return {}
+
+    first = dates.min().normalize()
+    last = dates.max().normalize()
+    if (last - first).days < max(365 * 3, int(score_years) * 365 // 2):
+        return {}
+
+    score_start = max(first, last - pd.DateOffset(years=int(score_years)) + pd.Timedelta(days=1))
+    score_end = last
+    simulation_start = score_start - pd.DateOffset(years=max(0, int(warmup_years)))
+    time_start = _read_time_sim_start(txtinout)
+    if time_start is not None:
+        simulation_start = max(simulation_start, pd.Timestamp(time_start))
+    if simulation_start > score_start:
+        simulation_start = score_start
+
+    return {
+        "simulation_start": simulation_start.date().isoformat(),
+        "simulation_end": score_end.date().isoformat(),
+        "score_start": score_start.date().isoformat(),
+        "score_end": score_end.date().isoformat(),
+    }
+
+
+def _read_time_sim_start(txtinout: Path) -> str | None:
+    time_sim = txtinout / "time.sim"
+    if not time_sim.is_file():
+        return None
+    try:
+        lines = time_sim.read_text(encoding="utf-8").splitlines()
+        if len(lines) < 3:
+            return None
+        parts = lines[2].split()
+        if len(parts) < 2:
+            return None
+        day_start = int(float(parts[0]))
+        year_start = int(float(parts[1]))
+        import pandas as pd
+
+        start = pd.Timestamp(year=year_start, month=1, day=1) + pd.Timedelta(days=day_start - 1)
+        return start.date().isoformat()
+    except Exception:
+        return None
 
 
 def _find_txtinout(source_run: Path) -> Path | None:
@@ -1029,3 +1240,28 @@ def _write_result(path: Path, res: DiagnosticCalibrationResult) -> None:
         + "\n",
         encoding="utf-8",
     )
+
+
+def _write_standalone_calibration_provenance(source_run: Path, res: DiagnosticCalibrationResult) -> None:
+    from datetime import datetime, timezone
+
+    provenance = dict(res.provenance)
+    if res.success:
+        status = "done"
+    elif provenance.get("locked_verification_succeeded") is True:
+        status = "verified_diagnostic_claim_blocked"
+    else:
+        status = "attempted_failed_or_blocked"
+    payload = {
+        "status": status,
+        "success": bool(res.success),
+        "claim_tier": provenance.get("claim_tier"),
+        "provenance": provenance,
+        "phases": [asdict(p) for p in res.phases],
+        "synced_from": "run_diagnostic_calibration",
+        "updated_at_utc": datetime.now(timezone.utc).isoformat(),
+    }
+    path = source_run / "calibration_provenance.json"
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8")
+    tmp.replace(path)

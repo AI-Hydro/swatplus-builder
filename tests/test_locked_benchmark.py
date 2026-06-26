@@ -277,6 +277,8 @@ def test_calibrate_against_lock_scores_virtual_outlet_lock_with_same_scope(
                 "nse": 0.1 + (cn2 / 1000.0),
                 "kge": 0.2 + (cn2 / 1000.0),
                 "pbias": 10.0,
+                "physical_gate_passed": 1.0,
+                "calibration_process_gate_passed": 1.0,
             }
 
         return objective
@@ -289,6 +291,10 @@ def test_calibrate_against_lock_scores_virtual_outlet_lock_with_same_scope(
         tmp_path / "cal",
         parameters=["CN2"],
         n_evaluations=3,
+        simulation_start="2007-01-01",
+        simulation_end="2012-12-31",
+        score_start="2010-01-01",
+        score_end="2012-12-31",
         calibration_phases=[
             {"phase": "volume", "parameters": ["CN2"], "budget": 3},
         ],
@@ -296,7 +302,129 @@ def test_calibrate_against_lock_scores_virtual_outlet_lock_with_same_scope(
 
     assert seen["objective_outlet_policy"] == "all_terminal_sum"
     assert seen["outlet_gis_id"] == 1
+    assert seen["simulation_start"] == "2007-01-01"
+    assert seen["simulation_end"] == "2012-12-31"
+    assert seen["score_start"] == "2010-01-01"
+    assert seen["score_end"] == "2012-12-31"
     assert Path(evidence.best_solution_json).is_file()
+    best_solution = json.loads(Path(evidence.best_solution_json).read_text(encoding="utf-8"))
+    assert best_solution["screening_window"] == {
+        "simulation_start": "2007-01-01",
+        "simulation_end": "2012-12-31",
+        "score_start": "2010-01-01",
+        "score_end": "2012-12-31",
+    }
+    progress = json.loads(
+        (tmp_path / "cal" / "calibration_reports_locked" / "calibration_progress.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert progress["status"] == "complete"
+    assert progress["completed_evaluations"] >= 1
+    assert progress["screening_window"] == {
+        "simulation_start": "2007-01-01",
+        "simulation_end": "2012-12-31",
+        "score_start": "2010-01-01",
+        "score_end": "2012-12-31",
+    }
+
+
+def test_calibrate_against_lock_uses_sensitivity_guided_anchor_combinations(
+    monkeypatch, tmp_path: Path
+) -> None:
+    benchmark_dir = tmp_path / "benchmark"
+    benchmark_dir.mkdir()
+    pd.DataFrame(
+        {"obs": [1.0, 2.0], "sim": [0.2, 0.4]},
+        index=pd.date_range("2010-01-01", periods=2, freq="D"),
+    ).to_csv(benchmark_dir / "alignment.csv")
+    lock = BenchmarkLock(
+        basin_id="usgs_anchor_combo",
+        locked_at_utc="2026-06-26T00:00:00+00:00",
+        alignment_sha256="alignment",
+        metrics_sha256="metrics",
+        outlet_gis_id=1,
+        sim_source_file="channel_sd_day.txt",
+        baseline_nse=-1.0,
+        baseline_kge=-1.0,
+        benchmark_dir=str(benchmark_dir),
+    )
+    txt = tmp_path / "TxtInOut"
+    txt.mkdir()
+    screen_dir = tmp_path / "cal" / "sensitivity_screen_locked"
+    screen_dir.mkdir(parents=True)
+    (screen_dir / "sensitivity_screen.json").write_text(
+        json.dumps(
+            {
+                "parameters": [
+                    {
+                        "parameter": "ESCO",
+                        "evidence": {
+                            "baseline_metrics": {"pbias": -70.0},
+                            "best_score_value": 0.01,
+                            "best_score_delta": 0.4,
+                            "best_score_metrics": {"pbias": -35.0},
+                        },
+                    },
+                    {
+                        "parameter": "PET_CO",
+                        "evidence": {
+                            "baseline_metrics": {"pbias": -70.0},
+                            "best_score_value": 0.8,
+                            "best_score_delta": 0.2,
+                            "best_score_metrics": {"pbias": -55.0},
+                        },
+                    },
+                ]
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    evaluated: list[dict[str, float]] = []
+
+    def fake_make_real_objective(**kwargs):
+        def objective(params: dict[str, float]) -> dict[str, float]:
+            evaluated.append(dict(params))
+            if params.get("ESCO") == 0.01 and params.get("PET_CO") == 0.8:
+                return {
+                    "nse": 0.2,
+                    "kge": 0.5,
+                    "pbias": -10.0,
+                    "physical_gate_passed": 1.0,
+                    "calibration_process_gate_passed": 1.0,
+                }
+            return {
+                "nse": -0.1,
+                "kge": 0.0,
+                "pbias": -60.0,
+                "physical_gate_passed": 0.0,
+                "calibration_process_gate_passed": 0.0,
+            }
+
+        return objective
+
+    monkeypatch.setattr("swatplus_builder.calibration.real_engine.make_real_objective", fake_make_real_objective)
+
+    evidence = calibrate_against_lock(
+        lock,
+        txt,
+        tmp_path / "cal",
+        parameters=["ESCO", "PET_CO"],
+        n_evaluations=2,
+        calibration_phases=[
+            {
+                "phase": "volume",
+                "parameters": ["ESCO", "PET_CO"],
+                "budget": 2,
+                "objective": "minimize_abs_pbias_then_kge_nse",
+            }
+        ],
+    )
+
+    assert {"ESCO": 0.01, "PET_CO": 0.8} in evaluated
+    assert evidence.best_parameters == {"ESCO": 0.01, "PET_CO": 0.8}
+    assert evidence.best_kge == pytest.approx(0.5)
 
 
 def test_verify_calibration_scores_virtual_outlet_lock_with_same_scope(
@@ -379,8 +507,11 @@ def test_calibrate_against_lock_writes_staged_protocol(monkeypatch, tmp_path: Pa
     txt.mkdir()
 
     calls: list[dict[str, float]] = []
+    objective_kwargs: dict[str, object] = {}
 
     def fake_make_real_objective(**kwargs):
+        objective_kwargs.update(kwargs)
+
         def objective(params: dict[str, float]) -> dict[str, float]:
             calls.append(dict(params))
             pbias = 20.0 - (float(params.get("CN2", 75.0)) - 75.0) / 10.0
@@ -417,6 +548,7 @@ def test_calibrate_against_lock_writes_staged_protocol(monkeypatch, tmp_path: Pa
 
     assert calls
     assert calls[0] == {}
+    assert objective_kwargs["nyskip_years"] == 0
     history = pd.read_csv(evidence.history_csv)
     assert "metric_all_terminal_nse" in history.columns
     assert "metric_all_terminal_pbias" in history.columns
@@ -953,6 +1085,8 @@ def test_screen_parameters_against_lock_writes_basin_specific_artifact(monkeypat
     )
 
     assert calls
+    assert calls[0] == {}
+    assert all(set(point) <= {"CN2"} for point in calls[1:])
     assert evidence.basis == "basin_specific"
     assert evidence.parameters[0]["activity_class"] == "active"
     payload = json.loads(Path(evidence.json_path).read_text(encoding="utf-8"))
@@ -1165,7 +1299,13 @@ def test_split_sample_validation_fields_populated(monkeypatch, tmp_path: Path) -
 
     def fake_make_real_objective(**kwargs):
         obs = kwargs["observed_series"]
-        call_log.append({"n_obs": len(obs), "work_root": str(kwargs["work_root"])})
+        call_log.append(
+            {
+                "n_obs": len(obs),
+                "work_root": str(kwargs["work_root"]),
+                "nyskip_years": kwargs["nyskip_years"],
+            }
+        )
 
         def objective(params: dict[str, float]) -> dict[str, float]:
             # Always returns a feasible + passing result
@@ -1195,6 +1335,7 @@ def test_split_sample_validation_fields_populated(monkeypatch, tmp_path: Path) -
 
     # make_real_objective should have been called twice: once for calibration, once for validation
     assert len(call_log) == 2
+    assert all(call["nyskip_years"] == 0 for call in call_log)
     # Validation obs should be shorter than training obs (30 vs 90)
     assert call_log[1]["n_obs"] < call_log[0]["n_obs"]
     # "validation_eval" must appear in the second call's work_root

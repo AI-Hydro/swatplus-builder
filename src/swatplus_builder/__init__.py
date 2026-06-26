@@ -6,21 +6,6 @@ agent-facing functions, or :mod:`swatplus_builder.cli` for the Typer CLI.
 
 from __future__ import annotations
 
-import os
-import tempfile
-from pathlib import Path
-
-__version__ = "0.7.6"
+__version__ = "0.7.8"
 
 __all__ = ["__version__"]
-
-
-def _ensure_writable_matplotlib_config_dir() -> None:
-    if os.environ.get("MPLCONFIGDIR"):
-        return
-    cfg = Path(tempfile.gettempdir()) / "swatplus_builder_mplconfig"
-    cfg.mkdir(parents=True, exist_ok=True)
-    os.environ["MPLCONFIGDIR"] = str(cfg)
-
-
-_ensure_writable_matplotlib_config_dir()

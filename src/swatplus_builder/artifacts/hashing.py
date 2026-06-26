@@ -38,12 +38,21 @@ def compute_content_hash(
 ) -> str:
     """Compute the Phase 3B content hash.
 
+    ``engine_version`` values of ``"unknown"`` or ``""`` are treated as empty
+    to avoid cache collisions between runs that both lack a verified engine
+    version (two unknown-version runs are indistinguishable anyway).  When
+    the engine version IS known, it is hashed verbatim so a version upgrade
+    naturally yields a different hash and a cache miss.
+
     Failure modes:
-    - Raises `pydantic.ValidationError` when `config` is invalid.
+    - Raises ``pydantic.ValidationError`` when ``config`` is invalid.
     """
+    ev = engine_version.strip().lower()
+    if ev in {"", "unknown"}:
+        ev = ""
     h = hashlib.sha256()
     h.update(canonical_config_json(config))
-    h.update(engine_version.encode("utf-8"))
+    h.update(ev.encode("utf-8"))
     h.update(builder_git_sha.encode("utf-8"))
     return h.hexdigest()
 

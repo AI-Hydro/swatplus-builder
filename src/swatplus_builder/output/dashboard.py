@@ -1,7 +1,8 @@
 """Self-contained interactive HTML dashboard for SWAT+ model evidence.
 
 Generates a single ``dashboard.html`` that hydrologists can open directly in a
-browser — no server, no install, no external dependencies beyond Plotly's CDN.
+browser — no server or install. Run data and spatial previews are embedded;
+Plotly, Leaflet, and the optional OpenStreetMap basemap are loaded from CDNs.
 
 The dashboard reads every artifact the pipeline writes (evidence summary,
 metrics, alignment, calibration provenance, physical gates, water balance,
@@ -75,6 +76,7 @@ def _collect_all_data(run_dir: Path) -> dict[str, Any]:
     if rc:
         data["run_config"] = rc
         data["usgs_id"] = rc.get("usgs_id", "")
+        data["execution_status"] = rc.get("status", "UNKNOWN")
         data["status"] = rc.get("status", "UNKNOWN")
         data["start_date"] = rc.get("start_date", "")
         data["end_date"] = rc.get("end_date", "")
@@ -87,6 +89,13 @@ def _collect_all_data(run_dir: Path) -> dict[str, Any]:
     ev = _load_json(run_dir / "evidence_summary.json")
     if ev:
         data["evidence"] = ev
+        data["governance_evaluated"] = True
+        data["workflow_success"] = bool(ev.get("success"))
+        evidence_status = str(ev.get("status") or "").lower()
+        if evidence_status in {"pipeline_blocked", "failed", "blocked"} or ev.get("success") is False:
+            data["status"] = "BLOCKED"
+        elif ev.get("success") is True:
+            data["status"] = "SUCCESS"
         data["claim_tier"] = ev.get("claim_tier", "")
         data["effective_claim_tier"] = ev.get("effective_claim_tier", "")
         data["blocker_class"] = ev.get("blocker_class", "")
@@ -94,6 +103,8 @@ def _collect_all_data(run_dir: Path) -> dict[str, Any]:
         data["gates_failed"] = ev.get("gates_failed", [])
         data["allowed_claims"] = ev.get("allowed_claims", [])
         data["blocked_claims"] = ev.get("blocked_claims", [])
+    else:
+        data["governance_evaluated"] = False
 
     # ── metrics.json ─────────────────────────────────────────────────────
     metrics = _load_json(run_dir / "reports" / "metrics.json")
@@ -132,16 +143,42 @@ def _collect_all_data(run_dir: Path) -> dict[str, Any]:
 
     # ── calibration_provenance.json ──────────────────────────────────────
     cal = _load_json(run_dir / "calibration_provenance.json")
+    provenance: dict[str, Any] = {}
     if cal:
         data["calibration"] = cal
         data["calibration_status"] = cal.get("status", "not_attempted")
         provenance = cal.get("provenance", {}) if isinstance(cal.get("provenance"), dict) else {}
         data["calibration_success"] = cal.get("success", False)
-        data["calibration_delta_nse"] = provenance.get("delta_nse")
-        data["calibration_delta_kge"] = provenance.get("delta_kge")
-        data["calibration_final_nse"] = provenance.get("final_nse")
-        data["calibration_final_kge"] = provenance.get("final_kge")
-        data["calibration_final_pbias"] = provenance.get("final_pbias")
+        data["calibration_strategy"] = provenance.get("calibration_strategy")
+        data["calibration_method"] = provenance.get("calibration_method")
+        data["calibration_claim_status"] = provenance.get("calibration_claim_status")
+        data["calibration_protocol"] = provenance.get("calibration_protocol", [])
+        data["calibration_screening_window"] = provenance.get("screening_window")
+        data["calibration_final_authority"] = provenance.get("final_metrics_authority")
+        data["temporary_candidate_metrics_allowed_as_final"] = provenance.get(
+            "temporary_candidate_metrics_allowed_as_final"
+        )
+        verification_metrics = provenance.get("verification_metrics")
+        benchmark_metrics = provenance.get("benchmark_metrics")
+        delta_metrics = provenance.get("verification_delta_metrics")
+        if isinstance(verification_metrics, dict):
+            data["calibration_verification_metrics"] = _coerce_metrics(verification_metrics)
+            data["calibration_final_nse"] = verification_metrics.get("nse")
+            data["calibration_final_kge"] = verification_metrics.get("kge")
+            data["calibration_final_pbias"] = verification_metrics.get("pbias")
+        else:
+            data["calibration_final_nse"] = provenance.get("final_nse")
+            data["calibration_final_kge"] = provenance.get("final_kge")
+            data["calibration_final_pbias"] = provenance.get("final_pbias")
+        if isinstance(benchmark_metrics, dict):
+            data["calibration_benchmark_metrics"] = _coerce_metrics(benchmark_metrics)
+        if isinstance(delta_metrics, dict):
+            data["calibration_delta_metrics"] = _coerce_metrics(delta_metrics)
+            data["calibration_delta_nse"] = delta_metrics.get("nse")
+            data["calibration_delta_kge"] = delta_metrics.get("kge")
+        else:
+            data["calibration_delta_nse"] = provenance.get("delta_nse")
+            data["calibration_delta_kge"] = provenance.get("delta_kge")
 
     # ── parameter_screen.json ────────────────────────────────────────────
     ps = _load_json(run_dir / "parameter_screen.json")
@@ -149,12 +186,57 @@ def _collect_all_data(run_dir: Path) -> dict[str, Any]:
         data["parameter_screen"] = ps
 
     # ── Calibration history and best solution ────────────────────────────
-    history_csv = run_dir / "calibration" / "reports" / "history.csv"
-    if history_csv.is_file():
+    history_csv = _first_existing(
+        [
+            _path_from_value(provenance.get("history_csv")),
+            run_dir / "calibration" / "calibration_reports_locked" / "history.csv",
+            run_dir / "calibration" / "reports" / "history.csv",
+        ]
+    )
+    if history_csv is not None:
         data["calibration_history"] = _read_history_csv(history_csv)
-    best_sol = _load_json(run_dir / "calibration" / "reports" / "best_solution.json")
+        data["calibration_history_csv"] = str(history_csv)
+    best_solution_path = _first_existing(
+        [
+            _path_from_value(provenance.get("best_solution_json")),
+            run_dir / "calibration" / "calibration_reports_locked" / "best_solution.json",
+            run_dir / "calibration" / "reports" / "best_solution.json",
+        ]
+    )
+    best_sol = _load_json(best_solution_path) if best_solution_path is not None else None
     if best_sol:
         data["best_solution"] = best_sol
+        data["best_solution_path"] = str(best_solution_path)
+
+    progress_path = _first_existing(
+        [
+            _path_from_value(provenance.get("calibration_progress_json")),
+            run_dir / "calibration" / "calibration_reports_locked" / "calibration_progress.json",
+            run_dir / "calibration" / "reports" / "calibration_progress.json",
+        ]
+    )
+    progress = _load_json(progress_path) if progress_path is not None else None
+    if progress:
+        data["calibration_progress"] = progress
+        data["calibration_progress_path"] = str(progress_path)
+
+    locked_txt = _path_from_value(provenance.get("locked_calibrated_txtinout"))
+    calibrated_alignment = _first_existing(
+        [
+            locked_txt / "alignment_calibration.csv" if locked_txt is not None else None,
+            run_dir / "benchmark" / "alignment_calibration.csv",
+        ]
+    )
+    if calibrated_alignment is not None:
+        data["calibrated_alignment"] = _read_alignment(calibrated_alignment)
+        data["calibrated_alignment_source"] = str(calibrated_alignment)
+
+    hydrograph = provenance.get("hydrograph_comparison")
+    if isinstance(hydrograph, dict):
+        data["calibration_hydrograph"] = hydrograph
+    skill = provenance.get("skill_diagnostics")
+    if isinstance(skill, dict):
+        data["calibration_skill_diagnostics"] = skill
 
     # ── Water balance (reuse existing module) ────────────────────────────
     try:
@@ -208,6 +290,10 @@ def _collect_all_data(run_dir: Path) -> dict[str, Any]:
     if delin_json.is_file():
         data["delineation"] = _load_json(delin_json)
 
+    spatial = _collect_spatial_map(run_dir)
+    if spatial:
+        data["spatial_map"] = spatial
+
     return data
 
 
@@ -254,7 +340,9 @@ def _build_seasonal(alignment: dict[str, Any]) -> dict[str, Any] | None:
 
 def _render_html(data: dict[str, Any]) -> str:
     """Render the complete self-contained dashboard HTML."""
-    data_json = json.dumps(data, default=str, indent=None)
+    # Prevent artifact text containing ``</script>`` from terminating the JSON
+    # script element and becoming executable HTML.
+    data_json = json.dumps(data, default=str, indent=None).replace("</", "<\\/")
     usgs_id = str(data.get("usgs_id", ""))
     # HTML-escape the title text
     title_text = usgs_id.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
@@ -265,6 +353,8 @@ def _render_html(data: dict[str, Any]) -> str:
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SWAT+ Dashboard — USGS {title_text}</title>
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
 {_css()}
 </style>
@@ -365,6 +455,20 @@ body {
 }
 .card-full { grid-column: 1 / -1; }
 .chart-container { min-height: 400px; }
+.map-container { height: 620px; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.map-legend {
+  background: rgba(255,255,255,.96); padding: 8px 10px; border-radius: 4px;
+  box-shadow: var(--shadow); font-size: 0.75rem; line-height: 1.45;
+}
+.north-arrow {
+  background: rgba(255,255,255,.92); padding: 5px 9px; border-radius: 4px;
+  box-shadow: var(--shadow); font-weight: 800; font-size: 1rem; text-align: center;
+}
+.notice {
+  padding: 14px 16px; margin-bottom: 20px; border-left: 4px solid var(--warning);
+  background: var(--warning-bg); color: #6b4508; font-size: 0.88rem;
+}
+.notice-danger { border-left-color: var(--danger); background: var(--danger-bg); color: #7f1d1d; }
 
 /* ── No-data placeholder ───────── */
 .no-data {
@@ -449,7 +553,8 @@ def _javascript() -> str:
   }
   function statusBadge(status) {
     const s = String(status || '').toUpperCase();
-    if (s === 'SUCCESS') return '<span class="badge badge-success">Success</span>';
+    if (s === 'SUCCESS' && D.governance_evaluated) return '<span class="badge badge-success">Governed run complete</span>';
+    if (s === 'SUCCESS') return '<span class="badge badge-info">Engine completed</span>';
     if (s === 'BLOCKED' || s === 'FAILED') return '<span class="badge badge-danger">Blocked</span>';
     return '<span class="badge badge-warning">' + esc(status || 'Unknown') + '</span>';
   }
@@ -463,6 +568,10 @@ def _javascript() -> str:
     return D.alignment && D.alignment.dates && D.alignment.dates.length > 0
       && D.alignment.obs && D.alignment.obs.length > 0
       && D.alignment.sim && D.alignment.sim.length > 0;
+  }
+  function hasCalibratedAlignment() {
+    return D.calibrated_alignment && D.calibrated_alignment.dates && D.calibrated_alignment.dates.length > 0
+      && D.calibrated_alignment.sim && D.calibrated_alignment.sim.length > 0;
   }
 
   // ── Build DOM ────────────────────────────────────────────────────────
@@ -503,6 +612,19 @@ def _javascript() -> str:
   html += tierBadge(tier);
   html += '</div>';
   html += '</div>';
+
+  if (!D.governance_evaluated) {
+    html += '<div class="notice">Scientific claim governance was not evaluated for this lower-level run. Engine completion does not mean the model is scientifically accepted.</div>';
+  }
+  if (D.delineation) {
+    const areaDiff = Number(D.delineation.area_diff_pct);
+    const iou = Number(D.delineation.iou_pct);
+    if ((Number.isFinite(areaDiff) && Math.abs(areaDiff) > 10) || (Number.isFinite(iou) && iou < 85)) {
+      html += '<div class="notice notice-danger"><strong>Spatial fidelity warning.</strong> ';
+      html += 'Delineated area difference: ' + fmtNum(areaDiff, 1) + '%; overlap (IoU): ' + fmtNum(iou, 1) + '%. ';
+      html += 'Do not interpret performance metrics as gauge-representative until the delineation is repaired.</div>';
+    }
+  }
 
   html += '<div class="hero-metrics">';
   html += '<div class="hero-metric"><div class="val ' + mc + '">' + fmtNum(nse) + '</div><div class="lbl">NSE</div></div>';
@@ -596,6 +718,15 @@ def _javascript() -> str:
 
   html += '</div>';
 
+  // ── Spatial inspector ────────────────────────────────────────────────
+  if (D.spatial_map && D.spatial_map.layers && D.spatial_map.layers.length > 0) {
+    html += '<div class="card" style="margin-bottom:20px;">';
+    html += '<div class="section-title">Basin and model spatial inspector</div>';
+    html += '<div style="color:var(--text-muted);font-size:.8rem;margin:4px 0 12px;">Toggle watershed, subbasins, stream network, outlet, HRUs, and available raster layers.</div>';
+    html += '<div id="model-map" class="map-container"></div>';
+    html += '</div>';
+  }
+
   // ── Water Balance + Spatial ──────────────────────────────────────────
   html += '<div class="grid-2">';
 
@@ -626,6 +757,12 @@ def _javascript() -> str:
   if (D.calibration && D.calibration.status !== 'not_attempted') {
     html += '<div class="grid-2" style="margin-top:20px;">';
 
+    html += '<div class="card">';
+    html += '<div class="section-title">\uD83D\uDD27 Calibration Method and Evidence</div>';
+    html += '<div style="padding:12px 0;">';
+    html += _renderCalibrationSummary(D);
+    html += '</div></div>';
+
     if (D.best_solution && D.best_solution.parameters) {
       html += '<div class="card">';
       html += '<div class="section-title">\uD83D\uDD27 Calibration Parameters</div>';
@@ -638,12 +775,6 @@ def _javascript() -> str:
       html += '<div class="section-title">\uD83D\uDCC9 Calibration Convergence</div>';
       html += '<div id="chart-convergence" class="chart-container"></div>';
       html += '</div>';
-    } else {
-      html += '<div class="card">';
-      html += '<div class="section-title">\uD83D\uDD27 Calibration Summary</div>';
-      html += '<div style="padding:12px 0;">';
-      html += _renderCalibrationSummary(D);
-      html += '</div></div>';
     }
     html += '</div>';
   }
@@ -660,7 +791,7 @@ def _javascript() -> str:
     if (D.soil_report) {
       html += '<div class="card">';
       html += '<div class="section-title">\uD83C\uDF31 Soil Sources</div>';
-      html += '<div id="chart-soil" class="chart-container"></div>';
+      html += _renderSoilSummary(D.soil_report);
       html += '</div>';
     }
     html += '</div>';
@@ -706,14 +837,74 @@ def _javascript() -> str:
 
   // ── Plotly Charts ────────────────────────────────────────────────────
 
+  if (D.spatial_map && D.spatial_map.layers && D.spatial_map.layers.length > 0 && window.L) {
+    const modelMap = L.map('model-map', { preferCanvas: true });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(modelMap);
+    const overlays = {};
+    const styleByKind = {
+      basin: { color: '#111827', weight: 3, fillColor: '#bfdbfe', fillOpacity: 0.12 },
+      subbasins: { color: '#2563eb', weight: 1, fillColor: '#60a5fa', fillOpacity: 0.08 },
+      channels: { color: '#0891b2', weight: 2.2, opacity: 0.9 },
+      outlets: { radius: 7, color: '#7f1d1d', weight: 2, fillColor: '#ef4444', fillOpacity: 1 },
+      hrus: { color: '#4d7c0f', weight: 0.45, fillColor: '#84cc16', fillOpacity: 0.09 }
+    };
+    let combinedBounds = null;
+    for (const layerDef of D.spatial_map.layers) {
+      let layer = null;
+      if (layerDef.type === 'geojson' && layerDef.data) {
+        const style = styleByKind[layerDef.kind] || styleByKind.subbasins;
+        layer = L.geoJSON(layerDef.data, {
+          style: () => style,
+          pointToLayer: (_feature, latlng) => L.circleMarker(latlng, style),
+          onEachFeature: (feature, item) => {
+            const props = feature.properties || {};
+            const rows = Object.keys(props).slice(0, 10).map(k => '<strong>' + esc(k) + ':</strong> ' + esc(props[k])).join('<br>');
+            if (rows) item.bindPopup(rows);
+          }
+        });
+      } else if (layerDef.type === 'raster' && layerDef.image && layerDef.bounds) {
+        layer = L.imageOverlay('data:image/png;base64,' + layerDef.image, layerDef.bounds, {
+          opacity: layerDef.opacity || 0.62,
+          interactive: false
+        });
+      }
+      if (!layer) continue;
+      overlays[layerDef.label] = layer;
+      if (layerDef.visible !== false) layer.addTo(modelMap);
+      if (layer.getBounds) {
+        const b = layer.getBounds();
+        if (b.isValid()) combinedBounds = combinedBounds ? combinedBounds.extend(b) : b;
+      }
+    }
+    L.control.layers(null, overlays, { collapsed: false }).addTo(modelMap);
+    L.control.scale({ imperial: true, metric: true }).addTo(modelMap);
+    const north = L.control({ position: 'topright' });
+    north.onAdd = function() {
+      const div = L.DomUtil.create('div', 'north-arrow');
+      div.innerHTML = 'N<br><span style="font-size:1.25rem">↑</span>';
+      return div;
+    };
+    north.addTo(modelMap);
+    if (combinedBounds && combinedBounds.isValid()) modelMap.fitBounds(combinedBounds.pad(0.05));
+    else modelMap.setView([39.5, -98.35], 4);
+  }
+
   if (hasAlignment()) {
     // Hydrograph
-    Plotly.newPlot('chart-hydrograph', [
+    const hydroTraces = [
       { x: D.alignment.dates, y: D.alignment.obs, type: 'scatter', mode: 'lines',
         name: 'Observed', line: { color: '#1e40af', width: 1.8 } },
       { x: D.alignment.dates, y: D.alignment.sim, type: 'scatter', mode: 'lines',
         name: 'Simulated', line: { color: '#dc2626', width: 1.4 } }
-    ], {
+    ];
+    if (hasCalibratedAlignment()) {
+      hydroTraces.push({ x: D.calibrated_alignment.dates, y: D.calibrated_alignment.sim, type: 'scatter', mode: 'lines',
+        name: 'Calibrated locked rerun', line: { color: '#059669', width: 1.6 } });
+    }
+    Plotly.newPlot('chart-hydrograph', hydroTraces, {
       margin: { t: 10, r: 20, b: 40, l: 50 },
       xaxis: { title: '', rangeslider: { visible: true }, type: 'date' },
       yaxis: { title: 'Discharge (m\u00B3/s)', type: 'log' },
@@ -727,12 +918,19 @@ def _javascript() -> str:
     const simSorted = [...D.alignment.sim].sort((a,b) => b-a);
     const exceedObs = obsSorted.map((_,i) => (i/(obsSorted.length-1))*100);
     const exceedSim = simSorted.map((_,i) => (i/(simSorted.length-1))*100);
-    Plotly.newPlot('chart-fdc', [
+    const fdcTraces = [
       { x: exceedObs, y: obsSorted, type: 'scatter', mode: 'lines', name: 'Observed',
         line: { color: '#1e40af', width: 1.8 } },
       { x: exceedSim, y: simSorted, type: 'scatter', mode: 'lines', name: 'Simulated',
         line: { color: '#dc2626', width: 1.4 } }
-    ], {
+    ];
+    if (hasCalibratedAlignment()) {
+      const calSorted = [...D.calibrated_alignment.sim].sort((a,b) => b-a);
+      const exceedCal = calSorted.map((_,i) => (i/(calSorted.length-1))*100);
+      fdcTraces.push({ x: exceedCal, y: calSorted, type: 'scatter', mode: 'lines', name: 'Calibrated',
+        line: { color: '#059669', width: 1.6 } });
+    }
+    Plotly.newPlot('chart-fdc', fdcTraces, {
       margin: { t: 10, r: 20, b: 40, l: 50 },
       xaxis: { title: 'Exceedance Probability (%)' },
       yaxis: { title: 'Discharge (m\u00B3/s)', type: 'log' },
@@ -741,13 +939,22 @@ def _javascript() -> str:
     }, { responsive: true, displayModeBar: true, modeBarButtonsToRemove: ['lasso2d', 'select2d'] });
 
     // Scatter
-    const maxVal = Math.max(...D.alignment.obs, ...D.alignment.sim) * 1.05;
-    Plotly.newPlot('chart-scatter', [
+    const maxVal = Math.max(
+      ...D.alignment.obs,
+      ...D.alignment.sim,
+      ...(hasCalibratedAlignment() ? D.calibrated_alignment.sim : [])
+    ) * 1.05;
+    const scatterTraces = [
       { x: D.alignment.obs, y: D.alignment.sim, type: 'scatter', mode: 'markers',
         marker: { color: '#2563eb', opacity: 0.35, size: 5 }, name: 'Daily flow' },
       { x: [0, maxVal], y: [0, maxVal], type: 'scatter', mode: 'lines',
         line: { dash: 'dash', color: '#1a2332', width: 1.5 }, name: '1:1 line' }
-    ], {
+    ];
+    if (hasCalibratedAlignment()) {
+      scatterTraces.splice(1, 0, { x: D.calibrated_alignment.obs, y: D.calibrated_alignment.sim, type: 'scatter', mode: 'markers',
+        marker: { color: '#059669', opacity: 0.28, size: 5 }, name: 'Calibrated daily flow' });
+    }
+    Plotly.newPlot('chart-scatter', scatterTraces, {
       margin: { t: 10, r: 20, b: 40, l: 50 },
       xaxis: { title: 'Observed (m\u00B3/s)', range: [0, maxVal] },
       yaxis: { title: 'Simulated (m\u00B3/s)', range: [0, maxVal], scaleanchor: 'x', scaleratio: 1 },
@@ -837,7 +1044,8 @@ def _javascript() -> str:
     const iterNse = hist.filter(h => (h.nse || h.metric_nse) != null);
     if (iterNse.length > 0) {
       Plotly.newPlot('chart-convergence', [
-        { x: iterNse.map(h => h.iteration), y: iterNse.map(h => h.nse || h.metric_nse),
+        { x: iterNse.map((h, i) => h.eval_idx != null ? h.eval_idx : (h.iteration != null ? h.iteration : i)),
+          y: iterNse.map(h => h.nse || h.metric_nse),
           type: 'scatter', mode: 'lines+markers',
           marker: { size: 5 }, line: { width: 1.5 }, name: 'NSE' }
       ], {
@@ -878,31 +1086,46 @@ def _javascript() -> str:
     }
   }
 
-  // ── Soil sources ─────────────────────────────────────────────────────
-  if (D.soil_report) {
-    const sr = D.soil_report;
-    const sources = sr.components || sr.sources || [];
-    if (sources && sources.length > 0) {
-      const names = sources.map(s => s.name || s.source || s.mukey || '');
-      const areas = sources.map(s => s.area_km2 || s.area_pct || s.fraction || 1);
-      Plotly.newPlot('chart-soil', [
-        { labels: names, values: areas, type: 'pie', hole: 0.4,
-          textinfo: 'label+percent', textposition: 'outside' }
-      ], {
-        margin: { t: 10, r: 10, b: 10, l: 10 }, paper_bgcolor: '#fff'
-      }, { responsive: true, displayModeBar: false });
-    }
-  }
-
   // ── Helper render functions ──────────────────────────────────────────
   function _renderCalibrationSummary(D) {
     const p = D.calibration.provenance || {};
+    const bench = D.calibration_benchmark_metrics || {};
+    const verify = D.calibration_verification_metrics || {};
+    const delta = D.calibration_delta_metrics || {};
+    const window = D.calibration_screening_window || (D.best_solution && D.best_solution.screening_window) || null;
     let h = '';
     h += '<div class="kv-row"><span class="kv-key">Status</span><span class="kv-val">' + esc(D.calibration_status || 'unknown') + '</span></div>';
-    if (p.final_nse != null) h += '<div class="kv-row"><span class="kv-key">Final NSE</span><span class="kv-val">' + fmtNum(p.final_nse) + '</span></div>';
-    if (p.final_kge != null) h += '<div class="kv-row"><span class="kv-key">Final KGE</span><span class="kv-val">' + fmtNum(p.final_kge) + '</span></div>';
-    if (p.delta_nse != null) h += '<div class="kv-row"><span class="kv-key">\u0394NSE</span><span class="kv-val">' + fmtNum(p.delta_nse) + '</span></div>';
-    if (p.delta_kge != null) h += '<div class="kv-row"><span class="kv-key">\u0394KGE</span><span class="kv-val">' + fmtNum(p.delta_kge) + '</span></div>';
+    if (D.calibration_strategy || D.calibration_method) h += '<div class="kv-row"><span class="kv-key">Strategy</span><span class="kv-val">' + esc(D.calibration_strategy || D.calibration_method) + '</span></div>';
+    if (D.calibration_claim_status) h += '<div class="kv-row"><span class="kv-key">Claim status</span><span class="kv-val">' + esc(D.calibration_claim_status) + '</span></div>';
+    if (D.calibration_final_authority) h += '<div class="kv-row"><span class="kv-key">Final authority</span><span class="kv-val">' + esc(D.calibration_final_authority) + '</span></div>';
+    if (D.calibration_progress) {
+      const prog = D.calibration_progress;
+      const done = prog.completed_evaluations != null ? prog.completed_evaluations : '';
+      const budget = prog.total_budget != null ? prog.total_budget : '';
+      h += '<div class="kv-row"><span class="kv-key">Calibration progress</span><span class="kv-val">' + esc((prog.status || 'unknown') + (prog.phase ? ' / ' + prog.phase : '') + (budget !== '' ? ' / ' + done + ' of ' + budget + ' evaluations' : '')) + '</span></div>';
+      if (prog.updated_at_utc) h += '<div class="kv-row"><span class="kv-key">Progress updated</span><span class="kv-val">' + esc(prog.updated_at_utc) + '</span></div>';
+      if (D.calibration_progress_path) h += '<div class="kv-row"><span class="kv-key">Progress JSON</span><span class="kv-val">' + esc(D.calibration_progress_path) + '</span></div>';
+    }
+    if (D.temporary_candidate_metrics_allowed_as_final === false) h += '<div class="notice" style="margin-top:12px;margin-bottom:12px;">Candidate/window metrics are provisional. Final claims require locked verification.</div>';
+    if (window) {
+      h += '<div class="kv-row"><span class="kv-key">Screening score window</span><span class="kv-val">' + esc((window.score_start || 'lock-start') + ' to ' + (window.score_end || 'lock-end')) + '</span></div>';
+      h += '<div class="kv-row"><span class="kv-key">Screening simulation window</span><span class="kv-val">' + esc((window.simulation_start || 'lock-start') + ' to ' + (window.simulation_end || 'lock-end')) + '</span></div>';
+    }
+    if (bench.nse != null || verify.nse != null) h += '<div class="kv-row"><span class="kv-key">NSE benchmark → verified</span><span class="kv-val">' + fmtNum(bench.nse) + ' → ' + fmtNum(verify.nse) + ' (' + fmtNum(delta.nse) + ')</span></div>';
+    if (bench.kge != null || verify.kge != null) h += '<div class="kv-row"><span class="kv-key">KGE benchmark → verified</span><span class="kv-val">' + fmtNum(bench.kge) + ' → ' + fmtNum(verify.kge) + ' (' + fmtNum(delta.kge) + ')</span></div>';
+    if (bench.pbias != null || verify.pbias != null) h += '<div class="kv-row"><span class="kv-key">PBIAS benchmark → verified</span><span class="kv-val">' + fmtNum(bench.pbias, 1) + '% → ' + fmtNum(verify.pbias, 1) + '%</span></div>';
+    if (D.best_solution && D.best_solution.selection_policy) h += '<div class="kv-row"><span class="kv-key">Selection policy</span><span class="kv-val">' + esc(D.best_solution.selection_policy) + '</span></div>';
+    if (D.calibration_history_csv) h += '<div class="kv-row"><span class="kv-key">History CSV</span><span class="kv-val">' + esc(D.calibration_history_csv) + '</span></div>';
+    if (D.best_solution_path) h += '<div class="kv-row"><span class="kv-key">Best solution</span><span class="kv-val">' + esc(D.best_solution_path) + '</span></div>';
+    const protocol = D.calibration_protocol || (D.best_solution && D.best_solution.calibration_protocol) || [];
+    if (protocol && protocol.length > 0) {
+      h += '<div style="margin-top:14px;font-size:.8rem;color:var(--text-muted);font-weight:700;">Phases</div>';
+      h += '<table class="data-table"><tbody>';
+      for (const row of protocol) {
+        h += '<tr><td>' + esc(row.phase || '') + '</td><td>' + esc((row.parameters || []).join(', ')) + '</td><td>' + esc(row.objective || '') + '</td></tr>';
+      }
+      h += '</tbody></table>';
+    }
     return h;
   }
 
@@ -928,12 +1151,39 @@ def _javascript() -> str:
     return h;
   }
 
+  function _renderSoilSummary(sr) {
+    const pct = value => {
+      if (value == null || isNaN(value)) return null;
+      const numeric = Number(value);
+      return fmtNum(Math.abs(numeric) <= 1 ? numeric * 100 : numeric, 1) + '%';
+    };
+    const rows = [
+      ['Fidelity mode', sr.soil_mode || 'unknown'],
+      ['Overlay source', sr.soil_overlay_source || sr.hru_soil_overlay_source || 'unknown'],
+      ['Profiles written', sr.profiles_written],
+      ['Requested map units', sr.requested_mukeys],
+      ['Profile coverage', pct(sr.coverage_pct)],
+      ['Fallback soil share', pct(sr.pct_fallback_soils)],
+    ];
+    let h = '';
+    for (const [k, v] of rows) {
+      if (v != null && v !== '') {
+        h += '<div class="kv-row"><span class="kv-key">' + esc(k) + '</span><span class="kv-val">' + esc(String(v)) + '</span></div>';
+      }
+    }
+    if (sr.authority_note) {
+      h += '<div class="notice" style="margin-top:16px;margin-bottom:0;">' + esc(sr.authority_note) + '</div>';
+    }
+    return h || '<div class="no-data">No soil provenance summary available</div>';
+  }
+
   function _renderRunDetails(D) {
     let h = '';
     const details = [
       ['Run Directory', D.run_dir],
       ['Generated At', D.generated_at],
-      ['Status', D.status],
+      ['Execution Status', D.execution_status || 'unknown'],
+      ['Scientific Status', D.governance_evaluated ? D.status : 'NOT EVALUATED'],
       ['Claim Tier', D.effective_claim_tier || D.claim_tier],
       ['Gates Passed', (D.gates_passed || []).join(', ') || 'none'],
       ['Gates Failed', (D.gates_failed || []).join(', ') || 'none'],
@@ -1047,6 +1297,167 @@ def _read_history_csv(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def _collect_spatial_map(run_dir: Path) -> dict[str, Any] | None:
+    """Collect compact browser-ready vector and raster layers.
+
+    Spatial artifacts remain authoritative on disk. The dashboard receives
+    simplified EPSG:4326 previews for inspection, not replacement datasets.
+    """
+    layers: list[dict[str, Any]] = []
+    vector_specs = [
+        ("basin", "Reference basin", run_dir / "raw" / "basin_boundary.gpkg", True),
+        ("subbasins", "Subbasins", run_dir / "delin" / "shapes" / "subbasins.gpkg", True),
+        ("channels", "Stream network", run_dir / "delin" / "shapes" / "channels.gpkg", True),
+        ("outlets", "Gauge / outlet", run_dir / "delin" / "shapes" / "outlets.gpkg", True),
+        ("hrus", "HRUs", run_dir / "delin" / "hrus" / "hrus.gpkg", False),
+    ]
+    for kind, label, path, visible in vector_specs:
+        layer = _vector_preview(path, kind=kind, label=label, visible=visible)
+        if layer:
+            layers.append(layer)
+
+    raster_specs = [
+        ("DEM", run_dir / "delin" / "rasters" / "dem_conditioned.tif", "continuous"),
+        ("Land use", _first_existing(sorted((run_dir / "raw").glob("nlcd_*.tif"))), "categorical"),
+        ("Soils", run_dir / "raw" / "mukey.tif", "categorical"),
+        ("HRU raster", run_dir / "delin" / "hrus" / "hru_map.tif", "categorical"),
+    ]
+    for label, path, mode in raster_specs:
+        if path is None:
+            continue
+        layer = _raster_preview(path, label=label, mode=mode)
+        if layer:
+            layers.append(layer)
+
+    if not layers:
+        return None
+    return {
+        "layers": layers,
+        "note": (
+            "Map layers are simplified previews. Use the GeoPackage and GeoTIFF "
+            "artifacts in the run directory for quantitative GIS analysis."
+        ),
+    }
+
+
+def _first_existing(paths: list[Path | None]) -> Path | None:
+    return next((path for path in paths if path is not None and path.is_file()), None)
+
+
+def _path_from_value(value: Any) -> Path | None:
+    if not value:
+        return None
+    try:
+        return Path(str(value)).expanduser()
+    except Exception:
+        return None
+
+
+def _vector_preview(
+    path: Path,
+    *,
+    kind: str,
+    label: str,
+    visible: bool,
+) -> dict[str, Any] | None:
+    if not path.is_file():
+        return None
+    try:
+        import geopandas as gpd
+
+        frame = gpd.read_file(path)
+        if frame.empty or frame.geometry.is_empty.all():
+            return None
+        if frame.crs is None:
+            log.warning("Dashboard map skipped %s because its CRS is missing.", path)
+            return None
+        frame = frame.to_crs("EPSG:4326")
+        # HRU layers can contain thousands of polygons. Geometry simplification
+        # keeps the single HTML artifact responsive while retaining every HRU.
+        tolerance = 0.00008 if kind == "hrus" else 0.00002
+        frame = frame.copy()
+        frame.geometry = frame.geometry.simplify(tolerance, preserve_topology=True)
+        keep = [column for column in frame.columns if column != frame.geometry.name][:8]
+        frame = frame[[*keep, frame.geometry.name]]
+        payload = json.loads(frame.to_json(drop_id=True))
+        return {
+            "type": "geojson",
+            "kind": kind,
+            "label": f"{label} ({len(frame):,})",
+            "visible": visible,
+            "source": str(path),
+            "feature_count": int(len(frame)),
+            "data": payload,
+        }
+    except Exception as exc:
+        log.debug("Dashboard vector preview failed for %s: %s", path, exc)
+        return None
+
+
+def _raster_preview(path: Path, *, label: str, mode: str) -> dict[str, Any] | None:
+    if not path.is_file():
+        return None
+    try:
+        import base64
+        import io
+
+        import numpy as np
+        import rasterio
+        from PIL import Image
+        from rasterio.warp import transform_bounds
+
+        with rasterio.open(path) as src:
+            scale = min(1.0, 900.0 / max(src.width, src.height))
+            width = max(1, int(round(src.width * scale)))
+            height = max(1, int(round(src.height * scale)))
+            band = src.read(1, out_shape=(height, width), masked=True)
+            west, south, east, north = transform_bounds(
+                src.crs,
+                "EPSG:4326",
+                *src.bounds,
+                densify_pts=21,
+            )
+        mask = np.ma.getmaskarray(band)
+        values = np.asarray(band.filled(np.nan), dtype=float)
+        valid = values[~mask & np.isfinite(values)]
+        if valid.size == 0:
+            return None
+        if mode == "continuous":
+            low, high = np.nanpercentile(valid, [2, 98])
+            if high <= low:
+                high = low + 1.0
+            norm = np.nan_to_num(
+                np.clip((values - low) / (high - low), 0, 1),
+                nan=0.0,
+            )
+            red = (40 + 180 * norm).astype(np.uint8)
+            green = (90 + 120 * norm).astype(np.uint8)
+            blue = (120 - 80 * norm).astype(np.uint8)
+        else:
+            codes = np.nan_to_num(values, nan=0).astype(np.int64)
+            red = ((codes * 53 + 47) % 205 + 25).astype(np.uint8)
+            green = ((codes * 97 + 71) % 205 + 25).astype(np.uint8)
+            blue = ((codes * 193 + 29) % 205 + 25).astype(np.uint8)
+        alpha = np.where(mask | ~np.isfinite(values), 0, 190).astype(np.uint8)
+        rgba = np.dstack([red, green, blue, alpha])
+        image = Image.fromarray(rgba)
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG", optimize=True)
+        return {
+            "type": "raster",
+            "kind": "raster",
+            "label": label,
+            "visible": False,
+            "source": str(path),
+            "bounds": [[south, west], [north, east]],
+            "opacity": 0.62,
+            "image": base64.b64encode(buffer.getvalue()).decode("ascii"),
+        }
+    except Exception as exc:
+        log.debug("Dashboard raster preview failed for %s: %s", path, exc)
+        return None
+
+
 def _collect_water_balance_fallback(run_dir: Path) -> dict[str, Any] | None:
     """Fallback: read SWAT+ basin_wb_aa.txt directly when the plot module fails."""
     txt = None
@@ -1127,10 +1538,10 @@ def _read_basin_wb(path: Path) -> list[dict[str, float]]:
 def _image_to_base64_resized(path: Path, max_width: int = 1200) -> str:
     """Read an image, optionally resize, and return base64-encoded string."""
     import base64
+    import io
 
     try:
         from PIL import Image
-        import io
 
         img = Image.open(path)
         if img.width > max_width:

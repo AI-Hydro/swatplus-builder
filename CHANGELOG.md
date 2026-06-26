@@ -2,6 +2,30 @@
 
 All notable changes to swatplus-builder are documented here.
 
+## [0.7.8] — 2026-06-26
+
+### Fixed
+- Diagnostic calibration now evaluates sensitivity-guided anchor combinations
+  before DDS, avoiding false volume-gate blocks when complementary parameter
+  moves pass together but fail one-at-a-time.
+- Standalone `run_diagnostic_calibration()` now syncs root
+  `calibration_provenance.json`, so debug reruns do not leave stale failed
+  provenance beside successful report artifacts.
+
+### Added
+- Calibration heartbeat/progress evidence for screening, searching,
+  verification, failed, blocked, and complete states.
+- Dashboard evidence for calibration method, progress, best solution, history,
+  calibrated alignment, and spatial basin overview context.
+
+### Evidence
+- `03349000_2010_2018_diag` now completes diagnostic calibration with locked
+  verification (`NSE=-0.149`, `KGE=0.475`, `PBIAS=15.51%`), while retaining
+  weak absolute skill honestly.
+- `01031500_2010_2018_nocal` was recalibrated diagnostically after the earlier
+  no-calibration run; it is now classified as attempted-but-blocked by
+  calibration process gates, dominated by mass-imbalance evidence.
+
 ## [0.7.1] — 2026-06-17
 
 ### Added

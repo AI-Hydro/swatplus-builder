@@ -817,6 +817,31 @@ def cmd_calibrate(
         "--allow-outlet-autodetect/--require-explicit-outlet",
         help="Allow objective scoring to auto-switch outlet when requested outlet is dry.",
     ),
+    simulation_start: str = typer.Option(
+        None,
+        "--simulation-start",
+        help="Optional real-engine candidate simulation start date (YYYY-MM-DD).",
+    ),
+    simulation_end: str = typer.Option(
+        None,
+        "--simulation-end",
+        help="Optional real-engine candidate simulation end date (YYYY-MM-DD).",
+    ),
+    score_start: str = typer.Option(
+        None,
+        "--score-start",
+        help="Optional real-engine candidate scoring/output start date (YYYY-MM-DD).",
+    ),
+    score_end: str = typer.Option(
+        None,
+        "--score-end",
+        help="Optional real-engine candidate scoring/output end date (YYYY-MM-DD).",
+    ),
+    nyskip_years: int = typer.Option(
+        2,
+        "--nyskip-years",
+        help="Observed warm-up years to strip before scoring when no explicit score window is enough.",
+    ),
     min_improvement_nse: float = typer.Option(
         None,
         "--min-improvement-nse",
@@ -1034,6 +1059,11 @@ def cmd_calibrate(
             objective_sim_file=objective_sim_file,
             strict_objective_file=bool(strict_objective_file),
             allow_outlet_autodetect=bool(allow_outlet_autodetect),
+            nyskip_years=int(nyskip_years),
+            simulation_start=simulation_start,
+            simulation_end=simulation_end,
+            score_start=score_start,
+            score_end=score_end,
         )
         # Generate an apples-to-apples baseline from the same rerun stack.
         baseline_metrics = objective({})
@@ -1400,7 +1430,14 @@ def cmd_lock_benchmark(
     ),
     out_dir: str = typer.Option(..., "--out-dir", "-o", help="Root directory for lock artifacts."),
     basin_id: str = typer.Option(..., "--basin-id", help="Basin identifier (e.g., usgs_01547700)."),
-    outlet_gis_id: int = typer.Option(1, "--outlet-gis-id", help="Gauge outlet channel GIS ID."),
+    outlet_gis_id: int | None = typer.Option(
+        None,
+        "--outlet-gis-id",
+        help=(
+            "Gauge outlet channel GIS ID. If omitted, the generated topology must have exactly "
+            "one terminal channel."
+        ),
+    ),
     sim_source_file: str = typer.Option(
         "basin_sd_cha_day.txt",
         "--sim-source-file",
@@ -1432,10 +1469,20 @@ def cmd_lock_benchmark(
 
     from .calibration.locked_benchmark import lock_benchmark
     from .errors import SwatBuilderError
+    from .output.eval import terminal_channel_ids
 
-    if not json_output:
-        rprint(f"[bold]swat lock-benchmark[/bold] → basin={basin_id} outlet={outlet_gis_id}")
     try:
+        if outlet_gis_id is None:
+            detected_terminal_ids = terminal_channel_ids(txtinout)
+            if len(detected_terminal_ids) != 1:
+                raise typer.BadParameter(
+                    "The prepared topology does not have exactly one terminal channel "
+                    f"(found {detected_terminal_ids}); supply --outlet-gis-id explicitly.",
+                    param_hint="--outlet-gis-id",
+                )
+            outlet_gis_id = detected_terminal_ids[0]
+        if not json_output:
+            rprint(f"[bold]swat lock-benchmark[/bold] → basin={basin_id} outlet={outlet_gis_id}")
         obs_df = pd.read_csv(observed_csv, index_col=0, parse_dates=True)
         obs_col = "discharge" if "discharge" in obs_df.columns else obs_df.columns[0]
         obs_series = pd.Series(

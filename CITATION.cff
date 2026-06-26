@@ -5,8 +5,8 @@ message: >-
   the run's provenance hash from evidence_summary.json so the claim
   is traceable to the exact run.
 title: "swatplus-builder: Claim-governed SWAT+ hydrologic modeling from a USGS gauge ID"
-version: 0.7.1
-date-released: "2026-06-17"
+version: 0.7.8
+date-released: "2026-06-26"
 doi: 10.5281/zenodo.20650908
 license: MIT
 repository-code: "https://github.com/AI-Hydro/swatplus-builder"
@@ -27,7 +27,7 @@ abstract: >-
   assign each result a claim tier and write a machine-readable evidence bundle
   — including typed, evidence-backed refusals — so both successes and
   limitations are fully inspectable. The pipeline runs with no desktop GIS and
-  exposes an 11-tool MCP surface for AI agent operation.
+  exposes a 13-tool MCP surface for AI agent operation.
 keywords:
   - SWAT+
   - hydrology
@@ -56,4 +56,4 @@ preferred-citation:
   doi: 10.5281/zenodo.20650908
   url: "https://github.com/AI-Hydro/swatplus-builder"
   year: 2026
-  version: 0.7.1
+  version: 0.7.8

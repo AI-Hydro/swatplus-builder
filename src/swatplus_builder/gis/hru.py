@@ -16,7 +16,8 @@ Phase 1 MVP (what this module does today)
 * **Optional full-overlay mode** (``dominant_only=False``) — one HRU
   per distinct ``(landuse, soil, slope_band)`` combination within the
   LSU. ``min_hru_fraction`` drops combinations below a threshold of
-  the LSU's area to keep table size manageable.
+  the LSU's area to keep table size manageable. Their area is redistributed
+  proportionally among retained HRUs so filtering never changes LSU area.
 
 Inputs
 ------
@@ -158,8 +159,10 @@ def create_hrus(
             Otherwise enumerate every distinct triple per LSU.
         min_hru_fraction: In full-overlay mode (``dominant_only=False``),
             drop HRUs whose area is less than this fraction of the
-            parent LSU's area. Ignored when ``dominant_only=True``
-            since a single HRU always has fraction ``1.0``.
+            parent LSU's valid overlay area, then redistribute their area
+            proportionally among retained HRUs. Ignored when
+            ``dominant_only=True`` since a single HRU always has fraction
+            ``1.0``.
         workdir_subdir: Subdirectory under ``watershed.workdir`` to
             drop HRU artifacts into. Created if missing.
         settings: Runtime overrides (future-proofing; unused today).
@@ -178,6 +181,12 @@ def create_hrus(
             the rasters — check alignment / CRS).
     """
     _ = settings  # reserved
+
+    if not 0.0 <= float(min_hru_fraction) <= 1.0:
+        raise SwatBuilderInputError(
+            "min_hru_fraction must be between 0 and 1 inclusive.",
+            min_hru_fraction=float(min_hru_fraction),
+        )
 
     bands = tuple(slope_bands) if slope_bands is not None else DEFAULT_SLOPE_BANDS
     if not all(b0 < b1 for b0, b1 in zip(bands, bands[1:])):
@@ -267,6 +276,7 @@ def create_hrus(
     hru_rows: list[HruRow] = []
     all_touched_fallback_subbasins: list[int] = []
     missing_hru_subbasins: list[int] = []
+    area_accounting_by_lsu: list[dict[str, float | int]] = []
     # Per-pixel HRU id output raster (int32, nodata=0 so positive ids are always HRU).
     hru_map = np.zeros(ref_shape, dtype=np.int32)
     next_hru_id = 1
@@ -321,7 +331,14 @@ def create_hrus(
         # Channel attributes — fall back to safe minimal defaults if
         # the subbasin has no channel row (usually means a headwater
         # lost its single-pixel link during vectorization).
-        chan = channel_by_sub.get(sub_id, _DEFAULT_CHANNEL_ATTRS)
+        chan = channel_by_sub.get(sub_id)
+        if chan is None:
+            raise SwatBuilderPipelineError(
+                "Subbasin has no authoritative channel mapping; refusing to "
+                "write an arbitrary gis_lsus.channel foreign key.",
+                subbasin_id=sub_id,
+                available_channel_subbasin_ids=sorted(channel_by_sub),
+            )
 
         lsu_rows.append(
             LsuRow(
@@ -380,14 +397,48 @@ def create_hrus(
                 dominant_combo, cnt = combo_counts.most_common(1)[0]
                 selected = [(dominant_combo, cnt)]
 
-        # Precompute per-(lu) and per-(lu,soil) pixel counts inside LSU
-        # so ``arland`` / ``arso`` are correct even when the same LU
-        # appears with multiple soils.
-        lu_pixel_counts: Counter[int] = Counter()
-        lu_soil_pixel_counts: Counter[tuple[int, int]] = Counter()
-        for lu_v, soil_v, _cls in triples:
-            lu_pixel_counts[lu_v] += 1
-            lu_soil_pixel_counts[(lu_v, soil_v)] += 1
+        selected_pixel_count = sum(count for _combo, count in selected)
+        if dominant_only:
+            selected_raw_area_ha = lsu_area_ha
+            filtered_valid_area_ha = 0.0
+            invalid_overlay_area_ha = 0.0
+            area_scale_factor = 1.0
+        else:
+            selected_raw_area_ha = float(selected_pixel_count) * pixel_area_ha
+            filtered_valid_area_ha = (
+                float(total_valid_pixels - selected_pixel_count) * pixel_area_ha
+            )
+            invalid_overlay_area_ha = (
+                float(lsu_pixel_count - total_valid_pixels) * pixel_area_ha
+            )
+            area_scale_factor = lsu_area_ha / selected_raw_area_ha
+
+        modeled_area_by_combo = {
+            combo: lsu_area_ha * count / selected_pixel_count
+            for combo, count in selected
+        }
+        modeled_area_by_landuse: Counter[int] = Counter()
+        modeled_area_by_landuse_soil: Counter[tuple[int, int]] = Counter()
+        for (lu_code, mukey, _slope_cls), modeled_area in modeled_area_by_combo.items():
+            modeled_area_by_landuse[lu_code] += modeled_area
+            modeled_area_by_landuse_soil[(lu_code, mukey)] += modeled_area
+
+        area_accounting_by_lsu.append(
+            {
+                "lsu_id": lsu_id,
+                "lsu_area_ha": round(lsu_area_ha, 6),
+                "valid_overlay_area_ha": round(
+                    float(total_valid_pixels) * pixel_area_ha, 6
+                ),
+                "retained_raw_area_ha": round(selected_raw_area_ha, 6),
+                "filtered_valid_area_ha": round(filtered_valid_area_ha, 6),
+                "invalid_overlay_area_ha": round(invalid_overlay_area_ha, 6),
+                "redistributed_area_ha": round(
+                    lsu_area_ha - selected_raw_area_ha, 6
+                ),
+                "area_scale_factor": round(area_scale_factor, 9),
+            }
+        )
 
         for (lu_code, mukey, slope_cls), _count in selected:
             hru_id = next_hru_id
@@ -418,16 +469,15 @@ def create_hrus(
                 if not combo_mask.any():
                     continue
                 hru_mask = combo_mask
-                arland = float(lu_pixel_counts[lu_code]) * pixel_area_ha
-                arso = float(lu_soil_pixel_counts[(lu_code, mukey)]) * pixel_area_ha
+                arland = modeled_area_by_landuse[lu_code]
+                arso = modeled_area_by_landuse_soil[(lu_code, mukey)]
                 hru_slope = _safe_mean(slope_pct_arr[combo_mask])
                 hru_elev = _safe_mean(dem_arr[combo_mask])
                 cx, cy = _pixel_centroid_xy(combo_mask, ref_transform)
                 h_lon, h_lat = to_wgs84.transform(cx, cy)
 
             hru_map[hru_mask] = hru_id
-            hru_pixel_count = int(hru_mask.sum())
-            hru_area_ha = float(hru_pixel_count) * pixel_area_ha
+            hru_area_ha = modeled_area_by_combo[(lu_code, mukey, slope_cls)]
 
             hru_rows.append(
                 HruRow(
@@ -505,6 +555,24 @@ def create_hrus(
             "overlay_missing_hru_subbasins": missing_hru_subbasins,
             "overlay_all_touched_fallback_count": len(all_touched_fallback_subbasins),
             "overlay_missing_hru_subbasin_count": len(missing_hru_subbasins),
+            "area_accounting_by_lsu": area_accounting_by_lsu,
+            "total_lsu_area_ha": round(sum(r.area for r in lsu_rows), 6),
+            "total_valid_overlay_area_ha": round(
+                sum(row["valid_overlay_area_ha"] for row in area_accounting_by_lsu), 6
+            ),
+            "total_retained_raw_area_ha": round(
+                sum(row["retained_raw_area_ha"] for row in area_accounting_by_lsu), 6
+            ),
+            "total_filtered_valid_area_ha": round(
+                sum(row["filtered_valid_area_ha"] for row in area_accounting_by_lsu), 6
+            ),
+            "total_invalid_overlay_area_ha": round(
+                sum(row["invalid_overlay_area_ha"] for row in area_accounting_by_lsu), 6
+            ),
+            "total_redistributed_area_ha": round(
+                sum(row["redistributed_area_ha"] for row in area_accounting_by_lsu), 6
+            ),
+            "total_modeled_hru_area_ha": round(sum(r.arslp for r in hru_rows), 6),
         },
     }
     catalog_path.write_text(json.dumps(catalog, indent=2))
@@ -527,6 +595,15 @@ def create_hrus(
             "overlay_missing_hru_subbasin_count": float(len(missing_hru_subbasins)),
             "total_lsu_area_ha": round(sum(r.area for r in lsu_rows), 3),
             "total_hru_area_ha": round(sum(r.arslp for r in hru_rows), 3),
+            "total_filtered_valid_area_ha": round(
+                sum(row["filtered_valid_area_ha"] for row in area_accounting_by_lsu), 3
+            ),
+            "total_invalid_overlay_area_ha": round(
+                sum(row["invalid_overlay_area_ha"] for row in area_accounting_by_lsu), 3
+            ),
+            "total_redistributed_area_ha": round(
+                sum(row["redistributed_area_ha"] for row in area_accounting_by_lsu), 3
+            ),
         },
     )
 
@@ -564,15 +641,6 @@ def load_lsus_hrus(hru_result: HRUResult) -> tuple[list[LsuRow], list[HruRow]]:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-
-
-_DEFAULT_CHANNEL_ATTRS: dict[str, float] = {
-    "channel_id": 1,
-    "length_m": 100.0,
-    "slope_pct": 0.01,
-    "width_m": 1.0,
-    "depth_m": 0.1,
-}
 
 
 def _require_file(path: Path, label: str) -> Path:
@@ -826,15 +894,17 @@ def _channel_attrs_by_sub(
     link_col = _col("link_id", 1)
 
     for i, row in enumerate(channels_gdf.itertuples()):
-        # WBT sometimes leaves a channel centroid outside every subbasin
-        # polygon (edge-of-watershed artifacts from the raster→vector
-        # conversion).  Those rows come back as NaN from the sjoin above;
-        # skip them rather than raise.
         sid_raw = getattr(row, "sub_id", 0)
         try:
             sid = int(sid_raw)
         except (TypeError, ValueError):
-            continue
+            # Defensive compatibility for older channel artifacts written
+            # before delineation restored boundary-centroid joins. WBT link ids
+            # are also the native subbasin ids.
+            try:
+                sid = int(link_col.iloc[i] if hasattr(link_col, "iloc") else link_col[i])
+            except (TypeError, ValueError):
+                continue
         if sid <= 0:
             continue
         length = float(length_col.iloc[i] if hasattr(length_col, "iloc") else length_col[i])
@@ -935,20 +1005,25 @@ def _write_hru_vector(
         _fiona_safe_gdf(gpd.GeoDataFrame(records, geometry=geoms, crs=crs)).to_file(path, driver="GPKG")
         return
 
-    # Full-overlay: vectorize per-hru pixels.
+    # Full-overlay: scan the labeled raster once, then group disconnected
+    # polygons by HRU id. Scanning the full raster once per HRU makes runtime
+    # proportional to both raster size and HRU count and is prohibitive for
+    # large basins with thousands of retained combinations.
+    polygons_by_hru: dict[int, list[Any]] = {}
+    for geom, value in rasterio.features.shapes(
+        hru_map,
+        mask=hru_map > 0,
+        transform=transform,
+    ):
+        polygons_by_hru.setdefault(int(value), []).append(shp_shape(geom))
+
     records, geoms = [], []
     for hru in hru_rows:
-        mask = hru_map == hru.id
-        if not mask.any():
-            continue
-        shapes = rasterio.features.shapes(
-            hru_map, mask=mask, transform=transform
-        )
-        polys = [shp_shape(g) for g, _v in shapes]
-        if not polys:
+        polygons = polygons_by_hru.get(hru.id)
+        if not polygons:
             continue
         records.append(_hru_to_record(hru))
-        geoms.append(unary_union(polys))
+        geoms.append(unary_union(polygons))
     _fiona_safe_gdf(gpd.GeoDataFrame(records, geometry=geoms, crs=crs)).to_file(path, driver="GPKG")
 
 

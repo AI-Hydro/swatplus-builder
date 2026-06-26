@@ -11,7 +11,7 @@ runtime gates, provenance, diagnostics, and machine-readable evidence.
 ## Status
 
 Active hardening toward research-grade production pipeline. Last updated:
-2026-06-17.
+2026-06-26.
 
 ## Where To Read Next
 
@@ -28,6 +28,73 @@ Active hardening toward research-grade production pipeline. Last updated:
 - Track lessons that generalized across basins: `docs/PIPELINE_LEARNING_LOG.md`.
 
 ## Current State
+
+- Current hardening evidence lives under
+  `/Users/mgalib/swatplus_runs/e2e_hardening_20260626/`. The latest verified
+  set has three current runs: `01547700_2010_2018_diag` completed with
+  diagnostic-guided locked calibration (`NSE=0.3440`, `KGE=0.4551`,
+  `PBIAS=7.34%`, diagnostic tier); `03349000_2010_2018_diag` now completes
+  diagnostic calibration after sensitivity-guided anchor combinations fixed a
+  false volume-gate block (`verified NSE=-0.149`, `KGE=0.475`,
+  `PBIAS=15.51%`, diagnostic tier with weak absolute skill retained);
+  and `01031500_2010_2018_nocal` has now had diagnostic calibration attempted
+  after the original no-calibration run. The `01031500` calibration is
+  classified as `attempted_failed_or_blocked` in `kge_nse_finetune` because no
+  prior volume-valid candidate also passed calibration process gates; mass
+  imbalance remains the dominant retained blocker. The stale interrupted
+  `01031500_2010_2018_diag` calibration scratch folder was removed before this
+  superseding evidence.
+
+- Dashboard and spatial overview hardening is now active: dashboards expose
+  calibration method, history, best solution, calibrated alignment, and
+  calibration progress; basin overview figures use a common basin reference,
+  vector subbasin/HRU/stream panels where possible, masked rasters, visible
+  outlets, and deterministic layout spacing.
+
+- Automated calibration now uses a package-owned diagnostic-guided DDS
+  contract: basin-specific sensitivity screen, phased volume/baseflow/peak
+  timing/KGE-NSE search, optional recent real-engine screening window for long
+  records, and full locked verification as the only final metric authority.
+  End-to-end runs also promote `dashboard.html` into
+  `evidence_summary.json`, `EVIDENCE_SUMMARY.md`, and `run_manifest.json`.
+  Screening-window metrics remain triage evidence only.
+
+- Current active diagnostic is the `01031500` outlet/evaluation repair. The
+  NLDI-masked run at
+  `/Users/mgalib/swatplus_runs/recovery_01031500_nldi_mask_20260625/` passed
+  geometric checks but initially produced a near-zero selected-terminal
+  hydrograph at GIS `259` (`PBIAS=-99.12%`). The model was not dry: upstream
+  main-stem channels carried basin-scale flow. The evaluator now uses a
+  topology-owned `terminal_inflow_sum` for converted terminal outlets when the
+  terminal state table is non-accumulating; for `01031500` this uses parent GIS
+  IDs `[231, 247]` plus terminal GIS `259`, improving volume to
+  `PBIAS=-1.41%`. Skill remains poor (`NSE=-1.0798`, `KGE=0.2083`) because the
+  response is too flashy and baseflow persistence remains weak. A first
+  corrected-objective real-engine calibration probe confirmed fresh output.
+  A governed 2007-2012 screening window now exists and rejects two simple
+  calibration directions: `LATQ_CO=0.003`/`SURLAG=12` and
+  `CN2=65`/`CN3_SWF=0.5`/`SURLAG=12` both worsen NSE/KGE relative to the
+  corrected baseline. No candidate from that screen is promoted to full-window
+  verification; next hypotheses should target aquifer/baseflow controls,
+  snow/precipitation timing, or routing concentration separately.
+
+- Cross-basin full-overlay validation is active on USGS `03349000`. The fresh
+  corrected run at
+  `swatplus_runs/cross_basin_03349000_topology_fixed_20260619/` retains all 39
+  delineated subbasins, passes outlet and routing-flow checks, and exposes a
+  genuine ET-dominated hydrologic deficit rather than an outlet-selection
+  failure. Its current baseline is exploratory (`NSE=-0.3168`, `KGE=0.0524`,
+  `PBIAS=-58.00%`). This run also drove fixes for full-overlay HRU vectorization
+  scalability, flow-accumulation-based D8 successor resolution, and
+  one-at-a-time sensitivity baseline leakage. A fresh bounded `PET_CO=0.8`
+  diagnostic improved the metrics but still failed `VOLUME_BIAS` and
+  `NEGATIVE_SKILL`. Subsequent source-backed corn-soy management, `ESCO=1.0`,
+  and land-use-scoped AGRL CN `+4` experiments were also rejected by fresh
+  metrics and unchanged gates. A five-point Daymet comparison is only `2.1%`
+  wetter than GridMET and does not support a global forcing multiplier. The
+  current leading target is the low simulated baseflow/subsurface response
+  (`BFI_sim` about `0.21` versus `BFI_obs=0.562`), with broad calibration
+  deferred until spatial parameter semantics are preserved.
 
 - Active phase: 2026-06-15 scientific-correctness remediation plan. Phase A
   slope nodata masking, Phase F.1/F4 spatial/water-balance visuals, Phase D1
@@ -102,8 +169,79 @@ Active hardening toward research-grade production pipeline. Last updated:
   `217.8` to `10795.9` m3/s-days over the benchmark alignment and improved
   baseline metrics to `NSE=0.0997`, `KGE=0.0772`, `PBIAS=-17.4%`. This
   supersedes the earlier interpretation that the blocker was outlet/channel
-  mass-transfer alone. Full-overlay remains exploratory until the canonical
-  workflow is rerun and locked through the normal evidence path.
+  mass-transfer alone. This was later rerun through the canonical evidence path
+  after the LTE transfer-length and hydrology-prior fixes below.
+- A follow-up Marsh Creek peak-diagnosis ladder isolated an additional
+  converted-topology routing regression: carrying real `hyd-sed-lte.cha:len`
+  values into the full-mode `sdc`/`chandeg.con` compatibility path delayed the
+  September 2004 basin-generated runoff pulse from the observed outlet peak date
+  (`2004-09-18`) to `2004-09-24`. Lowering Manning roughness and seepage did not
+  move the peak; near-zero LTE transfer lengths did. The converter now writes
+  `hyd-sed-lte.cha:len=0.00050 km` as an explicit engine/topology compatibility
+  transfer length while preserving physical channel geometry in the source
+  GIS/channel data. The native editor GIS import path now writes the same
+  compatibility value into `hyd_sed_lte_cha.len`; canonical validation showed
+  all `31` rows at `0.0005` while source `gis_channels.len2` retained physical
+  lengths (`164.13-5663.62 m`). A 20-year fixed full-overlay probe with this
+  restored stabilization improved baseline metrics to `NSE=0.2804`,
+  `KGE=0.2662`, `PBIAS=-13.7%`, but still undercaptured the largest flood peak
+  (`sim_max=22.17 m3/s` vs `obs_max=126.86 m3/s`), so peak-flow claims remain
+  blocked pending separate process/forcing evidence. The canonical 2026-06-18
+  no-calibration full-overlay validation at
+  `swatplus_runs/patch_validate_01547700_lte_len_importer_20260618/` now locks
+  the same recovered volume behavior after cached/retried NWIS observed-flow
+  acquisition and package-owned subsurface-prior state detection:
+  `selected_outlet_gis_id=29`, `NSE=0.2804109215855428`,
+  `KGE=0.2665468454841228`, `PBIAS=-13.617382816533395`,
+  `locked_calibration_ready=true`. Diagnostic parameter isolation in
+  `reports/hydrology_parameter_isolation_20260618.json` shows the prior repair
+  is dominated by `LATQ_CO=0.08`, with `PERCO=0.75` providing the remaining
+  volume recovery; `CN3_SWF` is not material for this regression.
+- The current `01547700` peak-flow blocker is no longer outlet selection or
+  missing rainfall. Corrected daily basin water-balance diagnostics at
+  `swatplus_runs/patch_validate_01547700_lte_len_importer_20260618/reports/peak_response_forcing_diagnostics_20260618.json`
+  show the major storms are present in SWAT+ forcing, but high-flow days remain
+  muted: the upper 0.1% observed-flow days carry only about `16%` as much
+  simulated flow in the recovered baseline. Event windows route much of storm
+  water into lateral flow/percolation/storage instead of fast surface response
+  (`surq_gen/P` about `0.047-0.131` across the checked peak windows). Two
+  temporary parameter screens, stored only as compact reports, identify
+  lateral-flow delivery and surface-runoff timing as the active next
+  hypothesis. The best balanced candidate, `LATQ_CO=0.20, SURLAG=1.0`, has now
+  been independently rerun against the locked benchmark under
+  `reports/locked_candidate_latq_surlag_20260618/`. It improved the recovered
+  benchmark from `NSE=0.2804109215855428`, `KGE=0.2665468454841228`,
+  `PBIAS=-13.617382816533395` to verified `NSE=0.342880294416419`,
+  `KGE=0.45218154428386403`, `PBIAS=-1.2497238817010707`, with the package
+  candidate water-balance/process gate passing and no condition codes. This is
+  a verified improvement, but not a peak-magnitude solution: top-0.1% flow
+  ratio improved only to `0.257`, and `2004-09-18`/`2008-03-05` peak ratios
+  remain `0.202` and `0.121`. Peak-flow claims remain limited while the next
+  experiment targets peak magnitude/shape without sacrificing the volume gate.
+- Continuing that branch, `LATQ_CO=0.20, SURLAG=1.0, CN2=78` is now the
+  strongest verified `01547700` candidate. Fresh locked verification under
+  `swatplus_runs/patch_validate_01547700_lte_len_importer_20260618/reports/locked_candidate_latq_surlag_cn2_78_20260618/`
+  improved the recovered benchmark to `NSE=0.35566856403724056`,
+  `KGE=0.49038217013548413`, `PBIAS=1.3632391338746341`, with candidate
+  physical/process gates passing. Peak-tail response improved to q999
+  simulated/observed ratio `0.299`, but flood-peak claims remain blocked:
+  `2004-09-18` and `2008-03-05` peak ratios are only `0.231` and `0.180`.
+  `reports/event_runoff_depth_vs_forcing_20260618.json` shows the largest
+  two events have high observed runoff demand relative to generated
+  precipitation, while the USGS drainage-area check is within about `0.5%` of
+  the delineated area. A narrow snow-threshold screen
+  (`reports/snow_threshold_screen_after_verified_cn2_20260618.json`) did not
+  justify snow controls as the primary fix: the best snow variant raised q999
+  only to `0.308` while lowering NSE to `0.340`. Next hypothesis is forcing
+  representativeness/event precipitation and structural peak attenuation, not
+  outlet selection or simple snow-threshold tuning.
+  A global precipitation multiplier screen
+  (`reports/forcing_scale_screen_after_verified_cn2_20260618.json`) confirms
+  the model is storm-forcing-sensitive but also rules out a simple multiplier
+  as a valid fix: `+5%` precipitation raises q999 to `0.321` but PBIAS to
+  `10.1%`; `+20%` raises q999 to `0.388` but fails the water-balance gate with
+  `PBIAS=36.4%` and `VOLUME_BIAS`. Any forcing correction must be
+  meteorologically source-backed rather than calibrated as a blanket scale.
 - Full-overlay `01547700` calibration has been attempted against the locked
   full-overlay benchmark. Direct `locked-calibrate` probes failed honestly in
   the `volume` phase: baseline outlet metrics were about `NSE=-0.2556`,
@@ -561,8 +699,31 @@ swat workflow run \
   are now `science=6`, `provenance=3`, `diagnostics=2`, showing that the
   repaired-volume evidence shifted the failure explanation rather than
   manufacturing a pass.
-- Next step: use the refreshed objective report to target the remaining
-  engineering/science blockers: remaining physical volume/ET failures,
+- The `03349000` subsurface audit found and repaired a missing groundwater
+  recharge connection: routing units now send `rhg` to shallow aquifers and
+  shallow aquifers route deep recharge onward. A fresh full-period run changed
+  aquifer recharge/flow from zero to `37.109/10.838 mm/yr` and improved
+  simulated BFI from `0.210` to `0.242`, but retained negative NSE and
+  `PBIAS=-56.24%`. This is an adopted plumbing correction, not model promotion.
+- The same basin exposed a full-overlay area-conservation defect: thresholded
+  HRUs represented `191,588.842 ha` while their LSUs represented
+  `208,791.925 ha`. Filtered HRU area is now redistributed proportionally
+  within each LSU, cataloged explicitly, and enforced by a post-Editor
+  fraction-sum validator. A fresh full-period run improved volume/KGE evidence
+  but retained negative NSE; this is an adopted mass correction, not model
+  promotion.
+- The remaining `5.67%` delineation gap was caused by requesting 3DEP only
+  inside the reference polygon, creating artificial D8 exits. DEM acquisition
+  now uses a 5 km buffered bounding box while retaining the NLDI polygon for
+  independent validation, and full workflows refuse domain-edge contact. A
+  controlled `03349000` geometry rerun improved area difference to `-1.30%`
+  and IoU to `95.13%` with zero edge contacts; multi-basin rebuilds remain
+  pending.
+- Next step: rebuild `03349000` end to end through both corrected geometry and
+  HRU-area paths, then run a contrasting gauge before using
+  the refreshed objective report to target the remaining
+  engineering/science blockers: aquifer release/revap sensitivity after the
+  recharge repair, remaining physical volume/ET failures,
   low final skill after successful locked promotion, routed-flow warnings, and
   degraded-soil recovery for fallback basins. Do not report additional
   research-grade claims until build, provenance, fresh-output, physical-gate,

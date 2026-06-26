@@ -67,7 +67,23 @@ The crash cannot be isolated via substitution because the basin topologies diffe
    Default values from the Tordera reference are used for columns not
    available in the full-mode `hydrology.cha`.
 
-3. **The converter is gated on `not is_lte`.**
+3. **`hyd-sed-lte.cha:len` is a compatibility transfer length in converted
+   full-mode routing.** In the `sdc`/`chandeg.con` engine path, carrying real
+   channel lengths from `hydrology.cha` over-delays Marsh Creek event delivery
+   in rev 61.0.2.61. A 2026-06-17 diagnostic ladder on USGS `01547700` showed
+   that real-length routing delayed the September 2004 outlet peak from the
+   observed September 18 to September 24, while a near-zero LTE transfer length
+   (`0.00050 km`) restored same-day channel delivery and improved the 2000-2019
+   fixed full-overlay baseline from about `NSE=0.100`, `KGE=0.077`,
+   `PBIAS=-17.4%` to `NSE=0.280`, `KGE=0.266`, `PBIAS=-13.7%`. This is treated
+   as an engine/topology compatibility rule, not a physical calibration of
+   channel geometry. The same rule is enforced in the native editor
+   `import_gis` path because canonical builds populate `hyd_sed_lte_cha`
+   before this converter sees a finished `TxtInOut`. Physical channel lengths
+   remain in the GIS/channel source data and peak-flow claims still require
+   separate process evidence.
+
+4. **The converter is gated on `not is_lte`.**
    LTE mode builds are never touched. The converter checks `model_family`
    before executing and is only called from `build_real_basin.py` for
    `--model-family full`.

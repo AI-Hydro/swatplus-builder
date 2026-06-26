@@ -106,6 +106,29 @@ def _sample_evenly(items: list, max_count: int) -> list:
     return [items[i] for i in indexes]
 
 
+def _stage_output_file(src: Path, dest: Path, *, hardlink_above_mb: float = 25.0) -> str:
+    """Expose an engine output under outputs/ without duplicating large files."""
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.exists() or dest.is_symlink():
+        dest.unlink()
+
+    size_mb = src.stat().st_size / (1024 * 1024)
+    if size_mb >= hardlink_above_mb:
+        try:
+            os.link(src, dest)
+            return "hardlink"
+        except OSError:
+            try:
+                dest.symlink_to(os.path.relpath(src, dest.parent))
+                return "symlink"
+            except OSError:
+                pass
+
+    shutil.copy2(src, dest)
+    return "copy"
+
+
 def _hru_coverage(hru, ws_stats: dict) -> tuple[int, int, float]:
     n_sub = int(hru.stats.get("n_subbasins", ws_stats.get("n_subbasins", 0)) or 0)
     n_hru = int(hru.stats.get("n_hrus", 0) or 0)
@@ -749,7 +772,8 @@ def main(
     from swatplus_builder.gis.soil import extract_unique_mukeys, fetch_mukey_raster
     from swatplus_builder.gis.tables import build_tables
     from swatplus_builder.gis.validate import validate_watershed
-    from swatplus_builder.output.eval import evaluate_run
+    from swatplus_builder.output.eval import evaluate_run, terminal_channel_ids
+    from swatplus_builder.output.mass_trace import fetch_usgs_site_metadata
     from swatplus_builder.output.metadata import (
         RunMetadata,
         sha256_file,
@@ -767,6 +791,9 @@ def main(
     outdir.mkdir(parents=True, exist_ok=True)
     t_all = time.time()
     retry_attempts: dict[str, int] = {}
+    site_metadata = fetch_usgs_site_metadata(STATION_ID, timeout_s=5.0)
+    station_name = str(site_metadata.get("station_nm") or "").strip()
+    basin_display_name = f"{station_name} ({STATION_ID})" if station_name else f"USGS {STATION_ID}"
 
     # 1. Basin boundary (USGS NLDI with fallback cascade)
     _section("1/11 Basin boundary from USGS NLDI")
@@ -1757,16 +1784,22 @@ def main(
 
     import json
     q_obs = fetch_usgs_daily_q(STATION_ID, sim_start, sim_end, outputs_dir / "obs_q.csv")
-    # Prefer basin_sd_cha_day.txt for consistent, routing-amplification-free daily volumes
+    # Prefer daily basin output when available; otherwise use channel_sdmorph_day
+    # because it carries the same SWAT-deg flow fields as channel_sd_day with
+    # less output-table overhead for outlet evaluation.
     sim_path = wf.txtinout_dir / "basin_sd_cha_day.txt"
+    if not sim_path.exists():
+        sim_path = wf.txtinout_dir / "channel_sdmorph_day.txt"
     if not sim_path.exists():
         sim_path = wf.txtinout_dir / "channel_sd_day.txt"
     if not sim_path.exists():
         sim_path = wf.txtinout_dir / "channel_day.txt"
+    terminal_ids = terminal_channel_ids(wf.txtinout_dir)
+    requested_outlet = terminal_ids[0] if terminal_ids else 1
     selection_eval = evaluate_run(
         sim_path,
         q_obs,
-        outlet_gis_id=1,
+        outlet_gis_id=requested_outlet,
         outlet_policy="auto",
         return_diagnostics=True,
     )
@@ -1788,7 +1821,7 @@ def main(
         "version": 1,
         "selection_pass": {
             "policy": "auto",
-            "requested_outlet_gis_id": 1,
+            "requested_outlet_gis_id": int(requested_outlet),
             "metrics": selection_metrics,
             "diagnostics": selection_diag,
             "aligned_days": int(len(selection_df)),
@@ -1808,16 +1841,17 @@ def main(
     )
     outlet_provenance_sha = sha256_file(outlet_provenance_path)
     sim_source_file = str(eval_diag.get("sim_source_file", "") or "")
+    sim_source_stage_method: str | None = None
     if sim_source_file:
         src = wf.txtinout_dir / sim_source_file
         if src.exists():
-            shutil.copy2(src, outputs_dir / sim_source_file)
+            sim_source_stage_method = _stage_output_file(src, outputs_dir / sim_source_file)
     
     plot_res = generate_all_plots(
         run_dir=outdir,
         include_spatial=True,
         metadata={
-            "basin_name": f"Marsh Creek ({STATION_ID})",
+            "basin_name": basin_display_name,
             "usgs_id": STATION_ID,
             "soil_mode": soil_mode,
             "pct_fallback_soils": pct_fallback_soils,
@@ -1851,6 +1885,15 @@ def main(
             f"delineation_validation: passed={validation.passed}, area_diff_pct={validation.area_diff_pct}, iou_pct={validation.iou_pct}"
         )
         notes.extend(validation.notes)
+    if site_metadata.get("available"):
+        notes.append(
+            f"usgs_site_metadata: station_nm={station_name}; source={site_metadata.get('source')}"
+        )
+    else:
+        notes.append(
+            f"usgs_site_metadata_unavailable: error={site_metadata.get('error', 'unknown')}; "
+            "display_name_fallback=USGS_ID"
+        )
     if overlay_repair_report is not None:
         notes.append(
             f"hru_overlay_repair={overlay_repair_report.reason}; "
@@ -1901,6 +1944,10 @@ def main(
         notes.append(msg)
     if weather_provider_fallback_reason is not None:
         notes.append(f"weather_provider_fallback={weather_provider_fallback_reason}")
+    if sim_source_stage_method is not None:
+        notes.append(
+            f"sim_source_staged_to_outputs={sim_source_file}; method={sim_source_stage_method}"
+        )
     notes.append(
         f"nlcd_year={nlcd_year}; sim_midpoint_year={nlcd_selection['sim_midpoint_year']}; "
         f"landuse_vintage_mismatch_years={nlcd_selection['landuse_vintage_mismatch_years']}"
@@ -1960,7 +2007,7 @@ def main(
     write_metadata(outdir / "metadata.json", md)
 
     print("\n" + "=" * 72)
-    print(f"  Marsh Creek (USGS {STATION_ID}) complete in {time.time() - t_all:.1f}s")
+    print(f"  {basin_display_name} complete in {time.time() - t_all:.1f}s")
     print("=" * 72 + "\n")
 
 if __name__ == "__main__":

@@ -523,6 +523,9 @@ def test_contract_policy_blocks_research_without_acceptance(tmp_path: Path):
     assert "contract_policy_blocked" in evidence_md_text
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert Path(manifest["artifacts"]["evidence_summary_md"]) == evidence_md
+    assert Path(data["values"]["dashboard_html"]).is_file()
+    assert manifest["artifacts"]["dashboard_html"] == data["values"]["dashboard_html"]
+    assert "Dashboard HTML" in evidence_md_text
     events_path = Path(res.artifact_dir, "events.jsonl")
     assert events_path.exists()
     events = [json.loads(line) for line in events_path.read_text(encoding="utf-8").splitlines()]
@@ -1885,7 +1888,15 @@ def test_documented_timing_limitation_requires_skill_diagnostic_evidence(tmp_pat
     assert no_timing["documented"] is False
 
 
-def test_short_window_downgrades_to_exploratory(tmp_path: Path):
+def test_short_window_downgrades_to_exploratory(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(
+        "swatplus_builder.workflows.usgs_e2e.run_pipeline",
+        lambda **kwargs: {
+            "status": "BLOCKED",
+            "blocker_class": "fixture_pipeline_blocked",
+            "usgs_id": kwargs["usgs_id"],
+        },
+    )
     req = RunUSGSWorkflowRequest(
         usgs_id="01654000",
         out_dir=tmp_path / "run3",
@@ -3631,6 +3642,8 @@ def test_diagnostic_calibration_provenance_records_staged_protocol(monkeypatch, 
     result = run_diagnostic_calibration(source, claim_tier="research_grade")
 
     assert result.success is True
+    assert result.provenance["calibration_strategy"] == "diagnostic_guided_dds_window_screen_then_locked_verify"
+    assert result.provenance["diagnostic_guidance"]["claim_rule"].startswith("screening candidates are provisional")
     assert result.provenance["sensitivity_screen_basis"] == "basin_specific"
     assert result.provenance["screened_parameters"] == ["CN2"]
     assert result.provenance["selection_policy"] == "staged_volume_baseflow_peaks_then_nse_kge"
@@ -3659,6 +3672,10 @@ def test_diagnostic_calibration_provenance_records_staged_protocol(monkeypatch, 
     ]
     persisted = json.loads((source / "reports" / "diagnostic_calibration.json").read_text(encoding="utf-8"))
     assert persisted["provenance"]["calibration_protocol"] == protocol
+    root_provenance = json.loads((source / "calibration_provenance.json").read_text(encoding="utf-8"))
+    assert root_provenance["status"] == "done"
+    assert root_provenance["success"] is True
+    assert root_provenance["provenance"]["calibration_protocol"] == protocol
 
 
 def test_diagnostic_calibration_blocks_when_screen_retains_no_parameters(monkeypatch, tmp_path: Path):
@@ -3694,6 +3711,9 @@ def test_diagnostic_calibration_blocks_when_screen_retains_no_parameters(monkeyp
     phases = {p.phase: p for p in result.phases}
     assert phases["sensitivity_screen"].status == "blocked"
     assert phases["baseflow_subsurface"].status == "blocked"
+    root_provenance = json.loads((source / "calibration_provenance.json").read_text(encoding="utf-8"))
+    assert root_provenance["status"] == "attempted_failed_or_blocked"
+    assert root_provenance["success"] is False
 
 
 def test_diagnostic_calibration_retains_string_promotion_gate(monkeypatch, tmp_path: Path):
@@ -3739,3 +3759,6 @@ def test_diagnostic_calibration_retains_string_promotion_gate(monkeypatch, tmp_p
     )
     persisted = json.loads((source / "reports" / "diagnostic_calibration.json").read_text(encoding="utf-8"))
     assert persisted["provenance"]["promotion_gate"] == result.provenance["promotion_gate"]
+    root_provenance = json.loads((source / "calibration_provenance.json").read_text(encoding="utf-8"))
+    assert root_provenance["status"] == "attempted_failed_or_blocked"
+    assert root_provenance["provenance"]["promotion_gate"] == result.provenance["promotion_gate"]

@@ -91,7 +91,7 @@ class CalibratorRequest(BaseModel):
     txtinout_dir: Path
     observed_csv: Path | None = None
     parameters: list[str]
-    objectives: list[str]
+    objectives: list[str] = Field(min_length=1, description="Metric objectives (e.g. ['nse', 'kge']). At least one required.")
     algorithm: str = "nsga2"
     n_gen: int = Field(30, ge=1)
     pop_size: int = Field(32, ge=1)
@@ -168,6 +168,10 @@ class PySwatPlusBackend:
                 "date_format": "%Y-%m-%d",
             }
         }
+        # pySWATPlus currently binds one indicator per monitored file, so the
+        # first supported objective is used as the primary indicator.  Future
+        # upgrades of the pySWATPlus API should pass the full list for true
+        # multi-objective Pareto optimisation (NSGA2).
         objective_config = {
             request.sim_output_file: {
                 "sim_col": request.sim_column,

@@ -8,7 +8,9 @@ import pytest
 
 from swatplus_builder.calibration import real_engine
 from swatplus_builder.calibration.real_engine import (
+    _prepare_txtinout_for_objective,
     _set_print_prt_for_daily_channel_outputs,
+    _set_time_sim_window,
     apply_parameters_to_lte_txtinout,
     load_observed_from_alignment_csv,
     make_real_objective,
@@ -77,7 +79,7 @@ def test_params_hash_is_deterministic() -> None:
     assert a == b
 
 
-def test_set_print_prt_for_daily_channel_outputs_enables_daily_and_nyskip(tmp_path: Path) -> None:
+def test_set_print_prt_for_daily_channel_outputs_enables_daily_and_window(tmp_path: Path) -> None:
     p = tmp_path / "print.prt"
     p.write_text(
         "hdr\n"
@@ -94,12 +96,81 @@ def test_set_print_prt_for_daily_channel_outputs_enables_daily_and_nyskip(tmp_pa
         "basin_sd_cha n n y y\n",
         encoding="utf-8",
     )
-    _set_print_prt_for_daily_channel_outputs(p)
+    _set_print_prt_for_daily_channel_outputs(
+        p,
+        score_start=pd.Timestamp("2007-01-01").date(),
+        score_end=pd.Timestamp("2012-12-31").date(),
+    )
     lines = p.read_text(encoding="utf-8").splitlines()
-    assert lines[2].split()[0] == "0"
+    top = lines[2].split()
+    assert top[:5] == ["0", "1", "2007", "366", "2012"]
     rows = {ln.split()[0]: ln.split()[1:] for ln in lines if len(ln.split()) == 5}
     assert rows["channel"][0] == "y"
     assert rows["channel_sd"][0] == "y"
+
+
+def test_set_time_sim_window_updates_simulation_dates(tmp_path: Path) -> None:
+    p = tmp_path / "time.sim"
+    p.write_text(
+        "hdr\n"
+        "day_start yrc_start day_end yrc_end step\n"
+        "1 1997 365 2019 0\n",
+        encoding="utf-8",
+    )
+    _set_time_sim_window(
+        p,
+        simulation_start=pd.Timestamp("2004-01-01").date(),
+        simulation_end=pd.Timestamp("2012-12-31").date(),
+    )
+
+    assert p.read_text(encoding="utf-8").splitlines()[2].split() == [
+        "1",
+        "2004",
+        "366",
+        "2012",
+        "0",
+    ]
+
+
+def test_prepare_txtinout_for_objective_removes_stale_morph_outputs(tmp_path: Path) -> None:
+    _write(
+        tmp_path / "print.prt",
+        "hdr\n"
+        "nyskip day_start yrc_start day_end yrc_end interval\n"
+        "1 0 0 0 0 1\n"
+        "aa_int_cnt\n"
+        "0\n"
+        "csvout dbout cdfout\n"
+        "n n n\n"
+        "objects daily monthly yearly avann\n"
+        "channel n n y y\n"
+        "channel_sd n n y y\n"
+        "basin_cha n n y y\n"
+        "basin_sd_cha n n y y\n",
+    )
+    for name in (
+        "channel_day.txt",
+        "channel_sd_day.txt",
+        "channel_sdmorph_day.txt",
+        "basin_cha_day.txt",
+        "basin_sd_cha_day.txt",
+        "basin_sd_chamorph_day.txt",
+        "alignment_calibration.csv",
+    ):
+        _write(tmp_path / name, "stale\n")
+
+    _prepare_txtinout_for_objective(tmp_path)
+
+    for name in (
+        "channel_day.txt",
+        "channel_sd_day.txt",
+        "channel_sdmorph_day.txt",
+        "basin_cha_day.txt",
+        "basin_sd_cha_day.txt",
+        "basin_sd_chamorph_day.txt",
+        "alignment_calibration.csv",
+    ):
+        assert not (tmp_path / name).exists()
 
 
 def test_make_real_objective_rejects_source_file_fallback(monkeypatch, tmp_path: Path) -> None:
@@ -146,6 +217,7 @@ def test_make_real_objective_rejects_source_file_fallback(monkeypatch, tmp_path:
         work_root=tmp_path / "work",
         objective_sim_file="basin_sd_cha_day.txt",
         strict_objective_file=True,
+        nyskip_years=0,
     )
     with pytest.raises(RuntimeError, match="Objective source mismatch"):
         obj({})
@@ -198,6 +270,7 @@ def test_make_real_objective_rejects_outlet_autodetect_when_disallowed(
         objective_sim_file="basin_sd_cha_day.txt",
         strict_objective_file=True,
         allow_outlet_autodetect=False,
+        nyskip_years=0,
     )
     with pytest.raises(RuntimeError, match="Outlet auto-detection occurred"):
         obj({})
@@ -256,6 +329,7 @@ def test_make_real_objective_scores_strict_pinned_outlet_by_default(
         work_root=tmp_path / "work",
         objective_sim_file="basin_sd_cha_day.txt",
         allow_outlet_autodetect=False,
+        nyskip_years=0,
     )
     result = obj({})
     assert result["nse"] == 0.5
@@ -321,6 +395,7 @@ def test_make_real_objective_can_attach_candidate_physical_gate(
         objective_sim_file="basin_sd_cha_day.txt",
         include_physical_gate=True,
         keep_workdirs=False,
+        nyskip_years=0,
     )
     metrics = obj({})
 
@@ -390,6 +465,7 @@ def test_candidate_physical_gate_separates_skill_gate_from_process_gate(
         objective_sim_file="basin_sd_cha_day.txt",
         include_physical_gate=True,
         keep_workdirs=False,
+        nyskip_years=0,
     )
     metrics = obj({})
 
@@ -451,6 +527,7 @@ def test_make_real_objective_full_mode_uses_full_parameter_bridge(monkeypatch, t
         work_root=tmp_path / "work",
         objective_sim_file="basin_sd_cha_day.txt",
         parameter_mode="full",
+        nyskip_years=0,
     )
     assert obj({"PERCO": 0.25})["nse"] == 0.5
     run_txt = tmp_path / "work" / params_hash({"PERCO": 0.25}) / "TxtInOut"
@@ -527,6 +604,7 @@ def test_make_real_objective_full_mode_normalizes_routing_before_run(
         work_root=tmp_path / "work",
         objective_sim_file="basin_sd_cha_day.txt",
         parameter_mode="full",
+        nyskip_years=0,
     )
     assert obj({"PERCO": 0.25})["nse"] == 0.5
 
@@ -577,6 +655,7 @@ def test_make_real_objective_can_discard_scratch_workdirs(monkeypatch, tmp_path:
         work_root=tmp_path / "work",
         objective_sim_file="basin_sd_cha_day.txt",
         keep_workdirs=False,
+        nyskip_years=0,
     )
 
     assert obj(params)["pbias"] == 1.0
@@ -644,6 +723,7 @@ def test_make_real_objective_invalidates_legacy_objective_cache(monkeypatch, tmp
         work_root=tmp_path / "work",
         objective_sim_file="basin_sd_cha_day.txt",
         parameter_mode="full",
+        nyskip_years=0,
     )
 
     assert obj({"PERCO": 0.25})["nse"] == 0.5
@@ -715,6 +795,7 @@ def test_make_real_objective_force_fresh_discards_matching_cache(monkeypatch, tm
         objective_sim_file="basin_sd_cha_day.txt",
         parameter_mode="full",
         force_fresh=True,
+        nyskip_years=0,
     )
 
     assert obj(params)["nse"] == 0.5
@@ -770,6 +851,7 @@ def test_make_real_objective_can_allow_outlet_autodetect_explicitly(
         work_root=tmp_path / "work",
         objective_sim_file="basin_sd_cha_day.txt",
         allow_outlet_autodetect=True,
+        nyskip_years=0,
     )
     assert obj({})["nse"] == 0.5
     assert seen["outlet_policy"] == "auto"
@@ -825,6 +907,7 @@ def test_make_real_objective_can_score_explicit_virtual_all_terminal_scope(
         work_root=tmp_path / "work",
         objective_sim_file="basin_sd_cha_day.txt",
         objective_outlet_policy="all_terminal_sum",
+        nyskip_years=0,
     )
 
     assert obj({})["pbias"] == 0.0
@@ -846,4 +929,5 @@ def test_make_real_objective_rejects_auto_policy_without_autodetect(tmp_path: Pa
             observed_series=pd.Series([1.0], index=pd.to_datetime(["2015-01-01"])),
             work_root=tmp_path / "work",
             objective_outlet_policy="auto",
+            nyskip_years=0,
         )

@@ -61,16 +61,10 @@ logging.basicConfig(
 )
 STATION_ID = os.environ.get("USGS_ID", "01547700").strip()
 log = logging.getLogger(f"swat_build_{STATION_ID}")
-EXPECTED_AREA_KM2 = float(
-    os.environ.get(
-        "EXPECTED_AREA_KM2",
-        "114.0" if STATION_ID == "01547700" else "0.0",
-    )
-)
 SIM_START = "2015-01-01"
 SIM_END = "2015-12-31"
 DEM_RESOLUTION_M = 30
-DEM_BUFFER_M = float(os.environ.get("SWATPLUS_DEM_BUFFER_M", "5000"))
+DEM_BUFFER_M = float(os.environ.get("SWATPLUS_DEM_BUFFER_M", "10000"))
 
 # Resolve binary location
 BIN_DIR = Path(__file__).parent.parent / "bin"
@@ -105,6 +99,29 @@ def _sample_evenly(items: list, max_count: int) -> list:
     last = len(items) - 1
     indexes = sorted({round(i * last / (max_count - 1)) for i in range(max_count)})
     return [items[i] for i in indexes]
+
+
+def _stage_output_file(src: Path, dest: Path, *, hardlink_above_mb: float = 25.0) -> str:
+    """Expose an engine output under outputs/ without duplicating large files."""
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.exists() or dest.is_symlink():
+        dest.unlink()
+
+    size_mb = src.stat().st_size / (1024 * 1024)
+    if size_mb >= hardlink_above_mb:
+        try:
+            os.link(src, dest)
+            return "hardlink"
+        except OSError:
+            try:
+                dest.symlink_to(os.path.relpath(src, dest.parent))
+                return "symlink"
+            except OSError:
+                pass
+
+    shutil.copy2(src, dest)
+    return "copy"
 
 
 def _hru_coverage(hru, ws_stats: dict) -> tuple[int, int, float]:
@@ -537,6 +554,64 @@ def fetch_dem(
     return out_tif
 
 
+def mask_dem_to_basin(
+    dem_tif: Path,
+    basin,
+    out_tif: Path,
+    *,
+    buffer_m: float = 100.0,
+) -> Path:
+    """Write a DEM whose valid domain is constrained to the reference basin.
+
+    This is a recovery path for cases where the unmasked local D8 routing
+    crosses an authoritative NLDI basin divide near the outlet. The DEM remains
+    the elevation source; the NLDI polygon only constrains the valid drainage
+    domain.
+    """
+    import geopandas as gpd
+    import rasterio
+    import rasterio.mask
+
+    if isinstance(basin, (str, Path)):
+        basin_gdf = gpd.read_file(basin)
+    else:
+        basin_gdf = basin
+
+    out_tif.parent.mkdir(parents=True, exist_ok=True)
+    with rasterio.open(dem_tif) as src:
+        nodata = src.nodata if src.nodata is not None else -9999.0
+        geoms = list(basin_gdf.to_crs(src.crs).geometry.buffer(buffer_m))
+        data, _ = rasterio.mask.mask(
+            src,
+            geoms,
+            crop=False,
+            nodata=nodata,
+            filled=True,
+        )
+        meta = src.meta.copy()
+        meta.update(nodata=nodata)
+        with rasterio.open(out_tif, "w", **meta) as dst:
+            dst.write(data)
+
+    out_tif.with_suffix(".source.json").write_text(
+        json.dumps(
+            {
+                "source": "nldi_authoritative_basin_masked_dem",
+                "input_dem": str(dem_tif),
+                "basin_mask_buffer_m": buffer_m,
+                "reason": (
+                    "Recovery fallback for DEM-derived D8 routing that fails "
+                    "reference area/IoU gates against an authoritative NLDI basin."
+                ),
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return out_tif
+
+
 def _find_cached_dem(out_tif: Path) -> Path | None:
     run_root = out_tif.parent.parent
     search_root = run_root.parent
@@ -763,12 +838,16 @@ def main(
     warmup_years: int = 0,
     build_config: object = None,
 ):
+    global STATION_ID, log
+
     import json
 
     from swatplus_builder.workflows.full_build import FullBuildConfig
 
     if isinstance(build_config, FullBuildConfig):
         cfg = build_config
+        STATION_ID = cfg.usgs_id
+        log = logging.getLogger(f"swat_build_{STATION_ID}")
     else:
         cfg = None
 
@@ -789,7 +868,7 @@ def main(
     from swatplus_builder.gis.soil import extract_unique_mukeys, fetch_mukey_raster
     from swatplus_builder.gis.tables import build_tables
     from swatplus_builder.gis.validate import validate_watershed
-    from swatplus_builder.output.eval import evaluate_run
+    from swatplus_builder.output.eval import evaluate_run, terminal_channel_ids
     from swatplus_builder.output.metadata import (
         RunMetadata,
         sha256_file,
@@ -797,6 +876,7 @@ def main(
         utc_now_iso,
         write_metadata,
     )
+    from swatplus_builder.output.mass_trace import fetch_usgs_site_metadata
     from swatplus_builder.output.plots.wrapper import generate_all_plots
     from swatplus_builder.soil.sda import fetch_sda_mukeys_for_geometry
     from swatplus_builder.soil.writer import write_soils
@@ -807,6 +887,9 @@ def main(
     outdir.mkdir(parents=True, exist_ok=True)
     t_all = time.time()
     retry_attempts: dict[str, int] = {}
+    site_metadata = fetch_usgs_site_metadata(STATION_ID, timeout_s=5.0)
+    station_name = str(site_metadata.get("station_nm") or "").strip()
+    basin_display_name = f"{station_name} ({STATION_ID})" if station_name else f"USGS {STATION_ID}"
 
     # 1. Basin boundary (USGS NLDI with fallback cascade)
     _section("1/11 Basin boundary from USGS NLDI")
@@ -820,15 +903,23 @@ def main(
     boundary_source = boundary_provenance.get("source", "unknown")
     _ok(f"basin_boundary.gpkg  area = {actual_area_km2:.1f} km²  source={boundary_source}", elapsed=time.time() - t0)
     
-    # Area Guard: Ensure we haven't snapped to a major river trunk (like Bald Eagle Creek)
+    # Area Guard: Verify NLDI returned the correct basin for this gauge.
+    # EXPECTED_AREA_KM2 must NOT be a module-level constant (it was frozen at
+    # import time to 114.0 for Marsh Creek, breaking every other site).
+    # Recompute dynamically from STATION_ID.
+    _expected_area = (
+        float(cfg.expected_area_km2)
+        if cfg is not None and cfg.expected_area_km2 is not None
+        else float(os.environ.get("EXPECTED_AREA_KM2", "0.0"))
+    )
     area_diff_pct = (
-        abs(actual_area_km2 - EXPECTED_AREA_KM2) / EXPECTED_AREA_KM2
-        if EXPECTED_AREA_KM2 > 0
+        abs(actual_area_km2 - _expected_area) / _expected_area
+        if _expected_area > 0
         else 0.0
     )
-    if EXPECTED_AREA_KM2 > 0 and area_diff_pct > 0.15:
+    if _expected_area > 0 and area_diff_pct > 0.15:
         raise RuntimeError(
-            f"Basin area mismatch! Expected ~{EXPECTED_AREA_KM2} km2, got {actual_area_km2:.1f} km2. "
+            f"Basin area mismatch! Expected ~{_expected_area} km2, got {actual_area_km2:.1f} km2. "
             "Please check the Site ID or NLDI snapping."
         )
 
@@ -842,7 +933,7 @@ def main(
         basin,
         dem_tif,
         resolution_m=DEM_RESOLUTION_M,
-        buffer_m=DEM_BUFFER_M,
+        buffer_m=cfg.dem_buffer_m if cfg is not None else DEM_BUFFER_M,
     )
     retry_attempts["fetch_dem"] = n
     _ok(f"dem.tif  ({dem_tif.stat().st_size / 1e6:.1f} MB)",
@@ -878,8 +969,16 @@ def main(
     _section("4/11 Delineation (WhiteboxTools D8)")
     outlet = resolve_usgs_outlet(STATION_ID)
     t0 = time.time()
-    base_threshold = int(os.environ.get("SWATPLUS_STREAM_THRESHOLD_CELLS", "2000"))
-    dem_conditioning = os.environ.get("SWATPLUS_DEM_CONDITIONING", "breach").strip().lower()
+    base_threshold = (
+        int(cfg.stream_threshold_cells)
+        if cfg is not None
+        else int(os.environ.get("SWATPLUS_STREAM_THRESHOLD_CELLS", "2000"))
+    )
+    dem_conditioning = (
+        cfg.dem_conditioning
+        if cfg is not None
+        else os.environ.get("SWATPLUS_DEM_CONDITIONING", "breach")
+    ).strip().lower()
     if dem_conditioning not in {"breach", "fill"}:
         raise RuntimeError(
             "SWATPLUS_DEM_CONDITIONING must be 'breach' or 'fill' "
@@ -946,9 +1045,16 @@ def main(
             })
             log.warning("Delineation attempt rejected (threshold=%s): %s", th, exc)
             continue
-        # Default 30 %: DEM-boundary truncation can legitimately leave 25-30 % of
-        # a large basin outside the delineated watershed. Override via env var.
-        _area_tol = float(os.environ.get("SWATPLUS_AREA_TOLERANCE_PCT", "30.0"))
+        _area_tol = (
+            float(cfg.area_tolerance_pct)
+            if cfg is not None
+            else float(os.environ.get("SWATPLUS_AREA_TOLERANCE_PCT", "10.0"))
+        )
+        _min_iou = (
+            float(cfg.min_iou_pct)
+            if cfg is not None
+            else float(os.environ.get("SWATPLUS_MIN_IOU_PCT", "70.0"))
+        )
         # When the boundary is from a fallback source (WBD HUC12, NHDPlus,
         # or DEM-from-gauge), the reference polygon is not hydrologically
         # authoritative. Skip area/IoU validation and accept the DEM-derived
@@ -969,6 +1075,7 @@ def main(
                 ws_try,
                 reference_polygon=basin_gpkg,
                 area_tolerance_pct=_area_tol,
+                min_iou_pct=_min_iou,
             )
         suspicious = _topology_suspicious(ws_try.stats)
         complexity = assess_topology_complexity(ws_try.stats, complexity_policy)
@@ -1015,7 +1122,16 @@ def main(
                 _is_fallback_bnd = boundary_provenance.get("source") not in (
                     "nldi_authoritative", None
                 )
-                _area_tol_burn = float(os.environ.get("SWATPLUS_AREA_TOLERANCE_PCT", "30.0"))
+                _area_tol_burn = (
+                    float(cfg.area_tolerance_pct)
+                    if cfg is not None
+                    else float(os.environ.get("SWATPLUS_AREA_TOLERANCE_PCT", "10.0"))
+                )
+                _min_iou_burn = (
+                    float(cfg.min_iou_pct)
+                    if cfg is not None
+                    else float(os.environ.get("SWATPLUS_MIN_IOU_PCT", "70.0"))
+                )
                 ws_try = delineate(
                     dem_path=dem_tif,
                     outlet=outlet,
@@ -1031,6 +1147,7 @@ def main(
                     ws_try,
                     reference_polygon=None if _is_fallback_bnd else basin_gpkg,
                     area_tolerance_pct=_area_tol_burn,
+                    min_iou_pct=_min_iou_burn,
                 )
                 _burn_complexity = assess_topology_complexity(ws_try.stats, complexity_policy)
                 threshold_attempts.append({
@@ -1053,6 +1170,102 @@ def main(
             log.warning("Stream-burn delineation also failed for %s: %s", STATION_ID, exc)
         except Exception as exc:
             log.warning("Stream-burn fallback error for %s: %s", STATION_ID, exc)
+
+    if ws is None and boundary_provenance.get("source") == "nldi_authoritative":
+        # Last-resort CONUS recovery: keep NLDI as the basin authority and use
+        # the DEM only inside that valid domain. This handles outlet-adjacent
+        # divide/confluence cases where unconstrained D8 routing crosses the
+        # reference NLDI basin boundary.
+        log.warning(
+            "DEM and stream-burn delineation failed for %s — trying NLDI-masked DEM fallback.",
+            STATION_ID,
+        )
+        try:
+            _masked_dem = mask_dem_to_basin(
+                dem_tif,
+                basin,
+                outdir / "raw" / "dem_nldi_masked.tif",
+                buffer_m=float(os.environ.get("SWATPLUS_NLDI_MASK_BUFFER_M", "100.0")),
+            )
+            _canonical_delin = outdir / "delin"
+            shutil.rmtree(_canonical_delin, ignore_errors=True)
+            _area_tol_mask = (
+                float(cfg.area_tolerance_pct)
+                if cfg is not None
+                else float(os.environ.get("SWATPLUS_AREA_TOLERANCE_PCT", "10.0"))
+            )
+            _min_iou_mask = (
+                float(cfg.min_iou_pct)
+                if cfg is not None
+                else float(os.environ.get("SWATPLUS_MIN_IOU_PCT", "70.0"))
+            )
+            ws_try = delineate(
+                dem_path=_masked_dem,
+                outlet=outlet,
+                workdir=_canonical_delin,
+                stream_threshold_cells=base_threshold,
+                expected_area_km2=actual_area_km2,
+                dem_conditioning=dem_conditioning,
+                require_domain_margin=False,
+            )
+            _vr = validate_watershed(
+                ws_try,
+                reference_polygon=basin_gpkg,
+                area_tolerance_pct=_area_tol_mask,
+                min_iou_pct=_min_iou_mask,
+            )
+            _mask_complexity = assess_topology_complexity(ws_try.stats, complexity_policy)
+            _mask_suspicious = _topology_suspicious(ws_try.stats)
+            threshold_attempts.append({
+                "threshold_cells": base_threshold,
+                "validation_passed": _vr.passed,
+                "area_diff_pct": _vr.area_diff_pct,
+                "iou_pct": _vr.iou_pct,
+                "n_subbasins": ws_try.stats.get("n_subbasins"),
+                "n_channels": ws_try.stats.get("n_channels"),
+                "avg_subbasin_area_km2": _mask_complexity.avg_subbasin_area_km2,
+                "complexity_acceptable": _mask_complexity.acceptable,
+                "complexity_reasons": list(_mask_complexity.reasons) + ["nldi_masked_dem_fallback"],
+                "topology_suspicious": _mask_suspicious,
+            })
+            ws = ws_try
+            validation = _vr
+            selected_threshold = base_threshold
+            log.info(
+                "NLDI-masked DEM delineation completed for %s: passed=%s area_diff_pct=%s iou_pct=%s.",
+                STATION_ID,
+                _vr.passed,
+                _vr.area_diff_pct,
+                _vr.iou_pct,
+            )
+        except SwatBuilderPipelineError as exc:
+            threshold_attempts.append({
+                "threshold_cells": base_threshold,
+                "validation_passed": False,
+                "area_diff_pct": None,
+                "iou_pct": None,
+                "n_subbasins": exc.context.get("n_subbasins"),
+                "n_channels": exc.context.get("n_channels"),
+                "avg_subbasin_area_km2": None,
+                "complexity_acceptable": False,
+                "complexity_reasons": [str(exc), "nldi_masked_dem_fallback"],
+                "topology_suspicious": True,
+            })
+            log.warning("NLDI-masked DEM fallback failed for %s: %s", STATION_ID, exc)
+        except Exception as exc:
+            threshold_attempts.append({
+                "threshold_cells": base_threshold,
+                "validation_passed": False,
+                "area_diff_pct": None,
+                "iou_pct": None,
+                "n_subbasins": None,
+                "n_channels": None,
+                "avg_subbasin_area_km2": None,
+                "complexity_acceptable": False,
+                "complexity_reasons": [str(exc), "nldi_masked_dem_fallback"],
+                "topology_suspicious": True,
+            })
+            log.warning("NLDI-masked DEM fallback error for %s: %s", STATION_ID, exc)
 
     if ws is None or validation is None:
         raise RuntimeError(
@@ -1885,16 +2098,22 @@ def main(
 
     import json
     q_obs = fetch_usgs_daily_q(STATION_ID, sim_start, sim_end, outputs_dir / "obs_q.csv")
-    # Prefer basin_sd_cha_day.txt for consistent, routing-amplification-free daily volumes
+    # Prefer daily basin output when available; otherwise use channel_sdmorph_day
+    # because it carries the same SWAT-deg flow fields as channel_sd_day with
+    # less output-table overhead for outlet evaluation.
     sim_path = wf.txtinout_dir / "basin_sd_cha_day.txt"
+    if not sim_path.exists():
+        sim_path = wf.txtinout_dir / "channel_sdmorph_day.txt"
     if not sim_path.exists():
         sim_path = wf.txtinout_dir / "channel_sd_day.txt"
     if not sim_path.exists():
         sim_path = wf.txtinout_dir / "channel_day.txt"
+    terminal_ids = terminal_channel_ids(wf.txtinout_dir)
+    requested_outlet = terminal_ids[0] if terminal_ids else 1
     selection_eval = evaluate_run(
         sim_path,
         q_obs,
-        outlet_gis_id=1,
+        outlet_gis_id=requested_outlet,
         outlet_policy="auto",
         return_diagnostics=True,
     )
@@ -1916,7 +2135,7 @@ def main(
         "version": 1,
         "selection_pass": {
             "policy": "auto",
-            "requested_outlet_gis_id": 1,
+            "requested_outlet_gis_id": int(requested_outlet),
             "metrics": selection_metrics,
             "diagnostics": selection_diag,
             "aligned_days": int(len(selection_df)),
@@ -1936,16 +2155,17 @@ def main(
     )
     outlet_provenance_sha = sha256_file(outlet_provenance_path)
     sim_source_file = str(eval_diag.get("sim_source_file", "") or "")
+    sim_source_stage_method: str | None = None
     if sim_source_file:
         src = wf.txtinout_dir / sim_source_file
         if src.exists():
-            shutil.copy2(src, outputs_dir / sim_source_file)
+            sim_source_stage_method = _stage_output_file(src, outputs_dir / sim_source_file)
     
     plot_res = generate_all_plots(
         run_dir=outdir,
         include_spatial=True,
         metadata={
-            "basin_name": f"Marsh Creek ({STATION_ID})",
+            "basin_name": basin_display_name,
             "usgs_id": STATION_ID,
             "soil_mode": soil_mode,
             "pct_fallback_soils": pct_fallback_soils,
@@ -1983,6 +2203,15 @@ def main(
             f"delineation_validation: passed={validation.passed}, area_diff_pct={validation.area_diff_pct}, iou_pct={validation.iou_pct}"
         )
         notes.extend(validation.notes)
+    if site_metadata.get("available"):
+        notes.append(
+            f"usgs_site_metadata: station_nm={station_name}; source={site_metadata.get('source')}"
+        )
+    else:
+        notes.append(
+            f"usgs_site_metadata_unavailable: error={site_metadata.get('error', 'unknown')}; "
+            "display_name_fallback=USGS_ID"
+        )
     if overlay_repair_report is not None:
         notes.append(
             f"hru_overlay_repair={overlay_repair_report.reason}; "
@@ -2035,6 +2264,10 @@ def main(
         notes.append(msg)
     if weather_provider_fallback_reason is not None:
         notes.append(f"weather_provider_fallback={weather_provider_fallback_reason}")
+    if sim_source_stage_method is not None:
+        notes.append(
+            f"sim_source_staged_to_outputs={sim_source_file}; method={sim_source_stage_method}"
+        )
 
     md = RunMetadata(
         timestamp_utc=utc_now_iso(),
@@ -2090,7 +2323,7 @@ def main(
     write_metadata(outdir / "metadata.json", md)
 
     print("\n" + "=" * 72)
-    print(f"  Marsh Creek (USGS {STATION_ID}) complete in {time.time() - t_all:.1f}s")
+    print(f"  {basin_display_name} complete in {time.time() - t_all:.1f}s")
     print("=" * 72 + "\n")
 
 if __name__ == "__main__":

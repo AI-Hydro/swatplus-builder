@@ -214,6 +214,18 @@ def test_setup_project_lte_populates_connection_tables(lte_project) -> None:
         (n_cha,) = conn.execute(
             "SELECT COUNT(*) FROM channel_lte_cha"
         ).fetchone()
+        hyd_sed_lengths = [
+            row[0]
+            for row in conn.execute(
+                "SELECT len FROM hyd_sed_lte_cha ORDER BY id"
+            ).fetchall()
+        ]
+        gis_lengths = [
+            row[0]
+            for row in conn.execute(
+                "SELECT len2 FROM gis_channels ORDER BY id"
+            ).fetchall()
+        ]
         (n_lsu_def,) = conn.execute(
             "SELECT COUNT(*) FROM ls_unit_def"
         ).fetchone()
@@ -231,6 +243,13 @@ def test_setup_project_lte_populates_connection_tables(lte_project) -> None:
     )
     assert n_cha == len(tables.channels), (
         f"Expected {len(tables.channels)} channel_lte_cha rows, got {n_cha}"
+    )
+    assert hyd_sed_lengths == [0.0005, 0.0005], (
+        "hyd_sed_lte_cha.len must use the LTE transfer-length "
+        f"compatibility value, got {hyd_sed_lengths}"
+    )
+    assert gis_lengths == [row.len2 for row in tables.channels], (
+        "source GIS channel lengths must remain physical geometry"
     )
     assert n_lsu_def == len(tables.lsus), (
         f"Expected {len(tables.lsus)} ls_unit_def rows, got {n_lsu_def}"

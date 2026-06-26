@@ -4,7 +4,10 @@ import importlib.util
 from pathlib import Path
 
 import geopandas as gpd
-from shapely.geometry import Polygon
+import numpy as np
+import rasterio
+from rasterio.transform import from_origin
+from shapely.geometry import Polygon, box
 
 from swatplus_builder.gis.nldi_fallback import (
     BoundaryProvenance,
@@ -147,3 +150,56 @@ def test_example_fetch_basin_boundary_uses_cascade_without_stale_nldi_import(mon
 
     assert len(result) == 1
     assert result_provenance["source"] == "nldi_authoritative"
+
+
+def test_mask_dem_to_basin_constrains_valid_dem_domain(tmp_path: Path) -> None:
+    from swatplus_builder.examples.usgs_basin_workflow import mask_dem_to_basin
+
+    dem_path = tmp_path / "dem.tif"
+    out_path = tmp_path / "dem_masked.tif"
+    data = np.arange(16, dtype="float32").reshape(4, 4)
+    with rasterio.open(
+        dem_path,
+        "w",
+        driver="GTiff",
+        height=4,
+        width=4,
+        count=1,
+        dtype="float32",
+        crs="EPSG:5070",
+        transform=from_origin(0, 40, 10, 10),
+        nodata=-9999.0,
+    ) as dst:
+        dst.write(data, 1)
+
+    basin = gpd.GeoDataFrame(
+        {"id": [1]},
+        geometry=[box(0, 0, 20, 40)],
+        crs="EPSG:5070",
+    )
+
+    result = mask_dem_to_basin(dem_path, basin, out_path, buffer_m=0.0)
+
+    assert result == out_path
+    assert out_path.with_suffix(".source.json").exists()
+    with rasterio.open(out_path) as src:
+        masked = src.read(1)
+
+    assert np.all(masked[:, :2] != -9999.0)
+    assert np.all(masked[:, 2:] == -9999.0)
+
+
+def test_stage_output_file_hardlinks_large_engine_table(tmp_path: Path) -> None:
+    from swatplus_builder.examples.usgs_basin_workflow import _stage_output_file
+
+    src = tmp_path / "TxtInOut" / "channel_sd_day.txt"
+    dst = tmp_path / "outputs" / "channel_sd_day.txt"
+    src.parent.mkdir()
+    src.write_bytes(b"0123456789" * 1024)
+
+    method = _stage_output_file(src, dst, hardlink_above_mb=0.001)
+
+    assert method in {"hardlink", "symlink"}
+    assert dst.read_bytes() == src.read_bytes()
+    if method == "hardlink":
+        assert src.stat().st_ino == dst.stat().st_ino

@@ -188,6 +188,88 @@ def _apply_cn2(tio: Path, value: float) -> None:
     _apply_cn2_to_referenced_urban_rows(tio, value)
 
 
+def apply_cn2_delta_to_landuse(
+    txtinout: Path | str,
+    *,
+    landuse_name: str,
+    delta: float,
+) -> dict[str, object]:
+    """Shift one land use's curve-number row without changing other classes.
+
+    This surface is for controlled process diagnostics where a global CN2
+    target would be scientifically ambiguous. For example, targeting CN2=82
+    globally raises the row-crop value but lowers a referenced urban value of
+    98. A scoped delta preserves the A/B/C/D hydrologic-group differences and
+    leaves every other land use unchanged.
+    """
+    tio = Path(txtinout).expanduser().resolve()
+    if not tio.is_dir():
+        raise ParameterBridgeError(f"TxtInOut not found: {tio}")
+    delta_f = float(delta)
+    if not (-20.0 <= delta_f <= 20.0):
+        raise ParameterBridgeError(f"CN2 delta out of range [-20,20]: {delta_f}")
+
+    landuse_path = _require(tio, "landuse.lum")
+    landuse_lines = landuse_path.read_text().splitlines()
+    if len(landuse_lines) < 3:
+        raise ParameterBridgeError("landuse.lum too short")
+    header = landuse_lines[1].split()
+    try:
+        cn2_index = header.index("cn2")
+    except ValueError as exc:
+        raise ParameterBridgeError("landuse.lum has no cn2 column") from exc
+    target = str(landuse_name).strip().lower()
+    cn2_reference = None
+    for line in landuse_lines[2:]:
+        tokens = line.split()
+        if tokens and tokens[0].lower() == target:
+            if len(tokens) <= cn2_index:
+                raise ParameterBridgeError(f"Malformed landuse.lum row: {landuse_name}")
+            cn2_reference = tokens[cn2_index]
+            break
+    if cn2_reference is None:
+        raise ParameterBridgeError(f"Land use not found in landuse.lum: {landuse_name}")
+
+    curve_path = _require(tio, "cntable.lum")
+    curve_lines = curve_path.read_text().splitlines()
+    changed = False
+    before: list[float] = []
+    after: list[float] = []
+    output = curve_lines[:2]
+    for line in curve_lines[2:]:
+        tokens = line.split()
+        if not tokens or tokens[0] != cn2_reference:
+            output.append(line)
+            continue
+        if len(tokens) < 5:
+            raise ParameterBridgeError(f"Malformed cntable.lum row: {cn2_reference}")
+        try:
+            before = [float(value) for value in tokens[1:5]]
+        except ValueError as exc:
+            raise ParameterBridgeError(
+                f"Non-numeric curve numbers in cntable.lum row: {cn2_reference}"
+            ) from exc
+        after = [max(20.0, min(98.0, value + delta_f)) for value in before]
+        output.append(
+            tokens[0].ljust(22)
+            + "".join(f"{value:14.5f}" for value in after)
+            + "  "
+            + " ".join(tokens[5:])
+        )
+        changed = True
+    if not changed:
+        raise ParameterBridgeError(f"Curve-number row not found: {cn2_reference}")
+    curve_path.write_text("\n".join(output) + "\n")
+    return {
+        "landuse_name": landuse_name,
+        "curve_number_reference": cn2_reference,
+        "delta": delta_f,
+        "before": before,
+        "after": after,
+        "other_landuses_changed": False,
+    }
+
+
 def _is_cn2_target_row(row_name: str, referenced_cn2: set[str] | None) -> bool:
     lower = row_name.lower()
     if lower.startswith("wood_"):
@@ -269,6 +351,23 @@ def _apply_rchg_dp(tio: Path, value: float) -> None:
         raise ParameterBridgeError(f"RCHG_DP out of range [0.0,0.8]: {value}")
     path = _require(tio, "aquifer.aqu")
     _rewrite_column_for_rows(path, "rchg_dp", f"{value:.5f}", width=14)
+
+
+def _apply_gw_revap(tio: Path, value: float) -> None:
+    """Set the documented shallow-aquifer revap coefficient.
+
+    Deep aquifers do not revap to the soil profile, so retain their rows.
+    """
+    if not (0.0 <= value <= 1.0):
+        raise ParameterBridgeError(f"GW_REVAP out of range [0.0,1.0]: {value}")
+    path = _require(tio, "aquifer.aqu")
+    _rewrite_column_for_rows(
+        path,
+        "revap",
+        f"{value:.5f}",
+        width=14,
+        where=lambda tokens: not tokens[1].lower().startswith("aqu_deep"),
+    )
 
 
 def _apply_pet_co(tio: Path, value: float) -> None:
@@ -424,6 +523,7 @@ WRITERS: Mapping[str, Callable[[Path, float], None]] = {
     "CH_K2": _apply_ch_k2,
     "ALPHA_BF": _apply_alpha_bf,
     "RCHG_DP": _apply_rchg_dp,
+    "GW_REVAP": _apply_gw_revap,
     "GW_DELAY": _apply_gw_delay,  # raises — full mode uses aquifer.con
     "SFTMP": _apply_sftmp,
     "SMTMP": _apply_smtmp,
@@ -441,6 +541,7 @@ FULL_MODE_PARAMETER_ACTIVITY: Mapping[str, str] = {
     "PET_CO": "not_tested",# may be active for ET-dominated basins
     "ALPHA_BF": "not_tested", # untested with engine probes
     "RCHG_DP": "not_tested",
+    "GW_REVAP": "active",  # 03349000 repaired-routing endpoint probe changed flow and metrics
     "SURLAG": "not_tested",
     "CH_N2": "not_tested",   # channel Manning roughness; requires basin screen
     "CH_K2": "not_tested",   # channel bed conductivity; requires basin screen

@@ -24,6 +24,7 @@ FULL_MODE_EXTENDED_PARAMETERS: tuple[str, ...] = (
     "CN3_SWF",
     "CH_N2",
     "CH_K2",
+    "GW_REVAP",
 )
 
 
@@ -161,6 +162,14 @@ FULL_MODE_PARAMETER_GOVERNANCE: dict[str, ParameterGovernance] = {
         "not_tested",
         "SWAT+ hyd-sed-lte.cha channel alluvium conductivity documentation",
         claim_tier_allowance="diagnostic only when retained after basin-specific channel-routing screen",
+    ),
+    "GW_REVAP": ParameterGovernance(
+        "GW_REVAP",
+        "aquifer.aqu",
+        "revap on shallow-aquifer rows",
+        "active",
+        "SWAT+ revap theory, documented aquifer.aqu range, and 03349000 engine probe",
+        claim_tier_allowance="diagnostic only when retained after basin-specific groundwater screen",
     ),
 }
 

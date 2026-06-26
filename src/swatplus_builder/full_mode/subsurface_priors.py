@@ -94,6 +94,8 @@ def apply_subsurface_prior_correction(
     et_qp = et / precip if et is not None else None
     perc_qp = perc / precip if perc is not None else None
     payload["modeled_wateryld_to_precip_before"] = modeled_qp
+    profile_state = _current_profile_state(txt)
+    payload["current_profile_state"] = profile_state
 
     if observed_qp is None:
         payload["reason"] = observed.get("reason", "observed_runoff_context_missing")
@@ -102,6 +104,14 @@ def apply_subsurface_prior_correction(
         payload["reason"] = f"observed_qp_outside_correction_guardrail={observed_qp:.3f}"
         return _write_report(report_path, payload)
     if modeled_qp + TARGET_TOLERANCE >= observed_qp:
+        if profile_state.get("matches_profile"):
+            payload["status"] = "already_applied"
+            payload["reason"] = (
+                f"{PROFILE_NAME} already present; modeled_wateryld_to_precip={modeled_qp:.3f} "
+                f"within {TARGET_TOLERANCE:.2f} of observed_qp={observed_qp:.3f}"
+            )
+            payload["fresh_engine_rerun_required"] = False
+            return _write_report(report_path, payload)
         payload["reason"] = (
             f"modeled_wateryld_to_precip={modeled_qp:.3f} within "
             f"{TARGET_TOLERANCE:.2f} of observed_qp={observed_qp:.3f}"
@@ -265,6 +275,56 @@ def _rewrite_table_columns(path: Path, targets: dict[str, float]) -> list[dict[s
         out.append(" ".join(parts))
     path.write_text("\n".join(out) + "\n", encoding="utf-8")
     return changes
+
+
+def _current_profile_state(txt: Path) -> dict[str, Any]:
+    hyd = _table_columns_match(txt / "hydrology.hyd", HYDROLOGY_PROFILE)
+    aqu = _table_columns_match(txt / "aquifer.aqu", AQUIFER_PROFILE)
+    return {
+        "profile": PROFILE_NAME,
+        "hydrology_matches": hyd.get("matches"),
+        "aquifer_matches": aqu.get("matches"),
+        "matches_profile": bool(hyd.get("matches") and aqu.get("matches")),
+        "hydrology_mismatch_count": hyd.get("mismatch_count"),
+        "aquifer_mismatch_count": aqu.get("mismatch_count"),
+    }
+
+
+def _table_columns_match(path: Path, targets: dict[str, float]) -> dict[str, Any]:
+    if not path.is_file():
+        return {"matches": False, "reason": "file_missing", "mismatch_count": None}
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    if len(lines) < 3:
+        return {"matches": False, "reason": "file_too_short", "mismatch_count": None}
+    header = lines[1].split()
+    index = {name: i for i, name in enumerate(header)}
+    missing = sorted(set(targets) - set(index))
+    if missing:
+        return {
+            "matches": False,
+            "reason": f"missing_columns={','.join(missing)}",
+            "mismatch_count": None,
+        }
+    mismatch_count = 0
+    row_count = 0
+    for line in lines[2:]:
+        if not line.strip():
+            continue
+        row_count += 1
+        parts = line.split()
+        for column, expected in targets.items():
+            col_idx = index[column]
+            if col_idx >= len(parts):
+                mismatch_count += 1
+                continue
+            actual = _as_float(parts[col_idx])
+            if actual is None or abs(actual - float(expected)) > 1e-6:
+                mismatch_count += 1
+    return {
+        "matches": mismatch_count == 0 and row_count > 0,
+        "mismatch_count": mismatch_count,
+        "row_count": row_count,
+    }
 
 
 def _write_report(path: Path, payload: dict[str, Any]) -> dict[str, Any]:

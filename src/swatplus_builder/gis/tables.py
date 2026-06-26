@@ -493,7 +493,7 @@ def _build_routing_rows(
         )
         lsu_to_ch[sub_id] = ch_id
 
-    # --- LSU -> CH (sur + lat, 100% each) ---
+    # --- LSU -> CH (sur + lat) and shallow aquifer (recharge) ---
     # The SWAT+ Editor's import_gis.insert_connections() queries gis_routing
     # for sourcecat='LSU' to populate rout_unit_con_out.  Without these rows
     # rout_unit.con gets out_tot=0 for every RTU, so no water ever enters
@@ -501,12 +501,21 @@ def _build_routing_rows(
     # Use explicit surface/lateral hydrograph routes. A single total-flow route
     # plus explicit sur/lat routes double-counts water in sdc/chandeg full-mode
     # runs, which is visible as surq_cha+latq_cha ~= 2 * wateryld.
+    aquifer_by_sub = {aq.subbasin: aq.id for aq in aquifers}
     for lsu_id, ch_id in sorted(lsu_to_ch.items()):
         for hyd_typ in ("sur", "lat"):
             routing.append(
                 RoutingRow(
                     sourceid=lsu_id, sourcecat="LSU", hyd_typ=hyd_typ,
                     sinkid=ch_id, sinkcat="CH", percent=100.0,
+                )
+            )
+        aquifer_id = aquifer_by_sub.get(lsu_id)
+        if aquifer_id is not None:
+            routing.append(
+                RoutingRow(
+                    sourceid=lsu_id, sourcecat="LSU", hyd_typ="rhg",
+                    sinkid=aquifer_id, sinkcat="AQU", percent=100.0,
                 )
             )
 
@@ -528,17 +537,25 @@ def _build_routing_rows(
                 )
             )
 
-    # --- AQU → CH (tot, 100%) ---
+    # --- AQU -> CH (baseflow) and DAQ (deep recharge) ---
+    deep_aquifer_by_sub = {daq.subbasin: daq.id for daq in deep_aquifers}
     for aq in aquifers:
         ch_id = channel_by_sub.get(aq.subbasin)
-        if ch_id is None:
-            continue
-        routing.append(
-            RoutingRow(
-                sourceid=aq.id, sourcecat="AQU", hyd_typ="tot",
-                sinkid=ch_id, sinkcat="CH", percent=100.0,
+        if ch_id is not None:
+            routing.append(
+                RoutingRow(
+                    sourceid=aq.id, sourcecat="AQU", hyd_typ="tot",
+                    sinkid=ch_id, sinkcat="CH", percent=100.0,
+                )
             )
-        )
+        deep_aquifer_id = deep_aquifer_by_sub.get(aq.subbasin)
+        if deep_aquifer_id is not None:
+            routing.append(
+                RoutingRow(
+                    sourceid=aq.id, sourcecat="AQU", hyd_typ="rhg",
+                    sinkid=deep_aquifer_id, sinkcat="DAQ", percent=100.0,
+                )
+            )
 
     # --- DAQ → X (tot, 100%) ---
     for daq in deep_aquifers:

@@ -778,7 +778,12 @@ class GisImport(ExecutableApi):
 					'wd': row.wid2,
 					'dp': row.dep2,
 					'slp': row.slo2 / 100,
-					'len': row.len2 / 1000,
+					# In the sdc/chandeg LTE channel path used by the bundled
+					# engine, hyd_sed_lte_cha.len behaves as a transfer length.
+					# Physical channel lengths remain in gis_channels.len2; using
+					# them here over-delays event delivery in converted full-mode
+					# routing.
+					'len': 0.0005,
 					'mann': 0.05,
 					'k': 1,
 					'erod_fact': 0.01,

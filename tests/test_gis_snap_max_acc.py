@@ -22,7 +22,11 @@ import pytest
 import rasterio
 from rasterio.transform import from_bounds
 
-from swatplus_builder.gis.delineation import _adaptive_snap_dist, _snap_to_max_accumulation
+from swatplus_builder.gis.delineation import (
+    _adaptive_snap_dist,
+    _snap_to_area_target,
+    _snap_to_max_accumulation,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers: build synthetic flow-accumulation rasters
@@ -205,3 +209,90 @@ class TestSnapToMaxAccumulation:
         assert acc_raw >= 0
         assert acc_snapped >= acc_raw
         assert dist_m >= 0.0
+
+
+class TestSnapToExpectedArea:
+    def test_area_target_avoids_larger_downstream_basin(self, tmp_path):
+        """Expected area must beat a more distant, higher-accumulation stream."""
+        acc = np.zeros((20, 20), dtype=np.float32)
+        links = np.zeros((20, 20), dtype=np.int32)
+        acc[10, 10] = 3
+        acc[10, 13] = 170_000
+        links[10, 13] = 7
+        acc[10, 18] = 700_000
+        links[10, 18] = 8
+        flow_path = tmp_path / "flow_acc.tif"
+        stream_path = tmp_path / "stream_links.tif"
+        _write_flow_acc(flow_path, acc)
+        _write_flow_acc(stream_path, links)
+
+        px = (10 + 0.5) * _RES
+        py = (20 - 10 - 0.5) * _RES
+        result = _snap_to_area_target(
+            flow_path,
+            stream_path,
+            px,
+            py,
+            radius_m=300.0,
+            expected_area_km2=153.0,
+        )
+        snapped_px, _, _, acc_snapped, dist_m, relative_error, link_id = result
+
+        assert snapped_px == pytest.approx((13 + 0.5) * _RES)
+        assert acc_snapped == pytest.approx(170_000)
+        assert dist_m == pytest.approx(90.0)
+        assert relative_error == pytest.approx(0.0)
+        assert link_id == 7
+
+    def test_area_target_uses_stream_cells_only(self, tmp_path):
+        acc = np.zeros((9, 9), dtype=np.float32)
+        links = np.zeros((9, 9), dtype=np.int32)
+        acc[4, 5] = 100_000  # perfect area but not a mapped stream cell
+        acc[4, 6] = 95_000
+        links[4, 6] = 22
+        flow_path = tmp_path / "flow_acc.tif"
+        stream_path = tmp_path / "stream_links.tif"
+        _write_flow_acc(flow_path, acc)
+        _write_flow_acc(stream_path, links)
+
+        px = (4 + 0.5) * _RES
+        py = (9 - 4 - 0.5) * _RES
+        result = _snap_to_area_target(
+            flow_path,
+            stream_path,
+            px,
+            py,
+            radius_m=150.0,
+            expected_area_km2=90.0,
+        )
+
+        assert result[3] == pytest.approx(95_000)
+        assert result[6] == 22
+
+    def test_area_target_rejects_nearby_tiny_tributary_when_main_stem_is_closer_by_scale(self, tmp_path):
+        """A tiny tributary must not beat a main-stem cell by ordinary relative-error symmetry."""
+        acc = np.zeros((9, 9), dtype=np.float32)
+        links = np.zeros((9, 9), dtype=np.int32)
+        acc[4, 4] = 2_460_000  # about 2x target, but still the main-stem scale
+        links[4, 4] = 10
+        acc[3, 4] = 3_800      # near-zero tributary, slightly closer in old scoring
+        links[3, 4] = 11
+        flow_path = tmp_path / "flow_acc.tif"
+        stream_path = tmp_path / "stream_links.tif"
+        _write_flow_acc(flow_path, acc)
+        _write_flow_acc(stream_path, links)
+
+        px = (4 + 0.5) * _RES
+        py = (9 - 4 - 0.5) * _RES
+        target_cells = 1_223_000
+        result = _snap_to_area_target(
+            flow_path,
+            stream_path,
+            px,
+            py,
+            radius_m=150.0,
+            expected_area_km2=target_cells * (_RES**2) / 1e6,
+        )
+
+        assert result[3] == pytest.approx(2_460_000)
+        assert result[6] == 10

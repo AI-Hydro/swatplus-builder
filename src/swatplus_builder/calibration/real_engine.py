@@ -6,6 +6,7 @@ import json
 import shutil
 import tempfile
 from collections.abc import Callable
+from datetime import date, datetime
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,7 @@ import pandas as pd
 
 from ..output.eval import evaluate_run
 from ..run import run as run_swat
+from .. import __version__ as _builder_version
 
 RealObjective = Callable[[dict[str, float]], dict[str, Any]]
 
@@ -35,16 +37,54 @@ def make_real_objective(
     keep_workdirs: bool = True,
     force_fresh: bool = False,
     include_physical_gate: bool = False,
+    nyskip_years: int = 2,
+    simulation_start: str | date | None = None,
+    simulation_end: str | date | None = None,
+    score_start: str | date | None = None,
+    score_end: str | date | None = None,
 ) -> RealObjective:
     """Build an objective function that runs SWAT+ per parameter vector.
 
     ``force_fresh`` is for audit-authoritative reruns that must not reuse a
     hashed objective workdir even when the cache marker looks compatible.
+    ``nyskip_years`` strips the first N years from the observed series before
+    scoring to exclude the model warm-up / spin-up period from metric
+    calculation (Klemeš 1986, Abbaspour 2015).
     """
     base = Path(base_txtinout).expanduser().resolve()
     root = Path(work_root).expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
     obs = observed_series.copy()
+    score_start_date = _coerce_date(score_start)
+    score_end_date = _coerce_date(score_end)
+    if score_start_date and score_end_date and score_start_date > score_end_date:
+        raise ValueError("score_start must be on or before score_end.")
+    simulation_start_date = _coerce_date(simulation_start)
+    simulation_end_date = _coerce_date(simulation_end)
+    if simulation_start_date and simulation_end_date and simulation_start_date > simulation_end_date:
+        raise ValueError("simulation_start must be on or before simulation_end.")
+    if simulation_start_date and score_start_date and simulation_start_date > score_start_date:
+        raise ValueError("simulation_start cannot be after score_start.")
+    if simulation_end_date and score_end_date and simulation_end_date < score_end_date:
+        raise ValueError("simulation_end cannot be before score_end.")
+    if score_start_date:
+        obs = obs[pd.to_datetime(obs.index).normalize() >= pd.Timestamp(score_start_date)]
+    if score_end_date:
+        obs = obs[pd.to_datetime(obs.index).normalize() <= pd.Timestamp(score_end_date)]
+    if obs.empty:
+        raise ValueError("score window removed all observed rows.")
+    # Strip warm-up (spin-up) years: Klemeš (1986) and Abbaspour (2015)
+    # recommend discarding the first 1-3 years of simulation to avoid
+    # contaminating metric scores with uninitialised state variables.
+    warmup_years = max(0, int(nyskip_years or 0))
+    if warmup_years > 0 and len(obs) > 0:
+        cutoff = obs.index.min() + pd.DateOffset(years=warmup_years)
+        obs = obs[obs.index >= cutoff]
+        if obs.empty:
+            raise ValueError(
+                f"nyskip_years={warmup_years} removed all observed rows; "
+                "reduce nyskip or extend the observation window."
+            )
     requested_file = str(objective_sim_file).strip()
     if not requested_file:
         raise ValueError("objective_sim_file must be a non-empty filename.")
@@ -69,7 +109,18 @@ def make_real_objective(
             if keep_workdirs
             else Path(tempfile.mkdtemp(prefix=f"swatplus_obj_{key[:12]}_"))
         )
-        cache_signature = _objective_cache_signature(parameter_mode)
+        cache_signature = _objective_cache_signature(
+            parameter_mode,
+            binary=binary,
+            simulation_start=simulation_start_date,
+            simulation_end=simulation_end_date,
+            score_start=score_start_date,
+            score_end=score_end_date,
+            nyskip_years=warmup_years,
+            objective_sim_file=requested_file,
+            outlet_gis_id=int(outlet_gis_id),
+            objective_outlet_policy=outlet_policy,
+        )
         try:
             txt = run_dir / "TxtInOut"
             marker = run_dir / ".objective_v2_complete"
@@ -82,7 +133,13 @@ def make_real_objective(
                 shutil.copytree(base, txt)
             if not marker.exists():
                 _prepare_full_mode_txtinout_for_objective(txt, parameter_mode=parameter_mode)
-                _prepare_txtinout_for_objective(txt)
+                _prepare_txtinout_for_objective(
+                    txt,
+                    simulation_start=simulation_start_date,
+                    simulation_end=simulation_end_date,
+                    score_start=score_start_date,
+                    score_end=score_end_date,
+                )
                 _apply_parameters_for_mode(txt, params, parameter_mode=parameter_mode)
                 run_swat(
                     txt,
@@ -199,8 +256,41 @@ def _optional_float(value: Any) -> float | None:
     return result if math.isfinite(result) else None
 
 
-def _objective_cache_signature(parameter_mode: str) -> str:
-    payload: dict[str, str] = {"parameter_mode": str(parameter_mode or "lte").strip().lower()}
+def _objective_cache_signature(
+    parameter_mode: str,
+    *,
+    binary: Path | str | None = None,
+    simulation_start: date | None = None,
+    simulation_end: date | None = None,
+    score_start: date | None = None,
+    score_end: date | None = None,
+    nyskip_years: int = 0,
+    objective_sim_file: str | None = None,
+    outlet_gis_id: int | None = None,
+    objective_outlet_policy: str | None = None,
+) -> str:
+    payload: dict[str, str] = {
+        "parameter_mode": str(parameter_mode or "lte").strip().lower(),
+        "builder_version": str(_builder_version),
+        "simulation_start": simulation_start.isoformat() if simulation_start else "",
+        "simulation_end": simulation_end.isoformat() if simulation_end else "",
+        "score_start": score_start.isoformat() if score_start else "",
+        "score_end": score_end.isoformat() if score_end else "",
+        "nyskip_years": str(int(nyskip_years or 0)),
+        "objective_sim_file": str(objective_sim_file or ""),
+        "outlet_gis_id": "" if outlet_gis_id is None else str(int(outlet_gis_id)),
+        "objective_outlet_policy": str(objective_outlet_policy or ""),
+    }
+    # Include the SWAT+ engine binary hash so cached workdirs are invalidated
+    # when the executable changes (upgraded, rebuilt, or swapped).
+    try:
+        from ..run.swatplus import locate_binary
+
+        resolved_binary = Path(binary).expanduser().resolve() if binary else locate_binary()
+        if resolved_binary.exists():
+            payload["swat_binary_sha256"] = sha256(resolved_binary.read_bytes()).hexdigest()
+    except Exception:
+        payload["swat_binary_sha256"] = "unavailable"
     for name, path in {
         "real_engine": Path(__file__),
         "parameter_bridge": Path(__file__).parents[1] / "full_mode" / "parameter_bridge.py",
@@ -252,6 +342,23 @@ def load_observed_from_alignment_csv(path: Path | str) -> pd.Series:
     if s.empty:
         raise ValueError(f"alignment.csv has no non-null observed rows: {p}")
     return s
+
+
+def _coerce_date(value: str | date | None) -> date | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    raw = str(value).strip()
+    if not raw:
+        return None
+    return datetime.strptime(raw, "%Y-%m-%d").date()
+
+
+def _day_year(value: date) -> tuple[int, int]:
+    return int(value.strftime("%j")), int(value.year)
 
 
 def apply_parameters_to_lte_txtinout(txtinout_dir: Path | str, params: dict[str, float]) -> None:
@@ -380,15 +487,34 @@ def params_hash(params: dict[str, float]) -> str:
     return sha256(raw).hexdigest()
 
 
-def _prepare_txtinout_for_objective(txtinout: Path) -> None:
+def _prepare_txtinout_for_objective(
+    txtinout: Path,
+    *,
+    simulation_start: date | None = None,
+    simulation_end: date | None = None,
+    score_start: date | None = None,
+    score_end: date | None = None,
+) -> None:
     """Ensure objective runs produce fresh daily channel outputs."""
-    _set_print_prt_for_daily_channel_outputs(txtinout / "print.prt")
+    if simulation_start or simulation_end:
+        _set_time_sim_window(
+            txtinout / "time.sim",
+            simulation_start=simulation_start,
+            simulation_end=simulation_end,
+        )
+    _set_print_prt_for_daily_channel_outputs(
+        txtinout / "print.prt",
+        score_start=score_start,
+        score_end=score_end,
+    )
     # Prevent stale copied outputs from being scored.
     for name in (
         "channel_day.txt",
         "channel_sd_day.txt",
+        "channel_sdmorph_day.txt",
         "basin_cha_day.txt",
         "basin_sd_cha_day.txt",
+        "basin_sd_chamorph_day.txt",
         "alignment_calibration.csv",
     ):
         (txtinout / name).unlink(missing_ok=True)
@@ -407,7 +533,38 @@ def _prepare_full_mode_txtinout_for_objective(txtinout: Path, *, parameter_mode:
     apply_full_routing_fixes(txtinout)
 
 
-def _set_print_prt_for_daily_channel_outputs(path: Path) -> None:
+def _set_time_sim_window(
+    path: Path,
+    *,
+    simulation_start: date | None = None,
+    simulation_end: date | None = None,
+) -> None:
+    if not path.exists():
+        raise FileNotFoundError(f"required file not found: {path}")
+    lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    if len(lines) < 3:
+        raise ValueError(f"malformed time.sim: {path}")
+    parts = lines[2].split()
+    if len(parts) < 5:
+        raise ValueError(f"malformed time.sim data row: {path}")
+    if simulation_start is not None:
+        day_start, yrc_start = _day_year(simulation_start)
+        parts[0] = str(day_start)
+        parts[1] = str(yrc_start)
+    if simulation_end is not None:
+        day_end, yrc_end = _day_year(simulation_end)
+        parts[2] = str(day_end)
+        parts[3] = str(yrc_end)
+    lines[2] = "  ".join(parts)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _set_print_prt_for_daily_channel_outputs(
+    path: Path,
+    *,
+    score_start: date | None = None,
+    score_end: date | None = None,
+) -> None:
     if not path.exists():
         raise FileNotFoundError(f"required file not found: {path}")
     lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
@@ -420,6 +577,14 @@ def _set_print_prt_for_daily_channel_outputs(path: Path) -> None:
         parts = lines[top_idx].split()
         if len(parts) >= 1 and parts[0].isdigit():
             parts[0] = "0"
+            if score_start is not None and len(parts) >= 3:
+                day_start, yrc_start = _day_year(score_start)
+                parts[1] = str(day_start)
+                parts[2] = str(yrc_start)
+            if score_end is not None and len(parts) >= 5:
+                day_end, yrc_end = _day_year(score_end)
+                parts[3] = str(day_end)
+                parts[4] = str(yrc_end)
             lines[top_idx] = "  ".join(parts)
 
     # Ensure daily output for channel metrics used in objective evaluation.
