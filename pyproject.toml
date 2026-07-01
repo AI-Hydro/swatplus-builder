@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "swatplus-builder"
-version = "0.7.8"
+version = "0.7.9"
 description = "Build and calibrate SWAT+ hydrologic models from a USGS gauge ID — with evidence-backed, claim-governed results."
 readme = "README.md"
 license = { text = "MIT" }
@@ -32,6 +32,7 @@ dependencies = [
     "networkx>=3.1",
     "typer>=0.12",
     "rich>=13.7",
+    "matplotlib>=3.7,<4.0",
 ]
 
 [project.optional-dependencies]
@@ -84,7 +85,8 @@ swatplus = [
     "SALib>=1.5.0",
 ]
 viz = [
-    # Soil depth distribution plots and post-run diagnostics.
+    # Retained as a compatibility extra. Plotting/dashboard support is now a
+    # default dependency because workflow imports and evidence dashboards use it.
     # Install with: pip install 'swatplus-builder[viz]'
     "matplotlib>=3.7,<4.0",
 ]

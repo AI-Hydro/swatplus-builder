@@ -2,6 +2,18 @@
 
 All notable changes to swatplus-builder are documented here.
 
+## [0.7.9] — 2026-07-01
+
+### Fixed
+- Add `matplotlib` to the default package dependencies. The released `0.7.8`
+  wheel imported successfully, but `swat workflow negotiate` failed in a clean
+  environment because workflow imports load plotting/dashboard modules that
+  require Matplotlib.
+
+### Evidence
+- Clean PyPI install smoke for `0.7.8` reproduced the missing dependency:
+  `ModuleNotFoundError: No module named 'matplotlib'`.
+
 ## [0.7.8] — 2026-06-26
 
 ### Fixed
