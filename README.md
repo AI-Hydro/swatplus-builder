@@ -63,7 +63,7 @@ agent — decides what may be claimed.
 
 ## Status
 
-**Alpha, v0.7.9** — locked-benchmark calibration, claim-governed diagnostic calibration, dashboard evidence, and 13-tool agent (MCP) surface.
+**Alpha, v0.7.10** — locked-benchmark calibration, claim-governed diagnostic calibration, dashboard evidence, and 13-tool agent (MCP) surface.
 
 - [x] Pure-Python GIS (WhiteboxTools, rasterio, geopandas)
 - [x] Automated SWAT+ project generation
@@ -386,7 +386,7 @@ If you use swatplus-builder in your research, please cite:
                    modeling from a USGS gauge ID}},
   year         = {2026},
   publisher    = {Zenodo},
-  version      = {0.7.9},
+  version      = {0.7.10},
   doi          = {10.5281/zenodo.20650908},
   url          = {https://doi.org/10.5281/zenodo.20650908}
 }

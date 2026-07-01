@@ -5,7 +5,44 @@
 Phase 3L — Full-Mode Engine Compatibility & Research-Grade Pipeline  
 *(Phase 3G closed 2026-05-09 — discovery pipeline, experiment suite, agent contracts)*
 
-**Current focus:** The canonical full-mode workflow is implemented and auditable, but the objective-suite target is still scientifically open. As of 2026-06-17, the summarize-only objective report has been regenerated from existing evidence with fresher overrides for `01547700`, `01493500`, `03351500`, and `02129000`; it reports `research_grade_count=0/11`, `target_hypothesis_evaluation.status=not_supported_by_current_evidence`, and blocker domains `science=6`, `provenance=3`, `diagnostics=2`. The production compliance audit reports `complete` (`17/17`). Treat older `69/97` or `96/97` audit language as historical unless explicitly tied to an older dated entry.
+**Current focus:** The canonical full-mode workflow is implemented and auditable, but the objective-suite target is still scientifically open. As of 2026-07-01, the summarize-only objective report has been regenerated from existing evidence with refreshed overrides for `01013500`, `01547700`, `03349000`, and `03351500`; it reports `research_grade_count=0/11`, `target_hypothesis_evaluation.status=not_supported_by_current_evidence`, and blocker domains `science=3`, `provenance=7`. This is not a full fresh 11-basin campaign: seven rows still use older full-build-failed evidence and need current-code reruns. Treat older `69/97` or `96/97` audit language as historical unless explicitly tied to an older dated entry.
+
+### [2026-07-01] — Objective refresh subset and calibration-history fix
+
+Published `0.7.9` first to fix the clean PyPI install regression where
+`swat workflow negotiate` failed because `matplotlib` was missing from default
+dependencies. A clean virtualenv install of `swatplus-builder==0.7.8`
+reproduced the failure; the built `0.7.9` wheel passed the same smoke.
+
+Then refreshed two stale canonical objective-suite rows under current code:
+
+- `/Users/mgalib/swatplus_runs/objective_refresh_v079/01013500_2000_2019_nocal`
+  completed build, engine execution, benchmark lock, routing-flow checks,
+  dashboard, and plots. Baseline metrics are `NSE=-0.1338`, `KGE=0.2649`,
+  `PBIAS=-13.63%`. Routing/outlet/soil evidence passed; physical skill,
+  sensitivity, and land-use fidelity gates keep the run exploratory.
+- `/Users/mgalib/swatplus_runs/objective_refresh_v079/03351500_2000_2019_nocal`
+  completed build, engine execution, benchmark lock, routing-flow checks,
+  dashboard, and plots. Baseline metrics are `NSE=-0.0272`, `KGE=0.0124`,
+  `PBIAS=-67.31%`. Routing/outlet/soil evidence passed; the current blocker is
+  a simulated-volume deficit with ET/water-yield partition diagnostics.
+
+The regenerated objective summary combines refreshed evidence for `01013500`
+and `03351500`, hardening evidence for `01547700` and `03349000`, and existing
+stale evidence for the remaining seven rows. Current summary: `0/11`
+research-grade outcomes, `1` diagnostic basin, `3` science blockers, and `7`
+stale provenance/build rows still needing fresh reruns.
+
+A small locked-calibration smoke against the refreshed `01013500` benchmark did
+not improve the model (`delta_nse=0`, `delta_kge=0`) and exposed ambiguous
+`NaN` rows in calibration history. `calibrate_against_lock()` now classifies
+non-finite required objective metrics as `invalid_objective_metrics` and writes
+a `failure_reason` column, so invalid candidate scoring is not confused with a
+physically valid but weak candidate. This is queued as `0.7.10`.
+
+Decluttering: removed the pre-patch
+`01013500_2000_2019_locked_cal_smoke` scratch directory (~819 MB). Kept the two
+refreshed no-calibration runs because they are current evidence bundles.
 
 ### [2026-06-26] — `01031500` proves NLDI authority path, not model skill
 

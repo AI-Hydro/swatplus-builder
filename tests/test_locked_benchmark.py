@@ -812,6 +812,61 @@ def test_calibrate_against_lock_writes_history_before_phase_blocker(monkeypatch,
     assert set(history["physical_gate_dominant_blocker"]) == {"VOLUME_BIAS"}
 
 
+def test_calibrate_against_lock_classifies_nonfinite_candidate_metrics(
+    monkeypatch, tmp_path: Path
+) -> None:
+    benchmark_dir = tmp_path / "benchmark"
+    benchmark_dir.mkdir()
+    pd.DataFrame(
+        {"obs": [1.0, 2.0, 3.0], "sim": [1.1, 1.9, 3.2]},
+        index=pd.date_range("2010-01-01", periods=3, freq="D"),
+    ).to_csv(benchmark_dir / "alignment.csv")
+    lock = BenchmarkLock(
+        basin_id="usgs_nonfinite_candidate",
+        locked_at_utc="2026-05-13T00:00:00+00:00",
+        alignment_sha256="alignment",
+        metrics_sha256="metrics",
+        outlet_gis_id=1,
+        sim_source_file="channel_sd_day.txt",
+        baseline_nse=0.0,
+        baseline_kge=0.0,
+        benchmark_dir=str(benchmark_dir),
+    )
+    txt = tmp_path / "TxtInOut"
+    txt.mkdir()
+
+    def fake_make_real_objective(**kwargs):
+        def objective(params: dict[str, float]) -> dict[str, float]:
+            if params:
+                return {"nse": float("nan"), "kge": float("nan"), "pbias": float("nan")}
+            return {
+                "nse": 0.1,
+                "kge": 0.2,
+                "pbias": 5.0,
+                "physical_gate_passed": 1.0,
+                "calibration_process_gate_passed": 1.0,
+            }
+
+        return objective
+
+    monkeypatch.setattr("swatplus_builder.calibration.real_engine.make_real_objective", fake_make_real_objective)
+
+    evidence = calibrate_against_lock(
+        lock,
+        txt,
+        tmp_path / "cal",
+        parameters=["CN2"],
+        n_evaluations=2,
+        calibration_phases=[{"phase": "volume", "parameters": ["CN2"], "budget": 2}],
+    )
+
+    history = pd.read_csv(evidence.history_csv)
+    invalid = history.loc[history["status"] == "invalid_objective_metrics"]
+    assert not invalid.empty
+    assert "failure_reason" in history.columns
+    assert set(invalid["failure_reason"]) == {"nonfinite_required_objective_metrics: nse,kge,pbias"}
+
+
 def test_rank_nse_kge_phase_blocker_reports_process_gate(monkeypatch, tmp_path: Path) -> None:
     benchmark_dir = tmp_path / "benchmark"
     benchmark_dir.mkdir()

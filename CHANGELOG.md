@@ -2,6 +2,23 @@
 
 All notable changes to swatplus-builder are documented here.
 
+## [0.7.10] — 2026-07-01
+
+### Fixed
+- Locked calibration history now classifies candidates with non-finite required
+  objective metrics as `invalid_objective_metrics` and records a
+  `failure_reason`, instead of leaving ambiguous `NaN` rows that look like
+  ordinary evaluated candidates.
+
+### Evidence
+- Fresh current-code diagnostic runs for `01013500` and `03351500` completed
+  build, engine execution, benchmark lock, routing-flow checks, dashboards, and
+  plot generation. Both replaced stale objective-suite full-build-failed rows
+  with current exploratory evidence.
+- A small locked-calibration smoke on `01013500` showed no verified
+  improvement over baseline and exposed the ambiguous non-finite candidate
+  history rows fixed in this release.
+
 ## [0.7.9] — 2026-07-01
 
 ### Fixed

@@ -601,10 +601,16 @@ def calibrate_against_lock(
                 phase_order=_phase_index,
                 point=point,
             )
+            failure_reason: str | None = None
             try:
                 metrics = objective(point)
             except Exception as e:
                 metrics = {"nse": float("nan"), "kge": float("nan"), "pbias": float("nan"), "error": str(e)}
+                failure_reason = f"objective_error: {e}"
+            if failure_reason is None:
+                missing = _nonfinite_required_objective_metrics(metrics)
+                if missing:
+                    failure_reason = "nonfinite_required_objective_metrics: " + ",".join(missing)
             volume_gate_passed = _volume_gate_passed(metrics)
             physical_gate_passed = _candidate_physical_gate_passed(metrics)
             calibration_process_gate_passed = _candidate_calibration_process_gate_passed(metrics)
@@ -626,16 +632,18 @@ def calibrate_against_lock(
                     ),
                     "physical_gate_condition_codes": physical_context.get("condition_codes"),
                     "physical_gate_dominant_blocker": physical_context.get("dominant_blocker"),
-                    "status": "evaluated",
+                    "status": "invalid_objective_metrics" if failure_reason else "evaluated",
+                    "failure_reason": failure_reason,
                 }
             )
             eval_idx += 1
             _write_calibration_progress(
-                status="evaluated",
+                status="invalid_objective_metrics" if failure_reason else "evaluated",
                 phase=_phase,
                 phase_order=_phase_index,
                 point=point,
                 metrics=metrics,
+                error=failure_reason,
             )
             return metrics
 
@@ -731,6 +739,7 @@ def calibrate_against_lock(
                 "calibration_process_condition_codes",
                 "physical_gate_condition_codes",
                 "physical_gate_dominant_blocker",
+                "failure_reason",
             ],
         )
         writer.writeheader()
@@ -768,6 +777,7 @@ def calibrate_against_lock(
             )
             row["physical_gate_condition_codes"] = ",".join(ev.get("physical_gate_condition_codes") or [])
             row["physical_gate_dominant_blocker"] = ev.get("physical_gate_dominant_blocker")
+            row["failure_reason"] = ev.get("failure_reason")
             writer.writerow(row)
 
     if phase_failure is not None:
@@ -1786,6 +1796,21 @@ def _optional_float(value: Any) -> float | None:
     import math
 
     return result if math.isfinite(result) else None
+
+
+def _nonfinite_required_objective_metrics(metrics: dict[str, Any]) -> list[str]:
+    import math
+
+    missing: list[str] = []
+    for key in ("nse", "kge", "pbias"):
+        try:
+            value = float(metrics.get(key, float("nan")))
+        except Exception:
+            missing.append(key)
+            continue
+        if not math.isfinite(value):
+            missing.append(key)
+    return missing
 
 
 def _lookup_dict(payload: dict[str, Any], path: tuple[str, ...]) -> Any:
