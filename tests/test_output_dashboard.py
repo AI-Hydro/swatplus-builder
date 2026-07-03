@@ -178,3 +178,34 @@ def test_dashboard_collects_locked_calibration_artifacts(tmp_path: Path) -> None
     assert "Calibration progress" in html
     assert "Calibrated locked rerun" in html
     assert "Candidate/window metrics are provisional" in html
+    assert "Metric authority" in html
+    assert "Verified calibration metrics" in html
+
+
+def test_dashboard_prefers_locked_benchmark_metrics_and_alignment(tmp_path: Path) -> None:
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "outputs").mkdir()
+    (tmp_path / "benchmark").mkdir()
+    (tmp_path / "reports" / "metrics.json").write_text(
+        json.dumps({"nse": -9.0, "kge": -9.0, "pbias": -99.0}),
+        encoding="utf-8",
+    )
+    (tmp_path / "outputs" / "alignment.csv").write_text(
+        "date,obs,sim\n2010-01-01,1.0,0.0\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "benchmark" / "metrics.json").write_text(
+        json.dumps({"nse": 0.3, "kge": 0.4, "pbias": 5.0}),
+        encoding="utf-8",
+    )
+    (tmp_path / "benchmark" / "alignment.csv").write_text(
+        "date,obs,sim\n2010-01-01,1.0,0.8\n",
+        encoding="utf-8",
+    )
+
+    data = _collect_all_data(tmp_path)
+
+    assert data["metrics"]["nse"] == 0.3
+    assert data["alignment"]["sim"] == [0.8]
+    assert data["metrics_source"].endswith("benchmark/metrics.json")
+    assert data["alignment_source"].endswith("benchmark/alignment.csv")

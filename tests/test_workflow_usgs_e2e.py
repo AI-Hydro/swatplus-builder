@@ -1159,6 +1159,7 @@ def test_effective_claim_tier_reaches_research_only_with_complete_evidence(monke
     assert Path(data["values"]["hydrograph_comparison_metrics"]).exists()
     assert Path(data["values"]["skill_diagnostics_json"]).exists()
     assert Path(data["values"]["skill_diagnostics_md"]).exists()
+    assert Path(data["values"]["landuse_fidelity_path"]).exists()
     manifest = json.loads(Path(res.artifact_dir, "run_manifest.json").read_text(encoding="utf-8"))
     assert Path(manifest["artifacts"]["hydrograph_comparison_plot"]).exists()
     assert Path(manifest["artifacts"]["hydrograph_comparison_plot_pdf"]).exists()
@@ -1166,6 +1167,7 @@ def test_effective_claim_tier_reaches_research_only_with_complete_evidence(monke
     assert Path(manifest["artifacts"]["hydrograph_observed_simulated_calibrated_plot_pdf"]).exists()
     assert Path(manifest["artifacts"]["skill_diagnostics_json"]).exists()
     assert Path(manifest["artifacts"]["skill_diagnostics_md"]).exists()
+    assert Path(manifest["artifacts"]["landuse_fidelity"]).exists()
     md = Path(res.artifact_dir, "EVIDENCE_SUMMARY.md").read_text(encoding="utf-8")
     assert "Hydrograph comparison PDF" in md
     assert "Observed/simulated/calibrated hydrograph" in md
@@ -2933,7 +2935,7 @@ def test_terminal_trace_separates_orphan_graph_terminals(tmp_path: Path):
     assert report.missing_terminal_gis_ids == []
     assert report.orphan_terminal_gis_ids == []
     assert report.material_missing_terminal_gis_ids == []
-    assert report.failure_class == "generated_topology_mismatch"
+    assert report.failure_class == "single_terminal_scope_valid"
     assert "orphan terminal IDs ignored" not in " ".join(report.notes)
 
 

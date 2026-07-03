@@ -2,6 +2,33 @@
 
 All notable changes to swatplus-builder are documented here.
 
+## [0.7.12] — 2026-07-03
+
+### Fixed
+- Dashboard metric authority now prefers verified locked-calibration metrics
+  when calibration verification exists, while retaining benchmark BFI labels
+  when BFI comes from the baseline lock.
+- Workflow plot regeneration now refreshes the full plot suite after benchmark
+  lock/calibration evidence is available, reducing stale hydrograph/dashboard
+  artifacts.
+- Routing-flow diagnostics now attach terminal-inventory and terminal-area
+  context for any non-passing routing-flow case, including single-terminal
+  basins whose outlet scope is valid but whose SWAT+ channel-rate versus
+  basin-yield semantics still need investigation.
+- Full-overlay land-use fidelity gates now account for mapped area retention,
+  so tiny missing classes are disclosed without falsely blocking otherwise
+  area-complete HRU overlays.
+
+### Evidence
+- Fresh calibrated full-overlay validation on `01547700` completed with
+  `effective_claim_tier=diagnostic`; locked calibrated verification improved
+  KGE and volume behavior while disclosing the NSE decrease.
+- Fresh calibrated full-overlay validation on `03349000` completed with
+  calibration attempted and independently verified, but final claims were
+  downgraded to `exploratory` because physical and routing-flow gates still
+  failed. This release preserves that downgrade rather than promoting the
+  improved metrics.
+
 ## [0.7.11] — 2026-07-02
 
 ### Fixed

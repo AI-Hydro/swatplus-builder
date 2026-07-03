@@ -1090,7 +1090,7 @@ def _check_locked_txt_routing_flow(
     status = "passed" if passed else ("failed" if calibration_blocking else "warning")
     flags = list(report.flags or [])
     terminal_trace: dict[str, object] = {}
-    if "multiple_terminal_outlets_present" in flags or _is_virtual_all_terminal_scope(outlet_scope, outlet_policy):
+    if not passed or "multiple_terminal_outlets_present" in flags or _is_virtual_all_terminal_scope(outlet_scope, outlet_policy):
         try:
             from ..output.mass_trace import trace_terminal_inventory
 
@@ -1108,6 +1108,17 @@ def _check_locked_txt_routing_flow(
                 "terminal_inventory_count": len(terminal_report.terminal_inventory),
                 "terminal_shared_upstream_area_km2": terminal_report.shared_upstream_area_km2,
                 "terminal_overlap_pair_count": len(terminal_report.terminal_overlap_pairs),
+                "terminal_area_scope_class": getattr(terminal_report, "terminal_area_scope_class", None),
+                "terminal_area_scope_flags": getattr(terminal_report, "terminal_area_scope_flags", []),
+                "terminal_area_scope_claim_impact": getattr(
+                    terminal_report, "terminal_area_scope_claim_impact", None
+                ),
+                "terminal_outlet_conflict_class": getattr(terminal_report, "terminal_outlet_conflict_class", None),
+                "terminal_outlet_conflict_flags": getattr(terminal_report, "terminal_outlet_conflict_flags", []),
+                "terminal_outlet_conflict_claim_impact": getattr(
+                    terminal_report, "terminal_outlet_conflict_claim_impact", None
+                ),
+                "terminal_authority_area_check": getattr(terminal_report, "terminal_authority_area_check", {}),
                 "terminal_overlap_pairs": [
                     row.model_dump()
                     for row in terminal_report.terminal_overlap_pairs[:10]
@@ -1196,6 +1207,7 @@ def _check_locked_txt_routing_flow(
             flags,
             passed=passed,
             calibration_blocking=calibration_blocking,
+            terminal_failure_class=terminal_trace.get("terminal_failure_class"),
         ),
         **terminal_trace,
     }
@@ -1215,13 +1227,24 @@ def _check_locked_txt_routing_flow(
     return payload
 
 
-def _routing_flow_next_action(flags: list[str], *, passed: bool, calibration_blocking: bool) -> str:
+def _routing_flow_next_action(
+    flags: list[str],
+    *,
+    passed: bool,
+    calibration_blocking: bool,
+    terminal_failure_class: object = None,
+) -> str:
     if passed:
         return "No routing-flow action required."
     flag_set = set(flags)
     if "multiple_terminal_outlets_present" in flag_set:
         return "Review terminal outlet inventory and gauge-to-terminal selection before research-grade routing claims."
     if "channel_inflow_exceeds_basin_wateryld" in flag_set:
+        if terminal_failure_class == "single_terminal_scope_valid":
+            return (
+                "Selected terminal scope is supported by terminal inventory; audit SWAT+ channel-rate "
+                "versus basin-yield output semantics before promoting a research-grade routing claim."
+            )
         return (
             "Inspect routing-unit to channel transfer and SWAT+ output unit interpretation; "
             "selected-channel inflow exceeds basin water yield."

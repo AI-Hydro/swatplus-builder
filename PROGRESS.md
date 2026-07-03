@@ -7,6 +7,122 @@ Phase 3L — Full-Mode Engine Compatibility & Research-Grade Pipeline
 
 **Current focus:** The canonical full-mode workflow is implemented and auditable, but the objective-suite target is still scientifically open. As of 2026-07-02, the summarize-only objective report has been regenerated from refreshed evidence for all 11 canonical rows where available: seven fresh `0.7.10` no-calibration reruns, two `0.7.9` no-calibration reruns, and two current hardening calibration runs. It reports `research_grade_count=0/11`, `target_hypothesis_evaluation.status=not_supported_by_current_evidence`, and blocker domains `science=9`, `diagnostics=1`, `provenance=1`. Treat older `69/97`, `96/97`, one-research-grade, or stale-provenance/build-row language as historical unless explicitly tied to an older dated entry.
 
+### [2026-07-03] — Full-overlay calibrated validation passes diagnostic gates
+
+Ran the fresh calibrated full-overlay validation for Marsh Creek:
+
+- `/Users/mgalib/swatplus_runs/calibration_validate_20260703/01547700_2010_2018_fulloverlay_diag`
+- Command surface: `swat workflow run --usgs-id 01547700 --model-family full
+  --start 2010-01-01 --end 2018-12-31 --warmup-years 3 --claim-tier
+  diagnostic --hru-mode full_overlay --min-hru-fraction 0.001 --json`.
+- The workflow completed successfully with `effective_claim_tier=diagnostic`.
+  Passed gates: contract policy, physical gates, routing flow, fresh engine
+  output, benchmark lock, outlet provenance, sensitivity screen, soil fidelity,
+  land-use fidelity, and calibration verification. No gates failed.
+- Locked benchmark metrics were `NSE=0.2979`, `KGE=0.3592`,
+  `PBIAS=+13.76%`; locked calibrated verification metrics were `NSE=0.2442`,
+  `KGE=0.5549`, `PBIAS=-13.11%`. The calibration is therefore a valid
+  diagnostic improvement on KGE and volume-gate behavior, not a blanket skill
+  improvement: NSE decreased by `0.0537`.
+- The selected terminal remains stable (`GIS 351`, single terminal); baseline
+  and final routing-flow gates both passed. Land-use fidelity passed under the
+  new area-aware rule with `99.9845%` mapped area retained and only the tiny
+  `UCOM` class missing (`20/128934` valid pixels).
+- Visual QA of
+  `calibration/hydrograph_comparison/hydrograph_observed_simulated_calibrated.png`
+  shows the calibrated trace is no longer near-zero and is more responsive, but
+  it still creates extra sharp events and misses some observed extremes. The
+  retained skill diagnostic is `baseflow_recession_partition` with
+  `low_baseflow_flashy_response` and `slow_recession_limb`; the next source
+  backed probes are `LAT_TTIME`, `LATQ_CO`, `PERCO`, `ALPHA_BF`, and `RCHG_DP`.
+- Regenerated `dashboard.html` after a dashboard patch so the top metric cards
+  use verified calibrated metrics when locked calibration verification exists;
+  benchmark metrics remain plotted and labeled separately.
+
+Verification:
+
+- `PYTHONPATH=src python -m pytest -q tests/test_output_dashboard.py tests/test_output_plots_wrapper.py tests/test_output_plots_landuse_composition.py tests/test_landuse_fidelity.py tests/test_governance_gates.py tests/test_workflow_usgs_e2e.py tests/test_output_eval.py tests/test_script_policy.py`
+
+### [2026-07-03] — 0.7.11 PyPI release
+
+Released `swatplus-builder==0.7.11` to PyPI and pushed tag `v0.7.11`
+after the evidence-report hardening work. Clean PyPI smoke verified package
+import, `swat workflow negotiate --help`, and `swat health --json`; the health
+check was degraded only because the temporary environment did not include the
+local SWAT+ engine/GIS environment.
+
+### [2026-07-03] — Post-lock visual evidence and area-aware land-use fidelity
+
+Fixed a display/evidence inconsistency exposed by the fresh full-overlay
+`01547700` validation: pre-lock `reports/metrics.json` and
+`outputs/alignment.csv` could drive hydrograph titles and dashboard traces even
+after `benchmark/metrics.json` and `benchmark/alignment.csv` became the locked
+authority. Plot and dashboard collectors now prefer benchmark artifacts and
+fall back to legacy wrapper artifacts only when no lock exists. The governed
+workflow also regenerates the full plot suite after the benchmark lock, so
+final hydrographs no longer show stale pre-lock metrics.
+
+Reworked the land-use-fidelity gate from strict class-count-only blocking to
+auditable area-aware blocking. Full overlay and acceptable NLCD vintage are
+still required; missing classes are tolerated only when the retained mapped
+area is at least `99.5%`. The fidelity block now records total valid pixels,
+missing valid pixels, area retention, and missing-area fraction. The dashboard
+also receives a standalone `reports/landuse_fidelity.json` artifact, and the
+land-use composition figure discloses both class retention and area retention.
+
+Fresh validation run:
+
+- `/Users/mgalib/swatplus_runs/landuse_gate_validate_20260703/01547700_2010_2018_fulloverlay_nocal`
+- Locked benchmark metrics: `NSE=0.2985`, `KGE=0.3596`, `PBIAS=+13.74%`.
+- Routing-flow gate passed; land-use-fidelity gate passed with `14/15` classes
+  retained but `99.9845%` area retained (`UCOM` missing, `20/128934` valid
+  NLCD pixels, `0.0155%` missing area).
+- Remaining blockers are honest scientific/process blockers:
+  `physical_gates` failed and `sensitivity_screen` was not run because this was
+  an explicit no-calibration validation.
+- Visual QA confirmed the regenerated hydrograph title now reads
+  `NSE=0.30, KGE=0.36`, matching `benchmark/metrics.json`, and the land-use
+  composition panel shows `Area retained=99.98%` and `Missing area=0.016%`.
+
+Decluttered the superseded stale probe folder
+`/Users/mgalib/swatplus_runs/landuse_full_overlay_probe_20260703`.
+
+Verification:
+
+- `PYTHONPATH=src python -m pytest -q tests/test_output_eval.py tests/test_workflow_usgs_e2e.py tests/test_script_policy.py tests/test_output_dashboard.py tests/test_output_plots_wrapper.py tests/test_output_plots_landuse_composition.py tests/test_landuse_fidelity.py tests/test_governance_gates.py`
+- `PYTHONPATH=src python -m py_compile src/swatplus_builder/output/eval.py src/swatplus_builder/output/mass_trace.py src/swatplus_builder/workflows/usgs_e2e.py src/swatplus_builder/calibration/diagnostic_calibrator.py scripts/run_objective_10basin.py src/swatplus_builder/governance/gates.py src/swatplus_builder/output/dashboard.py src/swatplus_builder/output/landuse_fidelity.py src/swatplus_builder/output/plots/landuse_composition.py src/swatplus_builder/output/plots/wrapper.py`
+- `git diff --check`
+
+### [2026-07-03] — 12031000 routing blocker narrowed to output-semantics audit
+
+Investigated the strongest current objective-suite row,
+`/Users/mgalib/swatplus_runs/objective_refresh_v0710/12031000_2000_2019_nocal`.
+The hydrograph/metrics remain good (`NSE=0.6946`, `KGE=0.6429`,
+`PBIAS=-2.94%`), but research-grade claims are still blocked. Fresh terminal
+inventory now shows the selected terminal is not the likely culprit:
+selected GIS `113` is the only terminal, nearest/largest selected terminal,
+and covers `0.977` of official USGS drainage area. The correct interpretation
+is therefore: terminal scope is supported, while SWAT+ channel-rate versus
+basin-yield mass-closure semantics remain unresolved (`channel outflow
+6.8978e10 m3` versus basin/routed water-yield `5.0621e10 m3`).
+
+Implementation hardening from this diagnosis:
+
+- Terminal inventory now runs for any routing-flow non-pass, not only
+  multi-terminal rows, so single-terminal routing warnings retain explicit
+  terminal-area and outlet-conflict evidence.
+- Valid single-terminal cases are classified as `single_terminal_scope_valid`
+  instead of the misleading `generated_topology_mismatch`.
+- Objective summaries treat `single_terminal_scope_valid` as non-blocking
+  context; the blocker remains `fail_mass_closure` until the SWAT+ output
+  semantics are source-backed and reconciled.
+- Known SWAT+ `channel_sd*`/`channel_sdmorph*` flow columns are interpreted as
+  `m^3/s` by file family before trusting generic unit-row parsing.
+
+Verification so far:
+
+- `PYTHONPATH=src python -m pytest -q tests/test_output_eval.py::test_channel_sd_flow_unit_uses_known_swatplus_rate_semantics tests/test_workflow_usgs_e2e.py::test_terminal_trace_records_missing_graph_terminals tests/test_workflow_usgs_e2e.py::test_terminal_trace_separates_orphan_graph_terminals tests/test_workflow_usgs_e2e.py::test_locked_calibrated_txtinout_routing_gate_uses_mass_trace tests/test_script_policy.py::test_objective_suite_primary_blocker_ignores_valid_single_terminal_scope`
+
 ### [2026-07-02] — Completed objective-suite refresh and report-classification cleanup
 
 Completed the remaining stale objective-suite no-calibration reruns under
@@ -9958,3 +10074,42 @@ Verification:
 
 - `PYTHONPATH=src python -m py_compile src/swatplus_builder/calibration/locked_benchmark.py src/swatplus_builder/calibration/diagnostic_calibrator.py`
 - `PYTHONPATH=src pytest -q tests/test_locked_benchmark.py::test_calibrate_against_lock_uses_sensitivity_guided_anchor_combinations tests/test_locked_benchmark.py::test_calibrate_against_lock_scores_virtual_outlet_lock_with_same_scope tests/test_workflow_usgs_e2e.py::test_diagnostic_calibration_provenance_records_staged_protocol tests/test_workflow_usgs_e2e.py::test_diagnostic_calibration_blocks_when_screen_retains_no_parameters tests/test_workflow_usgs_e2e.py::test_diagnostic_calibration_retains_string_promotion_gate`
+
+## 2026-07-03 — Release-Candidate Validation: 01547700 And 03349000
+
+Ran fresh calibrated full-overlay validation on two contrasting basins before
+any release bump.
+
+Findings:
+
+- `01547700` completed at
+  `/Users/mgalib/swatplus_runs/calibration_validate_20260703/01547700_2010_2018_fulloverlay_diag`
+  with `effective_claim_tier=diagnostic`. Locked benchmark metrics were
+  `NSE=0.2979`, `KGE=0.3592`, `PBIAS=+13.76%`; locked calibrated verification
+  metrics were `NSE=0.2442`, `KGE=0.5549`, `PBIAS=-13.11%`. This supports a
+  diagnostic calibration improvement in KGE and volume behavior, while noting
+  that NSE decreased by `0.0537`.
+- `03349000` completed at
+  `/Users/mgalib/swatplus_runs/release_candidate_validate_20260703/03349000_2010_2018_fulloverlay_diag`
+  with calibration attempted and independently verified, but final claims were
+  downgraded to `effective_claim_tier=exploratory`. Baseline metrics were
+  `NSE=-0.4391`, `KGE=0.0652`, `PBIAS=-51.48%`; locked calibrated verification
+  metrics were `NSE=-0.0243`, `KGE=0.3565`, `PBIAS=-17.95%`. The locked rerun
+  improved NSE/KGE/volume, but `physical_gates` and `routing_flow` still failed,
+  so the package correctly blocked a diagnostic/research claim.
+- Visual QA of the 03349000 calibrated hydrograph confirms the near-zero-flow
+  failure mode is not present. The model is responsive after calibration, but
+  still has timing/magnitude problems and several over-sharp simulated peaks.
+- Dashboard QA confirmed the HTML dashboard reports verified calibrated metrics
+  from `verification_summary.json`, shows calibration provenance, and links the
+  best-solution/history artifacts.
+
+Release interpretation:
+
+- Current governance is conservative and scientifically defensible: calibration
+  can improve a basin without promoting the claim when final gates fail.
+- Do not advertise 03349000 as a calibrated success case. Use it as a
+  release-candidate negative control showing honest downgrade/block behavior.
+- Remaining polish debt is mostly dashboard/spatial presentation quality for
+  large full-overlay basins, especially dense HRU maps; this is not a claim
+  governance blocker.

@@ -657,6 +657,29 @@ def test_evaluate_run_rejects_invalid_outlet_policy(tmp_path):
         )
 
 
+def test_channel_sd_flow_unit_uses_known_swatplus_rate_semantics(tmp_path):
+    from swatplus_builder.output.eval import _unit_for_column
+    from swatplus_builder.output.reader import read_output_file
+
+    txt = tmp_path / "TxtInOut"
+    txt.mkdir()
+    path = txt / "channel_sd_day.txt"
+    _write(
+        path,
+        """\
+        channel_sd_day
+        jday mon day yr unit gis_id name area precip evap seep flo_stor sed_stor null flo_in sed_in null flo_out sed_out water_temp
+        ha m^3 m^3 m^3 m^3 tons m^3/s tons m^3/s tons degc
+        1 1 1 2015 1 1 cha01 0 0 0 0 0 0 0 1.0 0 0 1.0 0 0
+        """,
+    )
+
+    table = read_output_file(path)
+
+    assert _unit_for_column(table, "flo_in") == "m^3/s"
+    assert _unit_for_column(table, "flo_out") == "m^3/s"
+
+
 def _write_flow_sim(path, dates, flows):
     header = "channel_sd_day\njday mon day yr unit gis_id name flo_out\nn/a n/a n/a n/a n/a n/a n/a m3/s\n"
     rows = "\n".join(

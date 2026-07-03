@@ -148,6 +148,14 @@ def landuse_fidelity_gate(values: dict[str, Any]) -> dict[str, Any]:
     except (TypeError, ValueError):
         retention = None
     try:
+        area_retention = float(block.get("landuse_area_retention_fraction"))
+    except (TypeError, ValueError):
+        area_retention = None
+    try:
+        missing_area = float(block.get("landuse_missing_area_fraction"))
+    except (TypeError, ValueError):
+        missing_area = None
+    try:
         mismatch = abs(float(block.get("landuse_vintage_mismatch_years")))
     except (TypeError, ValueError):
         mismatch = None
@@ -158,7 +166,13 @@ def landuse_fidelity_gate(values: dict[str, Any]) -> dict[str, Any]:
     if retention is None:
         failures.append("landuse_class_retention_fraction missing")
     elif retention < 0.999:
-        failures.append(f"landuse_class_retention_fraction={retention:.2f}")
+        if area_retention is None:
+            failures.append(f"landuse_class_retention_fraction={retention:.2f}")
+        elif area_retention < 0.995:
+            failures.append(
+                f"landuse_class_retention_fraction={retention:.2f}; "
+                f"landuse_area_retention_fraction={area_retention:.3f}"
+            )
     if mismatch is None:
         failures.append("landuse_vintage_mismatch_years missing")
     elif mismatch > 5.0:
@@ -169,13 +183,16 @@ def landuse_fidelity_gate(values: dict[str, Any]) -> dict[str, Any]:
             "passed": False,
             "reason": "land-use fidelity degraded: " + "; ".join(failures),
         }
+    reason_parts = [
+        f"hru_mode={hru_mode}",
+        f"landuse_class_retention_fraction={retention:.2f}",
+    ]
+    if missing_area is not None and retention is not None and retention < 0.999:
+        reason_parts.append(f"landuse_missing_area_fraction={missing_area:.4f}")
+    reason_parts.append(f"landuse_vintage_mismatch_years={mismatch:.1f}")
     return {
         "passed": True,
-        "reason": (
-            f"hru_mode={hru_mode}; "
-            f"landuse_class_retention_fraction={retention:.2f}; "
-            f"landuse_vintage_mismatch_years={mismatch:.1f}"
-        ),
+        "reason": "; ".join(reason_parts),
     }
 
 

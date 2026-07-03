@@ -2483,7 +2483,7 @@ def _primary_blocker(row: Row) -> str:
         calibration_regression,
         row.physical_dominant_blocker,
         row.terminal_scope_blocker,
-        row.terminal_failure_class if row.routing_flow_gates in {"failed", "warning"} else None,
+        _blocking_status(row.terminal_failure_class) if row.routing_flow_gates in {"failed", "warning"} else None,
         _blocking_status(row.routing_flow_closure_status),
         row.blocker if row.blocker == "soil_realism_gate_failed" else None,
         "soil_fidelity" if "soil_fidelity" in row.gates_failed else None,
@@ -2496,11 +2496,18 @@ def _primary_blocker(row: Row) -> str:
     return "none"
 
 
+_NON_BLOCKING_TERMINAL_CLASSES = {
+    "single_terminal_scope_valid",
+}
+
+
 def _blocking_status(value: str | None) -> str | None:
     if value is None:
         return None
     name = str(value)
     if name.lower() in {"none", "null", "unknown", "pass", "passed", "success"}:
+        return None
+    if name in _NON_BLOCKING_TERMINAL_CLASSES:
         return None
     return name
 

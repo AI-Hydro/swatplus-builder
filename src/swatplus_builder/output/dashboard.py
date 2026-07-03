@@ -107,24 +107,28 @@ def _collect_all_data(run_dir: Path) -> dict[str, Any]:
         data["governance_evaluated"] = False
 
     # ── metrics.json ─────────────────────────────────────────────────────
-    metrics = _load_json(run_dir / "reports" / "metrics.json")
-    if not metrics:
-        metrics = _load_json(run_dir / "benchmark" / "metrics.json")
+    metrics_path = _first_existing(
+        [
+            run_dir / "benchmark" / "metrics.json",
+            run_dir / "reports" / "metrics.json",
+        ]
+    )
+    metrics = _load_json(metrics_path) if metrics_path is not None else None
     if metrics:
         data["metrics"] = _coerce_metrics(metrics)
+        data["metrics_source"] = str(metrics_path)
 
     # ── alignment.csv (observed vs simulated daily flow) ─────────────────
-    alignment_csv = run_dir / "outputs" / "alignment.csv"
-    if alignment_csv.is_file():
-        data["alignment"] = _read_alignment(alignment_csv)
-    # Also check alternates from calibration
-    for alt in [
+    alignment_csv = _first_existing(
+        [
         run_dir / "benchmark" / "alignment.csv",
         run_dir / "benchmark" / "alignment_calibration.csv",
-    ]:
-        if alt.is_file() and not data.get("alignment"):
-            data["alignment"] = _read_alignment(alt)
-            data["alignment_source"] = str(alt)
+            run_dir / "outputs" / "alignment.csv",
+        ]
+    )
+    if alignment_csv is not None:
+        data["alignment"] = _read_alignment(alignment_csv)
+        data["alignment_source"] = str(alignment_csv)
     # Build seasonal (monthly) aggregation from alignment data
     if data.get("alignment"):
         data["seasonal"] = _build_seasonal(data["alignment"])
@@ -586,12 +590,20 @@ def _javascript() -> str:
   const physStatus = D.physical_gates_status || 'unknown';
   const routStatus = D.routing_gates_status || 'unknown';
 
-  const m = D.metrics || {};
+  const finalMetrics = (D.calibration_success && D.calibration_verification_metrics)
+    ? D.calibration_verification_metrics
+    : null;
+  const m = finalMetrics || D.metrics || {};
+  const metricAuthorityLabel = finalMetrics
+    ? 'Verified calibration metrics'
+    : (D.metrics_source ? 'Locked benchmark metrics' : 'Run metrics');
   const nse = m.nse != null ? m.nse : (D.run_config && D.run_config.baseline_nse);
   const kge = m.kge != null ? m.kge : (D.run_config && D.run_config.baseline_kge);
   const pbias = m.pbias != null ? m.pbias : (m.pbias_pct != null ? m.pbias_pct : null);
-  const bfiSim = m.bfi_sim != null ? m.bfi_sim : (m.bfi != null ? m.bfi : null);
-  const bfiObs = m.bfi_obs != null ? m.bfi_obs : null;
+  const bfiSource = D.metrics || {};
+  const bfiSim = bfiSource.bfi_sim != null ? bfiSource.bfi_sim : (bfiSource.bfi != null ? bfiSource.bfi : null);
+  const bfiObs = bfiSource.bfi_obs != null ? bfiSource.bfi_obs : null;
+  const bfiLabelPrefix = finalMetrics ? 'Benchmark ' : '';
   const mc = metricColor(nse, kge, pbias);
 
   const gatesPassed = D.gates_passed || [];
@@ -630,11 +642,12 @@ def _javascript() -> str:
   html += '<div class="hero-metric"><div class="val ' + mc + '">' + fmtNum(nse) + '</div><div class="lbl">NSE</div></div>';
   html += '<div class="hero-metric"><div class="val ' + mc + '">' + fmtNum(kge) + '</div><div class="lbl">KGE</div></div>';
   html += '<div class="hero-metric"><div class="val ' + mc + '">' + fmtNum(pbias, 1) + '%</div><div class="lbl">PBIAS</div></div>';
-  html += '<div class="hero-metric"><div class="val">' + fmtNum(bfiSim) + '</div><div class="lbl">BFI (sim)</div></div>';
+  html += '<div class="hero-metric"><div class="val">' + fmtNum(bfiSim) + '</div><div class="lbl">' + bfiLabelPrefix + 'BFI (sim)</div></div>';
   if (bfiObs != null) {
-    html += '<div class="hero-metric"><div class="val">' + fmtNum(bfiObs) + '</div><div class="lbl">BFI (obs)</div></div>';
+    html += '<div class="hero-metric"><div class="val">' + fmtNum(bfiObs) + '</div><div class="lbl">' + bfiLabelPrefix + 'BFI (obs)</div></div>';
   }
   html += '</div>';
+  html += '<div class="hero-usgs" style="margin-top:12px;">Metric authority: ' + esc(metricAuthorityLabel) + '</div>';
   html += '</div>';
 
   // ── Gate Status Grid ─────────────────────────────────────────────────

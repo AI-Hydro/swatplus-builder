@@ -1297,6 +1297,57 @@ def test_objective_suite_primary_blocker_ignores_pass_closure_status(tmp_path: P
     assert row.primary_blocker == "landuse_fidelity"
 
 
+def test_objective_suite_primary_blocker_ignores_valid_single_terminal_scope(tmp_path: Path) -> None:
+    evidence = tmp_path / "evidence_summary.json"
+    physical_gates = tmp_path / "physical_gates.json"
+    routing_gates = tmp_path / "routing_flow_gates.json"
+    physical_gates.write_text(
+        json.dumps({"status": "passed", "condition_codes": [], "dominant_blocker": None}),
+        encoding="utf-8",
+    )
+    routing_gates.write_text(
+        json.dumps(
+            {
+                "status": "warning",
+                "closure_status": "fail_mass_closure",
+                "terminal_trace_path": str(tmp_path / "terminal_trace.json"),
+                "terminal_failure_class": "single_terminal_scope_valid",
+            }
+        ),
+        encoding="utf-8",
+    )
+    evidence.write_text(
+        json.dumps(
+            {
+                "success": True,
+                "effective_claim_tier": "exploratory",
+                "gates_passed": ["physical_gates"],
+                "gates_failed": ["routing_flow"],
+                "values": {
+                    "warmup_years": 3,
+                    "fresh_engine_run": True,
+                    "soil_mode": "high_fidelity",
+                    "soil_provenance_mode": "gnatsgo_raster",
+                    "pct_fallback_soils": 0.0,
+                    "physical_gates_status": "passed",
+                    "routing_flow_gates_status": "warning",
+                    "routing_flow_closure_status": "fail_mass_closure",
+                    "routing_flow_gates_path": str(routing_gates),
+                    "physical_gates_path": str(physical_gates),
+                    "calibration_status": "not_run",
+                    "metrics": {"kge": 0.64, "nse": 0.69, "pbias": -2.9},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    row = summarize_evidence("12031000", evidence)
+
+    assert row.terminal_failure_class == "single_terminal_scope_valid"
+    assert row.primary_blocker == "fail_mass_closure"
+
+
 def test_objective_suite_classifies_mass_closure_failure_as_diagnostics() -> None:
     assert _blocker_domain("fail_mass_closure") == "diagnostics"
 

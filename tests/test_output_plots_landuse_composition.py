@@ -59,6 +59,8 @@ def test_summarize_landuse_composition_compares_present_and_retained(tmp_path: P
     assert values.n_present_classes == 6
     assert values.n_retained_classes == 2
     assert values.retention_fraction == pytest.approx(2 / 6)
+    assert values.area_retention_fraction == pytest.approx(8 / 16)
+    assert values.missing_area_fraction == pytest.approx(8 / 16)
     assert values.landuse_vintage_year == 2021
     assert values.sim_midpoint_year == 2010
     assert values.landuse_vintage_mismatch_years == 11

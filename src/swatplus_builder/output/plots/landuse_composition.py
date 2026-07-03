@@ -22,6 +22,8 @@ class LanduseCompositionValues:
     n_present_classes: int
     n_retained_classes: int
     retention_fraction: float | None
+    area_retention_fraction: float | None
+    missing_area_fraction: float | None
     landuse_vintage_year: int | None
     sim_midpoint_year: int | None
     landuse_vintage_mismatch_years: int | None
@@ -77,6 +79,16 @@ def plot_landuse_composition(
     retention = (
         "n/a" if values.retention_fraction is None else f"{100.0 * values.retention_fraction:.0f}%"
     )
+    area_retention = (
+        "n/a"
+        if values.area_retention_fraction is None
+        else f"{100.0 * values.area_retention_fraction:.2f}%"
+    )
+    missing_area = (
+        "n/a"
+        if values.missing_area_fraction is None
+        else f"{100.0 * values.missing_area_fraction:.3f}%"
+    )
     mismatch = (
         "n/a"
         if values.landuse_vintage_mismatch_years is None
@@ -87,6 +99,8 @@ def plot_landuse_composition(
         ("Classes present", str(values.n_present_classes)),
         ("Classes retained", str(values.n_retained_classes)),
         ("Class retention", retention),
+        ("Area retained", area_retention),
+        ("Missing area", missing_area),
         ("NLCD vintage", str(values.landuse_vintage_year or "n/a")),
         ("Sim midpoint", str(values.sim_midpoint_year or "n/a")),
         ("Vintage offset", mismatch),
@@ -94,7 +108,7 @@ def plot_landuse_composition(
     y0 = 0.94
     ax_note.text(0.0, y0, "Representation disclosure", fontsize=13, fontweight="bold", va="top")
     for i, (label, value) in enumerate(summary_lines):
-        yy = y0 - 0.12 - i * 0.085
+        yy = y0 - 0.11 - i * 0.073
         ax_note.text(0.0, yy, label, fontsize=9.5, color="#4A5560", va="top")
         ax_note.text(0.66, yy, value, fontsize=9.5, fontweight="bold", color="#1D2630", va="top")
     ax_note.text(
@@ -168,6 +182,8 @@ def summarize_landuse_composition(
         n_present_classes=int(block.get("landuse_classes_present_count") or len(present_fraction)),
         n_retained_classes=int(block.get("landuse_classes_retained_count") or len(retained_fraction)),
         retention_fraction=_as_float(block.get("landuse_class_retention_fraction")),
+        area_retention_fraction=_as_float(block.get("landuse_area_retention_fraction")),
+        missing_area_fraction=_as_float(block.get("landuse_missing_area_fraction")),
         landuse_vintage_year=_as_int(block.get("landuse_vintage_year")),
         sim_midpoint_year=_as_int(block.get("sim_midpoint_year")),
         landuse_vintage_mismatch_years=_as_int(block.get("landuse_vintage_mismatch_years")),

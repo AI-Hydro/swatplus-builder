@@ -65,9 +65,30 @@ def build_landuse_fidelity_block(
     retained_set = set(retained)
     present_set = set(present_swat_codes)
     missing = sorted(present_set - retained_set)
+    missing_set = set(missing)
     retained_fraction = (
         len(retained_set & present_set) / len(present_set)
         if present_set
+        else None
+    )
+    total_landuse_pixels = sum(
+        int(d.get("pixel_count") or 0)
+        for d in present_details
+        if isinstance(d, dict)
+    )
+    missing_landuse_pixels = sum(
+        int(d.get("pixel_count") or 0)
+        for d in present_details
+        if isinstance(d, dict) and str(d.get("swatplus_landuse") or "") in missing_set
+    )
+    landuse_area_retention_fraction = (
+        1.0 - (missing_landuse_pixels / total_landuse_pixels)
+        if total_landuse_pixels > 0
+        else None
+    )
+    landuse_missing_area_fraction = (
+        missing_landuse_pixels / total_landuse_pixels
+        if total_landuse_pixels > 0
         else None
     )
 
@@ -87,6 +108,10 @@ def build_landuse_fidelity_block(
             "landuse_classes_retained_count": len(retained),
             "landuse_classes_missing_from_hrus": missing,
             "landuse_class_retention_fraction": retained_fraction,
+            "landuse_total_valid_pixels": total_landuse_pixels,
+            "landuse_missing_valid_pixels": missing_landuse_pixels,
+            "landuse_area_retention_fraction": landuse_area_retention_fraction,
+            "landuse_missing_area_fraction": landuse_missing_area_fraction,
             "landuse_present_details": present_details,
             "landuse_vintage_year": vintage_year,
             "sim_midpoint_year": sim_midpoint,

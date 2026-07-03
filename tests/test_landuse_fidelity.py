@@ -65,6 +65,10 @@ def test_build_landuse_fidelity_block_reports_present_vs_retained_classes(tmp_pa
     assert block["landuse_classes_retained"] == ["AGRL", "FRSD"]
     assert block["landuse_classes_missing_from_hrus"] == ["FRSE", "HAY", "WATR"]
     assert block["landuse_class_retention_fraction"] == 2 / 5
+    assert block["landuse_total_valid_pixels"] == 5
+    assert block["landuse_missing_valid_pixels"] == 3
+    assert block["landuse_area_retention_fraction"] == 2 / 5
+    assert block["landuse_missing_area_fraction"] == 3 / 5
     assert block["landuse_vintage_year"] == 2021
     assert block["sim_midpoint_year"] == 2010
     assert block["landuse_vintage_mismatch_years"] == 11

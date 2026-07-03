@@ -180,6 +180,7 @@ class TerminalTraceReport(BaseModel):
     terminal_outlet_conflict_flags: list[str] = Field(default_factory=list)
     terminal_outlet_conflict_claim_impact: str | None = None
     failure_class: Literal[
+        "single_terminal_scope_valid",
         "selected_outlet_wrong",
         "selected_outlet_partial_basin",
         "multi_terminal_requires_aggregation",
@@ -2012,6 +2013,7 @@ def _classify_terminal_failure(
     all_terminal_union_km2: float | None,
     shared_area_km2: float,
 ) -> Literal[
+    "single_terminal_scope_valid",
     "selected_outlet_wrong",
     "selected_outlet_partial_basin",
     "multi_terminal_requires_aggregation",
@@ -2026,7 +2028,13 @@ def _classify_terminal_failure(
     if not selected_row.is_selected_evaluation_outlet:
         return "selected_outlet_wrong"
     if terminal_count <= 1:
-        return "generated_topology_mismatch"
+        if all_terminal_union_km2 is not None and delineated_area_km2 is not None:
+            mismatch = abs(all_terminal_union_km2 - delineated_area_km2) / max(delineated_area_km2, 1e-9)
+            if mismatch > 0.05:
+                return "generated_topology_mismatch"
+        if shared_area_km2 > 0:
+            return "generated_topology_mismatch"
+        return "single_terminal_scope_valid"
     selected_share = selected_row.percent_of_all_terminal_outflow or 0.0
     basin_share = None
     if delineated_area_km2 and selected_row.upstream_area_km2 is not None:

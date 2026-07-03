@@ -119,6 +119,7 @@ def _git_sha() -> str:
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8")
     return path
 
@@ -1282,6 +1283,11 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
             sim_start=request.start,
             sim_end=request.end,
         )
+        landuse_fidelity_path = _write_json(
+            out / "reports" / "landuse_fidelity.json",
+            values["landuse_fidelity"],
+        )
+        values["landuse_fidelity_path"] = str(landuse_fidelity_path)
         _event(
             "landuse_fidelity",
             values["landuse_fidelity"].get("status", "unknown"),
@@ -1504,6 +1510,7 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
             _event("volume_bias_diagnostics", "failed", error=str(exc)[-500:])
 
     try:
+        from ..output.plots.wrapper import generate_all_plots
         from ..output.plots.forcing_context import plot_forcing_context
         from ..output.plots.landuse_composition import plot_landuse_composition
         from ..output.plots.spatial import plot_basin_spatial_overview
@@ -1515,11 +1522,22 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
             "usgs_id": request.usgs_id,
             "basin_name": f"USGS {request.usgs_id}",
             "time_range": f"{request.start[:4]}-{request.end[:4]}",
+            "start_date": request.start,
+            "end_date": request.end,
             "model_family": request.model_family,
             "soil_mode": values.get("soil_mode"),
             "pct_fallback_soils": values.get("pct_fallback_soils"),
         }
         generated_plots: list[str] = []
+        try:
+            plot_suite_summary = generate_all_plots(out, metadata=plot_metadata)
+            generated_plots.extend(
+                str(name)
+                for name in plot_suite_summary.get("files", [])
+                if isinstance(name, str)
+            )
+        except Exception as exc:
+            values["plot_suite_regeneration_error"] = str(exc)
         generated_plots.extend(
             plot_basin_spatial_overview(
                 out,
@@ -1786,6 +1804,11 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
             **(
                 {"landuse_composition_plot_pdf": str(values.get("landuse_composition_plot_pdf"))}
                 if values.get("landuse_composition_plot_pdf")
+                else {}
+            ),
+            **(
+                {"landuse_fidelity": str(values.get("landuse_fidelity_path"))}
+                if values.get("landuse_fidelity_path")
                 else {}
             ),
             **(
@@ -2213,7 +2236,7 @@ def _evaluate_routing_flow_gate(run_dir: Path, values: dict[str, Any]) -> dict[s
     reason = "routing flow closure passed" if passed else f"routing flow closure status={closure_status}"
     flags = list(report.flags or [])
     terminal_trace: dict[str, Any] = {}
-    if "multiple_terminal_outlets_present" in flags or _is_virtual_all_terminal_scope(values):
+    if not passed or "multiple_terminal_outlets_present" in flags or _is_virtual_all_terminal_scope(values):
         try:
             from ..output.mass_trace import trace_terminal_inventory
 
@@ -2230,6 +2253,17 @@ def _evaluate_routing_flow_gate(run_dir: Path, values: dict[str, Any]) -> dict[s
                 "terminal_inventory_count": len(terminal_report.terminal_inventory),
                 "terminal_shared_upstream_area_km2": terminal_report.shared_upstream_area_km2,
                 "terminal_overlap_pair_count": len(terminal_report.terminal_overlap_pairs),
+                "terminal_area_scope_class": getattr(terminal_report, "terminal_area_scope_class", None),
+                "terminal_area_scope_flags": getattr(terminal_report, "terminal_area_scope_flags", []),
+                "terminal_area_scope_claim_impact": getattr(
+                    terminal_report, "terminal_area_scope_claim_impact", None
+                ),
+                "terminal_outlet_conflict_class": getattr(terminal_report, "terminal_outlet_conflict_class", None),
+                "terminal_outlet_conflict_flags": getattr(terminal_report, "terminal_outlet_conflict_flags", []),
+                "terminal_outlet_conflict_claim_impact": getattr(
+                    terminal_report, "terminal_outlet_conflict_claim_impact", None
+                ),
+                "terminal_authority_area_check": getattr(terminal_report, "terminal_authority_area_check", {}),
                 "terminal_overlap_pairs": [
                     row.model_dump()
                     for row in terminal_report.terminal_overlap_pairs[:10]
@@ -2318,7 +2352,12 @@ def _evaluate_routing_flow_gate(run_dir: Path, values: dict[str, Any]) -> dict[s
             "diagnostic": [reason],
             "research_grade": [reason],
         },
-        "recommended_next_action": _routing_flow_next_action(flags, passed=passed, calibration_blocking=calibration_blocking),
+        "recommended_next_action": _routing_flow_next_action(
+            flags,
+            passed=passed,
+            calibration_blocking=calibration_blocking,
+            terminal_failure_class=terminal_trace.get("terminal_failure_class"),
+        ),
         **terminal_trace,
     }
     if virtual_scope_gate.get("applicable"):
@@ -2332,11 +2371,22 @@ def _evaluate_routing_flow_gate(run_dir: Path, values: dict[str, Any]) -> dict[s
     return payload
 
 
-def _routing_flow_next_action(flags: list[str], *, passed: bool, calibration_blocking: bool) -> str:
+def _routing_flow_next_action(
+    flags: list[str],
+    *,
+    passed: bool,
+    calibration_blocking: bool,
+    terminal_failure_class: object = None,
+) -> str:
     if passed:
         return "No routing-flow action required."
     flag_set = set(flags)
     if "channel_inflow_exceeds_basin_wateryld" in flag_set:
+        if terminal_failure_class == "single_terminal_scope_valid":
+            return (
+                "Selected terminal scope is supported by terminal inventory; audit SWAT+ channel-rate "
+                "versus basin-yield output semantics before promoting a research-grade routing claim."
+            )
         return (
             "Inspect routing-unit to channel transfer and SWAT+ output unit interpretation; "
             "selected-channel inflow exceeds basin water yield."

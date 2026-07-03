@@ -136,6 +136,38 @@ def test_landuse_fidelity_gate_passes_full_overlay_complete_current_vintage() ->
     assert result["passed"] is True
 
 
+def test_landuse_fidelity_gate_passes_minor_missing_class_when_area_retained() -> None:
+    result = landuse_fidelity_gate({
+        "landuse_fidelity": {
+            "status": "evaluated",
+            "hru_mode": "full_overlay",
+            "landuse_class_retention_fraction": 14 / 15,
+            "landuse_area_retention_fraction": 0.9998,
+            "landuse_missing_area_fraction": 0.0002,
+            "landuse_vintage_mismatch_years": 1,
+        }
+    })
+
+    assert result["passed"] is True
+    assert "landuse_missing_area_fraction=0.0002" in result["reason"]
+
+
+def test_landuse_fidelity_gate_fails_missing_class_when_area_loss_is_material() -> None:
+    result = landuse_fidelity_gate({
+        "landuse_fidelity": {
+            "status": "evaluated",
+            "hru_mode": "full_overlay",
+            "landuse_class_retention_fraction": 14 / 15,
+            "landuse_area_retention_fraction": 0.98,
+            "landuse_missing_area_fraction": 0.02,
+            "landuse_vintage_mismatch_years": 1,
+        }
+    })
+
+    assert result["passed"] is False
+    assert "landuse_area_retention_fraction=0.980" in result["reason"]
+
+
 def test_landuse_fidelity_gate_fails_dominant_only_and_old_vintage() -> None:
     result = landuse_fidelity_gate({
         "landuse_fidelity": {

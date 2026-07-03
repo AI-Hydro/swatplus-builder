@@ -26,6 +26,28 @@ from typing import Any
 log = logging.getLogger(__name__)
 
 
+def _preferred_metrics_path(run_dir: Path) -> Path | None:
+    """Return the authoritative metrics source for plot annotations."""
+    for candidate in (
+        run_dir / "benchmark" / "metrics.json",
+        run_dir / "reports" / "metrics.json",
+    ):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _preferred_alignment_path(run_dir: Path) -> Path | None:
+    """Return the authoritative observed/simulated alignment for plots."""
+    for candidate in (
+        run_dir / "benchmark" / "alignment.csv",
+        run_dir / "outputs" / "alignment.csv",
+    ):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def generate_all_plots(
     run_dir: str | Path,
     *,
@@ -73,8 +95,8 @@ def generate_all_plots(
 
     # ── Load metrics for title annotation (best-effort) ────────────────────
     metrics: dict | None = None
-    metrics_path = run_dir / "reports" / "metrics.json"
-    if metrics_path.exists():
+    metrics_path = _preferred_metrics_path(run_dir)
+    if metrics_path is not None:
         try:
             with metrics_path.open(encoding="utf-8") as f:
                 metrics = json.load(f)
@@ -158,9 +180,9 @@ def generate_all_plots(
         log.warning("Land-use composition plot failed: %s", exc)
 
     # ── Load aligned timeseries ────────────────────────────────────────────
-    ts_path = run_dir / "outputs" / "alignment.csv"
-    if not ts_path.exists():
-        log.info("alignment.csv not found; skipping hydrological plots.")
+    ts_path = _preferred_alignment_path(run_dir)
+    if ts_path is None:
+        log.info("No authoritative alignment.csv found; skipping hydrological plots.")
         return _summary(plots_dir, files, partial=True)
 
     try:

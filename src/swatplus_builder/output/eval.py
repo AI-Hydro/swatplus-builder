@@ -504,6 +504,23 @@ def _unit_for_column(source, column: str) -> str | None:
     """
     if source is None:
         return None
+    source_path = Path(source.path) if hasattr(source, "path") else Path(source)
+    source_name = source_path.name.lower()
+    if column in {"flo_in", "flo_out"} and source_name in {
+        "channel_sd_day.txt",
+        "channel_sd_yr.txt",
+        "channel_sd_aa.txt",
+        "basin_sd_cha_day.txt",
+        "basin_sd_cha_yr.txt",
+        "basin_sd_cha_aa.txt",
+        "channel_sdmorph_day.txt",
+        "channel_sdmorph_yr.txt",
+        "channel_sdmorph_aa.txt",
+        "basin_sd_chamorph_day.txt",
+        "basin_sd_chamorph_yr.txt",
+        "basin_sd_chamorph_aa.txt",
+    }:
+        return "m^3/s"
     if hasattr(source, "columns") and hasattr(source, "units"):
         try:
             cols = list(source.columns)
@@ -517,10 +534,7 @@ def _unit_for_column(source, column: str) -> str | None:
                 unit = str(units[idx]).strip()
                 if unit:
                     return unit
-    if hasattr(source, "path"):
-        p = Path(source.path)
-    else:
-        p = Path(source)
+    p = source_path
     if not p.is_file():
         return None
     try:

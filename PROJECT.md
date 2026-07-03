@@ -11,7 +11,7 @@ runtime gates, provenance, diagnostics, and machine-readable evidence.
 ## Status
 
 Active hardening toward research-grade production pipeline. Last updated:
-2026-06-26.
+2026-07-03.
 
 ## Where To Read Next
 
@@ -28,6 +28,41 @@ Active hardening toward research-grade production pipeline. Last updated:
 - Track lessons that generalized across basins: `docs/PIPELINE_LEARNING_LOG.md`.
 
 ## Current State
+
+- Latest active validation is the 2026-07-03 calibrated full-overlay Marsh
+  Creek run at
+  `/Users/mgalib/swatplus_runs/calibration_validate_20260703/01547700_2010_2018_fulloverlay_diag`.
+  The run completed successfully with `effective_claim_tier=diagnostic`; all
+  current gates passed, including physical gates, routing flow, sensitivity
+  screen, land-use fidelity, and calibration verification. Locked benchmark
+  metrics were `NSE=0.2979`, `KGE=0.3592`, `PBIAS=+13.76%`; locked calibrated
+  verification metrics were `NSE=0.2442`, `KGE=0.5549`, `PBIAS=-13.11%`.
+  This is a real diagnostic calibration improvement on KGE and volume behavior,
+  but not a blanket skill improvement because NSE decreased by `0.0537`.
+  Hydrograph QA shows calibrated flow is no longer near-zero and is more
+  responsive, but it still misses some observed extremes and introduces extra
+  sharp events. The retained next diagnostic is
+  `baseflow_recession_partition`, with recession/subsurface probes focused on
+  `LAT_TTIME`, `LATQ_CO`, `PERCO`, `ALPHA_BF`, and `RCHG_DP`.
+
+- A contrasting release-candidate validation run on `03349000` at
+  `/Users/mgalib/swatplus_runs/release_candidate_validate_20260703/03349000_2010_2018_fulloverlay_diag`
+  confirms the governance behavior is conservative. Calibration was attempted
+  and independently verified: metrics improved from baseline `NSE=-0.4391`,
+  `KGE=0.0652`, `PBIAS=-51.48%` to locked calibrated verification
+  `NSE=-0.0243`, `KGE=0.3565`, `PBIAS=-17.95%`. The final effective tier is
+  still `exploratory` because `physical_gates` and `routing_flow` failed. Use
+  this basin as a negative-control example of honest downgrade/block behavior,
+  not as a calibrated success claim.
+
+- The preceding fresh no-calibration full-overlay run at
+  `/Users/mgalib/swatplus_runs/landuse_gate_validate_20260703/01547700_2010_2018_fulloverlay_nocal`
+  remains the baseline evidence for the post-lock visual/evidence and
+  area-aware land-use-fidelity hardening. It completed successfully with locked
+  benchmark metrics `NSE=0.2985`, `KGE=0.3596`, `PBIAS=+13.74%`; routing and
+  land-use fidelity passed because `99.9845%` of mapped land-use area was
+  retained even though one tiny class (`UCOM`, `20/128934` valid pixels) was
+  absent from HRUs.
 
 - Current hardening evidence lives under
   `/Users/mgalib/swatplus_runs/e2e_hardening_20260626/`. The latest verified
