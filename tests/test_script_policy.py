@@ -7,6 +7,7 @@ import pytest
 
 from scripts.audit_production_objective import build_audit
 from scripts.run_objective_10basin import (
+    _blocker_domain,
     main,
     summarize_evidence,
     summarize_existing_suite,
@@ -1251,6 +1252,57 @@ def test_objective_suite_primary_blocker_prefers_terminal_failure_class(tmp_path
     assert row.routing_flow_closure_status == "fail_mass_closure"
     assert row.terminal_failure_class == "generated_topology_mismatch"
     assert row.primary_blocker == "generated_topology_mismatch"
+
+
+def test_objective_suite_primary_blocker_ignores_pass_closure_status(tmp_path: Path) -> None:
+    evidence = tmp_path / "evidence_summary.json"
+    physical_gates = tmp_path / "physical_gates.json"
+    routing_gates = tmp_path / "routing_flow_gates.json"
+    physical_gates.write_text(
+        json.dumps({"status": "passed", "condition_codes": [], "dominant_blocker": None}),
+        encoding="utf-8",
+    )
+    routing_gates.write_text(
+        json.dumps({"status": "passed", "closure_status": "pass", "flags": []}),
+        encoding="utf-8",
+    )
+    evidence.write_text(
+        json.dumps(
+            {
+                "success": True,
+                "effective_claim_tier": "exploratory",
+                "gates_passed": ["physical_gates", "routing_flow"],
+                "gates_failed": ["landuse_fidelity"],
+                "values": {
+                    "warmup_years": 3,
+                    "fresh_engine_run": True,
+                    "soil_mode": "high_fidelity",
+                    "soil_provenance_mode": "gnatsgo_raster",
+                    "pct_fallback_soils": 0.0,
+                    "physical_gates_status": "passed",
+                    "routing_flow_gates_status": "passed",
+                    "routing_flow_closure_status": "pass",
+                    "routing_flow_gates_path": str(routing_gates),
+                    "physical_gates_path": str(physical_gates),
+                    "metrics": {"kge": 0.45, "nse": 0.25, "pbias": 8.0},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    row = summarize_evidence("01547700", evidence)
+
+    assert row.routing_flow_closure_status == "pass"
+    assert row.primary_blocker == "landuse_fidelity"
+
+
+def test_objective_suite_classifies_mass_closure_failure_as_diagnostics() -> None:
+    assert _blocker_domain("fail_mass_closure") == "diagnostics"
+
+
+def test_objective_suite_classifies_landuse_fidelity_as_provenance() -> None:
+    assert _blocker_domain("landuse_fidelity") == "provenance"
 
 
 def test_objective_suite_suppresses_inactive_routing_diagnostics(tmp_path: Path) -> None:

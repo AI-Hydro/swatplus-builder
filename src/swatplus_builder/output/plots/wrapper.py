@@ -2,7 +2,7 @@
 
 Figure naming follows a journal-friendly convention:
     fig_01_hydrograph.{png,pdf}
-    fig_02_hydrograph_log.{png,pdf}
+    fig_01_hydrograph_log.{png,pdf}
     fig_03_fdc.{png,pdf}
     fig_04_scatter.{png,pdf}
     fig_05_residuals.{png,pdf}
@@ -173,7 +173,7 @@ def generate_all_plots(
         plot_hydrograph(df, plots_dir / "fig_01_hydrograph",
                         metrics=metrics, metadata=merged_metadata)
         files += ["fig_01_hydrograph.png", "fig_01_hydrograph.pdf",
-                  "fig_02_hydrograph_log.png", "fig_02_hydrograph_log.pdf"]
+                  "fig_01_hydrograph_log.png", "fig_01_hydrograph_log.pdf"]
 
         # ── fig_03 FDC ────────────────────────────────────────────────────
         from .fdc import plot_fdc

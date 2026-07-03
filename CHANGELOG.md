@@ -2,6 +2,27 @@
 
 All notable changes to swatplus-builder are documented here.
 
+## [0.7.11] — 2026-07-02
+
+### Fixed
+- Workflow evidence now records the full generated plot suite instead of
+  overwriting plot metadata with only the spatial/context subset.
+- Plot metadata now names the log hydrograph consistently as
+  `fig_01_hydrograph_log`.
+- Basin spatial-overview rendering downsamples large rasters for diagnostic
+  display, avoiding multi-GB memory spikes while leaving model artifacts
+  unchanged.
+- Objective-suite reporting no longer treats status strings such as `pass` as
+  blockers. `fail_mass_closure` is classified as a diagnostics blocker and
+  `landuse_fidelity` as a provenance/input-fidelity blocker.
+
+### Evidence
+- Completed seven current-code no-calibration reruns for the stale objective
+  rows under `/Users/mgalib/swatplus_runs/objective_refresh_v0710/`.
+- Regenerated the objective summary from current evidence. The canonical status
+  remains `0/11` research-grade outcomes, with blocker domains
+  `science=9`, `diagnostics=1`, `provenance=1`, and no unclassified blockers.
+
 ## [0.7.10] — 2026-07-01
 
 ### Fixed

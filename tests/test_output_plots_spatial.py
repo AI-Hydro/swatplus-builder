@@ -51,6 +51,19 @@ def test_read_masked_raster_honors_nodata_value(tmp_path: Path) -> None:
     assert float(arr.min()) == pytest.approx(100.0)
 
 
+def test_read_masked_raster_downsamples_large_display_array(tmp_path: Path) -> None:
+    from swatplus_builder.output.plots.spatial import read_masked_raster
+
+    raster = tmp_path / "dem.tif"
+    _write_raster(raster, np.arange(10_000, dtype="float32").reshape(100, 100))
+
+    arr, _extent, _nodata = read_masked_raster(raster, max_display_pixels=1_000)
+
+    assert arr.shape[0] <= 50
+    assert arr.shape[1] <= 50
+    assert arr.size <= 2_500
+
+
 def test_plot_basin_spatial_overview_writes_outputs(tmp_path: Path) -> None:
     from swatplus_builder.output.plots.spatial import plot_basin_spatial_overview
 

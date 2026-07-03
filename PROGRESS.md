@@ -5,7 +5,59 @@
 Phase 3L — Full-Mode Engine Compatibility & Research-Grade Pipeline  
 *(Phase 3G closed 2026-05-09 — discovery pipeline, experiment suite, agent contracts)*
 
-**Current focus:** The canonical full-mode workflow is implemented and auditable, but the objective-suite target is still scientifically open. As of 2026-07-01, the summarize-only objective report has been regenerated from existing evidence with refreshed overrides for `01013500`, `01547700`, `03349000`, and `03351500`; it reports `research_grade_count=0/11`, `target_hypothesis_evaluation.status=not_supported_by_current_evidence`, and blocker domains `science=3`, `provenance=7`. This is not a full fresh 11-basin campaign: seven rows still use older full-build-failed evidence and need current-code reruns. Treat older `69/97` or `96/97` audit language as historical unless explicitly tied to an older dated entry.
+**Current focus:** The canonical full-mode workflow is implemented and auditable, but the objective-suite target is still scientifically open. As of 2026-07-02, the summarize-only objective report has been regenerated from refreshed evidence for all 11 canonical rows where available: seven fresh `0.7.10` no-calibration reruns, two `0.7.9` no-calibration reruns, and two current hardening calibration runs. It reports `research_grade_count=0/11`, `target_hypothesis_evaluation.status=not_supported_by_current_evidence`, and blocker domains `science=9`, `diagnostics=1`, `provenance=1`. Treat older `69/97`, `96/97`, one-research-grade, or stale-provenance/build-row language as historical unless explicitly tied to an older dated entry.
+
+### [2026-07-02] — Completed objective-suite refresh and report-classification cleanup
+
+Completed the remaining stale objective-suite no-calibration reruns under
+`/Users/mgalib/swatplus_runs/objective_refresh_v0710/`:
+
+- `01654000_2000_2019_nocal`: `NSE=-0.7299`, `KGE=0.0080`,
+  `PBIAS=+62.56%`; routing passed, physical gates failed; simulated-volume
+  excess remains exploratory.
+- `01493500_2000_2019_nocal`: `NSE=0.0992`, `KGE=0.1205`,
+  `PBIAS=-56.30%`; routing closure warning and volume deficit remain
+  exploratory.
+- `01491000_2000_2019_nocal`: `NSE=0.3227`, `KGE=0.4287`,
+  `PBIAS=-19.74%`; selected outlet uses topology-owned
+  `terminal_inflow_sum`; mass-closure warning remains exploratory.
+- `03353000_2000_2019_nocal`: `NSE=0.0260`, `KGE=0.0911`,
+  `PBIAS=-57.90%`; routing passed, physical gates failed; simulated-volume
+  deficit remains exploratory.
+- `09504500_2000_2019_nocal`: `NSE=0.2349`, `KGE=-0.0710`,
+  `PBIAS=-72.57%`; hydrograph is not near-zero, but volume/baseflow deficits
+  remain exploratory.
+- `12031000_2000_2019_nocal`: `NSE=0.6946`, `KGE=0.6429`,
+  `PBIAS=-2.94%`; hydrograph visually tracks seasonality and recession, but
+  research-grade metric claims remain blocked by routing-flow mass-closure
+  diagnostics and land-use-fidelity/sensitivity gates.
+- `02129000_2000_2019_nocal`: `NSE=0.2254`, `KGE=0.3776`,
+  `PBIAS=+41.23%`; hydrograph is not near-zero, but simulated volume excess
+  remains exploratory.
+
+Regenerated `docs/OBJECTIVE_BASIN_VALIDATION_REPORT.md` and
+`docs/objective_basin_validation_report.json` from current overrides. The
+canonical status is still `0/11` research-grade outcomes. The report now
+classifies blockers without unclassified status strings:
+`science=9`, `diagnostics=1`, `provenance=1`.
+
+Implementation fixes made during the refresh:
+
+- `plot_suite.n_plots` now records all generated plot artifacts instead of
+  being overwritten by only the spatial/context subset.
+- The plot manifest now names the log hydrograph consistently as
+  `fig_01_hydrograph_log`.
+- Basin spatial-overview raster previews are downsampled for display, avoiding
+  multi-GB memory spikes while preserving underlying model artifacts.
+- Objective-summary blocker classification no longer treats `pass` as a
+  blocker; `fail_mass_closure` is classified as diagnostics and
+  `landuse_fidelity` as provenance.
+
+Verification so far:
+
+- `PYTHONPATH=src python -m py_compile scripts/run_objective_10basin.py src/swatplus_builder/output/plots/spatial.py src/swatplus_builder/output/plots/wrapper.py src/swatplus_builder/workflows/usgs_e2e.py`
+- `PYTHONPATH=src python -m pytest -q tests/test_output_plots_spatial.py`
+- `PYTHONPATH=src python -m pytest -q tests/test_script_policy.py::test_objective_suite_primary_blocker_prefers_terminal_failure_class tests/test_script_policy.py::test_objective_suite_primary_blocker_ignores_pass_closure_status tests/test_script_policy.py::test_objective_suite_classifies_mass_closure_failure_as_diagnostics tests/test_script_policy.py::test_objective_suite_classifies_landuse_fidelity_as_provenance`
 
 ### [2026-07-01] — Objective refresh subset and calibration-history fix
 

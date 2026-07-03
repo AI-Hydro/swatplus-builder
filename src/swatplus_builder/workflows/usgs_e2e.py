@@ -1556,11 +1556,17 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
             generated_plots.extend(["fig_11_landuse_composition.png", "fig_11_landuse_composition.pdf"])
         except Exception as exc:
             values["landuse_composition_plot_error"] = str(exc)
+        actual_plots = sorted(
+            p.name
+            for p in plots_dir.glob("fig_*")
+            if p.is_file() and p.suffix.lower() in {".png", ".pdf"}
+        )
+        plot_files = actual_plots or sorted(dict.fromkeys(generated_plots))
         values["plot_suite"] = {
-            "plots_generated": bool(generated_plots),
-            "n_plots": len(generated_plots),
+            "plots_generated": bool(plot_files),
+            "n_plots": len(plot_files),
             "path": str(plots_dir),
-            "files": generated_plots,
+            "files": plot_files,
         }
         for key, filename in {
             "basin_spatial_overview_plot": "fig_08_basin_spatial_overview.png",
@@ -1575,7 +1581,7 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
             candidate = plots_dir / filename
             if candidate.is_file():
                 values[key] = str(candidate)
-        _event("plots", "completed", n_plots=len(generated_plots), path=str(plots_dir))
+        _event("plots", "completed", n_plots=len(plot_files), path=str(plots_dir))
     except Exception as exc:
         values["plot_suite"] = {"plots_generated": False, "reason": str(exc)}
         _event("plots", "failed", error=str(exc)[-500:])

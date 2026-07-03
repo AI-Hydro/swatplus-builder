@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from pathlib import Path
 from typing import Any
 
@@ -20,11 +21,14 @@ def read_masked_raster(
     path: Path | str,
     *,
     clip_to_basin: Path | str | None = None,
+    max_display_pixels: int | None = 900_000,
 ) -> tuple[np.ma.MaskedArray, tuple[float, float, float, float], float | None]:
     """Read a raster as a masked array, honoring explicit nodata values.
 
     This is intentionally small and testable because the scientific audit found
     that nodata values such as ``-32768`` were leaking into visual products.
+    Large diagnostic rasters are downsampled for plotting so spatial overviews
+    cannot exhaust memory while rendering publication/dashboard previews.
     """
 
     import rasterio
@@ -46,10 +50,10 @@ def read_masked_raster(
                 data = np.ma.asarray(data)
             except Exception as exc:
                 log.debug("Raster crop failed for %s: %s", p, exc)
-                data = src.read(1, masked=True)
-                transform = src.transform
+                data, transform = _read_raster_for_display(src, max_display_pixels=max_display_pixels)
         else:
-            data = src.read(1, masked=True)
+            data, transform = _read_raster_for_display(src, max_display_pixels=max_display_pixels)
+        data = np.ma.asarray(data).squeeze()
         nodata = src.nodata
         mask = np.ma.getmaskarray(data).copy()
         values = np.asarray(data, dtype=float)
@@ -58,9 +62,45 @@ def read_masked_raster(
             mask |= values == nodata
         mask |= ~np.isfinite(values)
         arr = np.ma.array(values, mask=mask)
+        arr, transform = _downsample_masked_array(arr, transform, max_display_pixels=max_display_pixels)
         west, south, east, north = array_bounds(arr.shape[0], arr.shape[1], transform)
         bounds = (west, east, south, north)
     return arr, bounds, nodata
+
+
+def _read_raster_for_display(src: Any, *, max_display_pixels: int | None) -> tuple[np.ma.MaskedArray, Any]:
+    from affine import Affine
+
+    if not max_display_pixels or max_display_pixels <= 0:
+        return src.read(1, masked=True), src.transform
+    pixel_count = int(src.height) * int(src.width)
+    if pixel_count <= max_display_pixels:
+        return src.read(1, masked=True), src.transform
+    factor = max(1, int(math.ceil(math.sqrt(pixel_count / max_display_pixels))))
+    out_height = max(1, int(math.ceil(src.height / factor)))
+    out_width = max(1, int(math.ceil(src.width / factor)))
+    data = src.read(1, masked=True, out_shape=(out_height, out_width))
+    transform = src.transform * Affine.scale(src.width / out_width, src.height / out_height)
+    return data, transform
+
+
+def _downsample_masked_array(
+    arr: np.ma.MaskedArray,
+    transform: Any,
+    *,
+    max_display_pixels: int | None,
+) -> tuple[np.ma.MaskedArray, Any]:
+    if not max_display_pixels or max_display_pixels <= 0:
+        return arr, transform
+    if arr.ndim != 2:
+        return arr, transform
+    pixel_count = int(arr.shape[0]) * int(arr.shape[1])
+    if pixel_count <= max_display_pixels:
+        return arr, transform
+    from affine import Affine
+
+    factor = max(1, int(math.ceil(math.sqrt(pixel_count / max_display_pixels))))
+    return arr[::factor, ::factor], transform * Affine.scale(factor, factor)
 
 
 def plot_basin_spatial_overview(

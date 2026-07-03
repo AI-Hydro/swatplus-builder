@@ -2484,7 +2484,7 @@ def _primary_blocker(row: Row) -> str:
         row.physical_dominant_blocker,
         row.terminal_scope_blocker,
         row.terminal_failure_class if row.routing_flow_gates in {"failed", "warning"} else None,
-        row.routing_flow_closure_status,
+        _blocking_status(row.routing_flow_closure_status),
         row.blocker if row.blocker == "soil_realism_gate_failed" else None,
         "soil_fidelity" if "soil_fidelity" in row.gates_failed else None,
         row.blocker,
@@ -2494,6 +2494,15 @@ def _primary_blocker(row: Row) -> str:
     if row.gates_failed:
         return row.gates_failed[0]
     return "none"
+
+
+def _blocking_status(value: str | None) -> str | None:
+    if value is None:
+        return None
+    name = str(value)
+    if name.lower() in {"none", "null", "unknown", "pass", "passed", "success"}:
+        return None
+    return name
 
 
 def _calibration_regression_blocker(row: Row) -> str | None:
@@ -3163,7 +3172,7 @@ def _blocker_domain(blocker: str | None) -> str | None:
     if blocker is None:
         return None
     name = str(blocker)
-    if name in {"soil_realism_gate_failed", "soil_fidelity"}:
+    if name in {"soil_realism_gate_failed", "soil_fidelity", "landuse_fidelity"}:
         return "provenance"
     if name in {"generated_topology_mismatch", "terminal_topology_overlap"}:
         return "engineering"
@@ -3171,7 +3180,7 @@ def _blocker_domain(blocker: str | None) -> str | None:
         return "calibration"
     if name in {"outlet_scope_volume_mismatch"}:
         return "provenance"
-    if name in {"multi_terminal_volume_deficit"}:
+    if name in {"multi_terminal_volume_deficit", "fail_mass_closure"}:
         return "diagnostics"
     if name in {
         "BELOW_RESEARCH_SKILL",
