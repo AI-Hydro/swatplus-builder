@@ -10113,3 +10113,26 @@ Release interpretation:
 - Remaining polish debt is mostly dashboard/spatial presentation quality for
   large full-overlay basins, especially dense HRU maps; this is not a claim
   governance blocker.
+
+## 2026-07-06 — Post-Release Smoke, Tag, And Public Docs Refresh
+
+Completed the post-release checklist for `0.7.12`.
+
+Findings:
+
+- PyPI clean-install smoke passed under supported Python `3.13.2`:
+  `pip install swatplus-builder==0.7.12`, `swat version --json`, and
+  `swat workflow run --help`.
+- The same smoke intentionally failed under system Python `3.14.4` because the
+  package declares `Requires-Python >=3.10,<3.14`; pip correctly enforced the
+  support window.
+- Git tag `v0.7.12` was created at the exact package release commit
+  `af3254c`, matching the source used for the uploaded wheel/sdist.
+- Public docs source was refreshed from stale `0.7.10` references to `0.7.12`
+  in the project status and citation pages.
+
+Verification:
+
+- `/tmp/swatplus-builder-0712-smoke/bin/swat version --json`
+- `/tmp/swatplus-builder-0712-smoke/bin/swat workflow run --help`
+- `python -m mkdocs build --strict`

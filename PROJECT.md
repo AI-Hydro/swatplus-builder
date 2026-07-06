@@ -11,7 +11,7 @@ runtime gates, provenance, diagnostics, and machine-readable evidence.
 ## Status
 
 Active hardening toward research-grade production pipeline. Last updated:
-2026-07-03.
+2026-07-06.
 
 ## Where To Read Next
 
@@ -28,6 +28,12 @@ Active hardening toward research-grade production pipeline. Last updated:
 - Track lessons that generalized across basins: `docs/PIPELINE_LEARNING_LOG.md`.
 
 ## Current State
+
+- Release `0.7.12` is published on PyPI and tagged as `v0.7.12` at commit
+  `af3254c`. A clean PyPI install smoke passed on supported Python `3.13.2`;
+  system Python `3.14.4` correctly refused the package because the declared
+  support window is `>=3.10,<3.14`. Public docs source has been refreshed to
+  cite `0.7.12`.
 
 - Latest active validation is the 2026-07-03 calibrated full-overlay Marsh
   Creek run at
