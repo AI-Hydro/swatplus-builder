@@ -2869,6 +2869,58 @@ def test_mass_trace_uses_routed_to_channel_components_when_available(tmp_path: P
     assert report.selected_terminal_fraction_of_all_terminal_flow == pytest.approx(1.0, rel=1e-3)
 
 
+def test_mass_trace_augments_channel_reference_with_basin_aquifer_flow(tmp_path: Path):
+    txt = tmp_path / "run" / "project" / "Scenarios" / "Default" / "TxtInOut"
+    txt.mkdir(parents=True)
+    (txt / "object.cnt").write_text("object.cnt:\nbasin 100\n", encoding="utf-8")
+    (tmp_path / "run" / "metadata.json").write_text('{"selected_outlet_gis_id": 24}\n', encoding="utf-8")
+    (txt / "chandeg.con").write_text(
+        "chandeg.con\n"
+        "id name gis_id out_tot obj_typ\n"
+        "1 cha24 24 0 cha\n",
+        encoding="utf-8",
+    )
+    (txt / "basin_wb_yr.txt").write_text(
+        "basin_wb_yr\n"
+        "jday mon day yr unit gis_id name precip et surq_gen latq wateryld perc surq_cha latq_cha satex_chan\n"
+        "mm mm mm mm mm mm mm mm mm\n"
+        "365 12 31 2010 1 1 basin 500 300 100 0 100 100 100 0 0\n",
+        encoding="utf-8",
+    )
+    (txt / "basin_aqu_yr.txt").write_text(
+        "basin_aqu_yr\n"
+        "jday mon day yr unit gis_id name flo rchrg seep revap flo_cha flo_res flo_ls\n"
+        "mm mm mm mm mm mm mm\n"
+        "365 12 31 2010 1 1 basin 100 100 0 0 100 0 0\n",
+        encoding="utf-8",
+    )
+    daily_flow_for_200_mm_over_1_km2 = 200_000.0 / 86_400.0
+    (txt / "channel_sd_day.txt").write_text(
+        "channel_sd_day\n"
+        "jday mon day yr unit gis_id name flo_in flo_out\n"
+        "m^3/s m^3/s\n"
+        f"1 1 1 2010 1 24 cha24 {daily_flow_for_200_mm_over_1_km2:.9f} "
+        f"{daily_flow_for_200_mm_over_1_km2:.9f}\n",
+        encoding="utf-8",
+    )
+
+    report = trace_mass_balance(
+        tmp_path / "run",
+        selected_outlet_gis_id=24,
+        out_dir=tmp_path / "mass_trace",
+    )
+
+    assert report.closure_status == "pass"
+    assert report.closure_reference == "basin_routed_to_channel_plus_aquifer_flo_cha_m3"
+    assert report.basin_wateryld_m3 == pytest.approx(100_000.0)
+    assert report.basin_aquifer_flow_to_channel_m3 == pytest.approx(100_000.0)
+    assert report.basin_augmented_routed_to_channel_m3 == pytest.approx(200_000.0)
+    assert report.basin_wateryld_closure_ratio == pytest.approx(2.0)
+    assert report.mass_closure_ratio == pytest.approx(1.0)
+    assert "basin_wateryld_reference_excludes_aquifer_channel_flow" in report.flags
+    assert "augmented_routed_to_channel_reference_matches_terminal" in report.flags
+
+
 def test_mass_trace_adds_specific_mass_closure_context_flags(tmp_path: Path):
     txt = tmp_path / "run" / "project" / "Scenarios" / "Default" / "TxtInOut"
     txt.mkdir(parents=True)

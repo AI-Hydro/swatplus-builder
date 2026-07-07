@@ -1213,10 +1213,22 @@ def _check_locked_txt_routing_flow(
         "terminal_outflow_m3": report.terminal_outflow_m3,
         "all_terminal_outflow_m3": report.all_terminal_outflow_m3,
         "mass_closure_ratio": report.mass_closure_ratio,
+        "basin_wateryld_closure_ratio": getattr(report, "basin_wateryld_closure_ratio", None),
+        "augmented_routed_to_channel_closure_ratio": getattr(
+            report, "augmented_routed_to_channel_closure_ratio", None
+        ),
+        "all_terminal_augmented_routed_to_channel_closure_ratio": getattr(
+            report, "all_terminal_augmented_routed_to_channel_closure_ratio", None
+        ),
+        "basin_aquifer_flow_to_channel_m3": getattr(report, "basin_aquifer_flow_to_channel_m3", None),
+        "basin_augmented_routed_to_channel_m3": getattr(report, "basin_augmented_routed_to_channel_m3", None),
         "mass_trace_basin_wb_source_file": getattr(report, "basin_wb_source_file", None),
         "mass_trace_evaluation_period": getattr(report, "evaluation_period", None),
         "mass_trace_basin_wb_row_count": getattr(report, "basin_wb_row_count", None),
         "mass_trace_basin_wb_years": getattr(report, "basin_wb_years", []),
+        "mass_trace_basin_aquifer_source_file": getattr(report, "basin_aquifer_source_file", None),
+        "mass_trace_basin_aquifer_row_count": getattr(report, "basin_aquifer_row_count", None),
+        "mass_trace_basin_aquifer_years": getattr(report, "basin_aquifer_years", []),
         "mass_trace_channel_source_file": getattr(report, "channel_source_file", None),
         "mass_trace_channel_row_count": getattr(report, "channel_row_count", None),
         "mass_trace_channel_years": getattr(report, "channel_years", []),

@@ -7,7 +7,7 @@ Phase 3L — Full-Mode Engine Compatibility & Research-Grade Pipeline
 
 **Current focus:** The canonical full-mode workflow is implemented and auditable, but the objective-suite target is still scientifically open. As of 2026-07-02, the summarize-only objective report has been regenerated from refreshed evidence for all 11 canonical rows where available: seven fresh `0.7.10` no-calibration reruns, two `0.7.9` no-calibration reruns, and two current hardening calibration runs. It reports `research_grade_count=0/11`, `target_hypothesis_evaluation.status=not_supported_by_current_evidence`, and blocker domains `science=9`, `diagnostics=1`, `provenance=1`. Treat older `69/97`, `96/97`, one-research-grade, or stale-provenance/build-row language as historical unless explicitly tied to an older dated entry.
 
-### [2026-07-06] — Locked routing-flow gate now uses the benchmark evaluation window
+### [2026-07-07] — Locked routing-flow gate uses evaluation window and aquifer-aware closure
 
 Audited the release-candidate calibrated `03349000` run after noticing that
 baseline routing closure passed while final locked calibrated routing closure
@@ -30,14 +30,26 @@ was retained as a warning:
   before checking the locked calibrated TxtInOut.
 - A direct regression test verifies that a deliberately bad warm-up year is
   excluded from closure sums when an evaluation window is supplied.
+- A second audit found that the remaining warning was caused by an incomplete
+  closure denominator. The calibrated run activates substantial aquifer flow to
+  channels (`basin_aqu_yr.flo_cha = 4.306e9 m3` over 2010-2018). Generic
+  `basin_wb_yr.wateryld` alone gives the old apparent mismatch
+  (`terminal/wateryld = 1.676263`), but the source-backed closure reference
+  `basin routed-to-channel + basin_aqu flo_cha` gives
+  `terminal/reference = 0.851283`, inside tolerance and consistent with the
+  baseline ratio (`0.861497`).
+- The mass-trace API now reads `basin_aqu_yr.txt`/`basin_aqu_aa.txt`, records
+  `basin_aquifer_flow_to_channel_m3`,
+  `basin_augmented_routed_to_channel_m3`,
+  `basin_wateryld_closure_ratio`, and
+  `augmented_routed_to_channel_closure_ratio`, and uses the augmented
+  source-backed reference when aquifer-to-channel flow is present.
 - Rechecking the real locked calibrated artifact with the corrected
-  `2010-01-01..2018-12-31` window still gives a retained warning:
-  `closure_status=fail_mass_closure`, `mass_closure_ratio=1.676263`,
-  `all_terminal_routed_to_channel_closure_ratio=1.679641`, selected terminal
-  fraction `1.0`. This means the patch fixes the window authority bug, but it
-  does **not** promote `03349000`: the calibrated artifact genuinely routes
-  more terminal/channel flow than its calibrated basin water-yield term, and
-  physical gates still fail with negative NSE.
+  `2010-01-01..2018-12-31` window and aquifer-aware denominator passes routing
+  flow: `closure_status=pass`, `mass_closure_ratio=0.851283`, selected terminal
+  fraction `1.0`, condition codes `[]`. This removes a false routing blocker.
+  It does **not** promote `03349000`: physical gates still fail because final
+  NSE remains negative (`NSE=-0.0243`), so the basin stays exploratory.
 
 Verification:
 

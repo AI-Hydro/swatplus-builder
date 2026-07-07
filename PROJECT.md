@@ -57,14 +57,15 @@ Active hardening toward research-grade production pipeline. Last updated:
   and independently verified: metrics improved from baseline `NSE=-0.4391`,
   `KGE=0.0652`, `PBIAS=-51.48%` to locked calibrated verification
   `NSE=-0.0243`, `KGE=0.3565`, `PBIAS=-17.95%`. The final effective tier is
-  still `exploratory` because `physical_gates` and `routing_flow` failed. The
-  locked routing-flow gate now uses the benchmark evaluation window instead of
-  mixing warm-up years into final closure sums; rechecking the locked
-  calibrated artifact over `2010-01-01..2018-12-31` still retains a genuine
-  `fail_mass_closure` warning (`mass_closure_ratio=1.6763`,
-  all-terminal routed-to-channel ratio `1.6796`). Use this basin as a
-  negative-control example of honest downgrade/block behavior, not as a
-  calibrated success claim.
+  still `exploratory` because `physical_gates` fail with negative NSE. A July
+  2026 routing-flow audit fixed two false blockers: locked routing flow now
+  uses the benchmark evaluation window instead of mixing warm-up years, and
+  mass closure now includes source-backed basin aquifer flow to channels
+  (`basin_aqu_yr.flo_cha`) when present. Rechecking the locked calibrated
+  artifact over `2010-01-01..2018-12-31` passes routing flow with augmented
+  closure ratio `0.8513`; water-yield-only closure remains recorded as context
+  (`1.6763`). Use this basin as a negative-control example of honest physical
+  skill downgrade/block behavior, not as a calibrated success claim.
 
 - The preceding fresh no-calibration full-overlay run at
   `/Users/mgalib/swatplus_runs/landuse_gate_validate_20260703/01547700_2010_2018_fulloverlay_nocal`

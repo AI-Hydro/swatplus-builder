@@ -57,6 +57,12 @@ class MassTraceReport(BaseModel):
     gwq_mm: float | None = None
     basin_wateryld_m3: float | None = None
     basin_routed_to_channel_m3: float | None = None
+    basin_aquifer_flow_to_channel_mm: float | None = None
+    basin_aquifer_flow_to_channel_m3: float | None = None
+    basin_augmented_routed_to_channel_m3: float | None = None
+    basin_wateryld_closure_ratio: float | None = None
+    augmented_routed_to_channel_closure_ratio: float | None = None
+    all_terminal_augmented_routed_to_channel_closure_ratio: float | None = None
     routed_to_channel_closure_ratio: float | None = None
     all_terminal_routed_to_channel_closure_ratio: float | None = None
     all_terminal_mass_closure_ratio: float | None = None
@@ -78,6 +84,9 @@ class MassTraceReport(BaseModel):
     basin_wb_source_file: str | None = None
     basin_wb_row_count: int | None = None
     basin_wb_years: list[int] = Field(default_factory=list)
+    basin_aquifer_source_file: str | None = None
+    basin_aquifer_row_count: int | None = None
+    basin_aquifer_years: list[int] = Field(default_factory=list)
     basin_summary_source_file: str | None = None
     basin_summary_row_count: int | None = None
     basin_summary_years: list[int] = Field(default_factory=list)
@@ -490,6 +499,7 @@ def trace_mass_balance(
     period = _period_from_rows(basin_all_rows)
     basin_rows = _filter_rows_by_period(basin_all_rows, eval_start, eval_end)
     wb = _sum_basin_wb(basin_rows, area_km2)
+    basin_aquifer = _basin_aquifer_channel_trace(txt, area_km2, evaluation_start=eval_start, evaluation_end=eval_end)
 
     hru_depth_mm, hru_m3 = _weighted_wateryld_from_hru_lte(txt)
     lsu_m3 = _weighted_wateryld_from_lsu(txt)
@@ -500,15 +510,29 @@ def trace_mass_balance(
     channel = _channel_trace(txt, selected, terminal_ids, evaluation_start=eval_start, evaluation_end=eval_end)
     water_yield_m3 = wb.get("wateryld_m3")
     routed_to_channel_m3 = wb.get("routed_to_channel_m3")
-    expected_m3 = water_yield_m3
-    closure_reference = "basin_wateryld_m3"
+    aquifer_flow_to_channel_m3 = basin_aquifer.get("basin_aquifer_flow_to_channel_m3")
+    augmented_base_m3 = routed_to_channel_m3 if routed_to_channel_m3 is not None else water_yield_m3
+    augmented_routed_to_channel_m3 = (
+        augmented_base_m3 + aquifer_flow_to_channel_m3
+        if augmented_base_m3 is not None and aquifer_flow_to_channel_m3 is not None
+        else None
+    )
+    if augmented_routed_to_channel_m3 is not None and (aquifer_flow_to_channel_m3 or 0.0) > 0.0:
+        expected_m3 = augmented_routed_to_channel_m3
+        closure_reference = "basin_routed_to_channel_plus_aquifer_flo_cha_m3"
+    else:
+        expected_m3 = water_yield_m3
+        closure_reference = "basin_wateryld_m3"
     terminal_m3 = channel.get("terminal_outflow_m3")
     all_terminal_m3 = channel.get("all_terminal_outflow_m3")
     basin_summary_m3 = basin_summary.get("basin_summary_outflow_m3")
     ru_ratio = _ratio(ru_m3, expected_m3)
     ratio = _ratio(terminal_m3, expected_m3)
+    wateryld_ratio = _ratio(terminal_m3, water_yield_m3)
     routed_ratio = _ratio(terminal_m3, routed_to_channel_m3)
+    augmented_routed_ratio = _ratio(terminal_m3, augmented_routed_to_channel_m3)
     all_terminal_routed_ratio = _ratio(all_terminal_m3, routed_to_channel_m3)
+    all_terminal_augmented_routed_ratio = _ratio(all_terminal_m3, augmented_routed_to_channel_m3)
     all_terminal_mass_ratio = _ratio(all_terminal_m3, expected_m3)
     selected_terminal_share = _ratio(terminal_m3, all_terminal_m3)
     summary_ratio = _ratio(basin_summary_m3, expected_m3)
@@ -527,6 +551,16 @@ def trace_mass_balance(
         max_closure_ratio=max_closure_ratio,
         min_closure_ratio=min_closure_ratio,
     )
+    if _ratio_in_range(augmented_routed_ratio, min_closure_ratio, max_closure_ratio):
+        terminal_context_flags.append("augmented_routed_to_channel_reference_matches_terminal")
+    if _ratio_in_range(all_terminal_augmented_routed_ratio, min_closure_ratio, max_closure_ratio):
+        terminal_context_flags.append("all_terminal_augmented_routed_to_channel_reference_matches")
+    if (
+        wateryld_ratio is not None
+        and not _ratio_in_range(wateryld_ratio, min_closure_ratio, max_closure_ratio)
+        and _ratio_in_range(augmented_routed_ratio, min_closure_ratio, max_closure_ratio)
+    ):
+        terminal_context_flags.append("basin_wateryld_reference_excludes_aquifer_channel_flow")
 
     if expected_m3 is not None and expected_m3 <= 0:
         status = "fail_no_land_generation"
@@ -587,6 +621,17 @@ def trace_mass_balance(
         notes.append(
             f"Closure ratio uses terminal_outflow_m3 / {closure_reference} with acceptable range "
             f"{min_closure_ratio:.2f}-{max_closure_ratio:.2f}."
+        )
+    if aquifer_flow_to_channel_m3 is not None:
+        notes.append(
+            "Basin aquifer-to-channel flow from basin_aqu output is included in the closure reference when present; "
+            f"basin_aquifer_flow_to_channel_m3={aquifer_flow_to_channel_m3:.6g}."
+        )
+    if wateryld_ratio is not None and wateryld_ratio != ratio:
+        notes.append(
+            "Generic basin water yield alone gives terminal_outflow_m3 / basin_wateryld_m3 "
+            f"= {wateryld_ratio:.6g}; this is retained as context because calibrated groundwater/baseflow "
+            "can reach channels through basin_aqu flo_cha."
         )
     if routed_ratio is not None:
         notes.append(
@@ -664,6 +709,12 @@ def trace_mass_balance(
         gwq_mm=wb.get("gwq_mm"),
         basin_wateryld_m3=water_yield_m3,
         basin_routed_to_channel_m3=routed_to_channel_m3,
+        basin_aquifer_flow_to_channel_mm=basin_aquifer.get("basin_aquifer_flow_to_channel_mm"),
+        basin_aquifer_flow_to_channel_m3=aquifer_flow_to_channel_m3,
+        basin_augmented_routed_to_channel_m3=augmented_routed_to_channel_m3,
+        basin_wateryld_closure_ratio=wateryld_ratio,
+        augmented_routed_to_channel_closure_ratio=augmented_routed_ratio,
+        all_terminal_augmented_routed_to_channel_closure_ratio=all_terminal_augmented_routed_ratio,
         routed_to_channel_closure_ratio=routed_ratio,
         all_terminal_routed_to_channel_closure_ratio=all_terminal_routed_ratio,
         all_terminal_mass_closure_ratio=all_terminal_mass_ratio,
@@ -685,6 +736,9 @@ def trace_mass_balance(
         basin_wb_source_file=basin_wb.path.name if basin_wb else None,
         basin_wb_row_count=len(basin_rows) if basin_wb else None,
         basin_wb_years=_year_list(basin_rows),
+        basin_aquifer_source_file=basin_aquifer.get("source_file"),
+        basin_aquifer_row_count=basin_aquifer.get("row_count"),
+        basin_aquifer_years=basin_aquifer.get("years") or [],
         basin_summary_source_file=basin_summary.get("source_file"),
         basin_summary_row_count=basin_summary.get("row_count"),
         basin_summary_years=basin_summary.get("years") or [],
@@ -1458,6 +1512,29 @@ def _sum_basin_wb(rows: list[dict[str, Any]], area_km2: float | None) -> dict[st
     out["wateryld_m3"] = _depth_mm_to_m3(out.get("wateryld_mm"), area_km2)
     out["routed_to_channel_m3"] = _depth_mm_to_m3(out.get("routed_to_channel_mm"), area_km2)
     return out
+
+
+def _basin_aquifer_channel_trace(
+    txt: Path,
+    area_km2: float | None,
+    *,
+    evaluation_start: date | None = None,
+    evaluation_end: date | None = None,
+) -> dict[str, Any]:
+    table = _read_optional(txt / "basin_aqu_yr.txt") or _read_optional(txt / "basin_aqu_aa.txt")
+    if table is None:
+        return {}
+    rows = _filter_rows_by_period(table.rows, evaluation_start, evaluation_end)
+    vals = [_safe_float(row.get("flo_cha")) for row in rows]
+    vals = [v for v in vals if v is not None]
+    flow_to_channel_mm = sum(vals) if vals else None
+    return {
+        "source_file": table.path.name,
+        "row_count": len(rows),
+        "years": _year_list(rows),
+        "basin_aquifer_flow_to_channel_mm": flow_to_channel_mm,
+        "basin_aquifer_flow_to_channel_m3": _depth_mm_to_m3(flow_to_channel_mm, area_km2),
+    }
 
 
 def _weighted_wateryld_from_hru_lte(txt: Path) -> tuple[float | None, float | None]:
@@ -2612,6 +2689,15 @@ def _render_markdown(report: MassTraceReport) -> str:
         ("Basin water yield m3", _fmt(report.basin_wateryld_m3)),
         ("Basin routed-to-channel mm", _fmt(report.basin_routed_to_channel_mm)),
         ("Basin routed-to-channel m3", _fmt(report.basin_routed_to_channel_m3)),
+        ("Basin aquifer flow-to-channel mm", _fmt(report.basin_aquifer_flow_to_channel_mm)),
+        ("Basin aquifer flow-to-channel m3", _fmt(report.basin_aquifer_flow_to_channel_m3)),
+        ("Basin augmented routed-to-channel m3", _fmt(report.basin_augmented_routed_to_channel_m3)),
+        ("Basin wateryld closure ratio", _fmt(report.basin_wateryld_closure_ratio)),
+        ("Augmented routed-to-channel closure ratio", _fmt(report.augmented_routed_to_channel_closure_ratio)),
+        (
+            "All-terminal augmented routed-to-channel closure ratio",
+            _fmt(report.all_terminal_augmented_routed_to_channel_closure_ratio),
+        ),
         ("Routed-to-channel closure ratio", _fmt(report.routed_to_channel_closure_ratio)),
         ("All-terminal routed-to-channel closure ratio", _fmt(report.all_terminal_routed_to_channel_closure_ratio)),
         ("All-terminal mass closure ratio", _fmt(report.all_terminal_mass_closure_ratio)),
@@ -2632,6 +2718,9 @@ def _render_markdown(report: MassTraceReport) -> str:
         ("Basin water-balance source file", report.basin_wb_source_file),
         ("Basin water-balance rows", report.basin_wb_row_count),
         ("Basin water-balance years", ",".join(map(str, report.basin_wb_years)) or "n/a"),
+        ("Basin aquifer source file", report.basin_aquifer_source_file),
+        ("Basin aquifer rows", report.basin_aquifer_row_count),
+        ("Basin aquifer years", ",".join(map(str, report.basin_aquifer_years)) or "n/a"),
         ("Basin summary source file", report.basin_summary_source_file),
         ("Basin summary rows", report.basin_summary_row_count),
         ("Basin summary years", ",".join(map(str, report.basin_summary_years)) or "n/a"),
