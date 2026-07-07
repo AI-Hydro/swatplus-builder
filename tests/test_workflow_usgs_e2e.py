@@ -2428,6 +2428,8 @@ def test_locked_calibrated_txtinout_routing_gate_uses_mass_trace(monkeypatch, tm
         assert Path(run_dir) == locked_txt
         assert kwargs["basin_id"] == "usgs_test"
         assert kwargs["selected_outlet_gis_id"] == 24
+        assert kwargs["evaluation_start"] is None
+        assert kwargs["evaluation_end"] is None
         return SimpleNamespace(
             closure_status="fail_hru_to_channel",
             flags=["hru_wateryld_without_terminal_channel_flow"],
@@ -2459,6 +2461,52 @@ def test_locked_calibrated_txtinout_routing_gate_uses_mass_trace(monkeypatch, tm
     assert result["recommended_next_action"] == (
         "Inspect HRU-to-channel transfer, terminal outlet selection, and channel routing before calibration."
     )
+
+
+def test_locked_calibrated_txtinout_routing_gate_passes_evaluation_window(monkeypatch, tmp_path: Path):
+    locked_txt = tmp_path / "locked_calibrated_TxtInOut"
+    _write_basin_wb(locked_txt)
+
+    def fake_trace_mass_balance(run_dir, **kwargs):
+        assert Path(run_dir) == locked_txt
+        assert kwargs["evaluation_start"] == "2010-01-01"
+        assert kwargs["evaluation_end"] == "2018-12-31"
+        return SimpleNamespace(
+            closure_status="pass",
+            flags=[],
+            selected_outlet_gis_id=24,
+            selected_outlet_is_terminal=True,
+            terminal_outlet_count=1,
+            basin_wateryld_m3=100.0,
+            basin_routed_to_channel_m3=100.0,
+            routed_to_channel_closure_ratio=1.0,
+            all_terminal_routed_to_channel_closure_ratio=1.0,
+            all_terminal_mass_closure_ratio=1.0,
+            selected_terminal_fraction_of_all_terminal_flow=1.0,
+            closure_reference="basin_wateryld_m3",
+            hru_wateryld_m3=None,
+            ru_outflow_m3=None,
+            ru_outflow_to_basin_wateryld_ratio=None,
+            channel_inflow_m3=100.0,
+            terminal_outflow_m3=100.0,
+            all_terminal_outflow_m3=100.0,
+            mass_closure_ratio=1.0,
+            evaluation_period="2010-01-01..2018-12-31",
+        )
+
+    monkeypatch.setattr("swatplus_builder.output.mass_trace.trace_mass_balance", fake_trace_mass_balance)
+    result = _check_locked_txt_routing_flow(
+        locked_txt,
+        out_dir=tmp_path / "routing_gate",
+        basin_id="usgs_test",
+        selected_outlet_gis_id=24,
+        evaluation_start="2010-01-01",
+        evaluation_end="2018-12-31",
+    )
+
+    assert result["status"] == "passed"
+    assert result["pass"] is True
+    assert result["mass_trace_evaluation_period"] == "2010-01-01..2018-12-31"
 
 
 def test_locked_calibrated_txtinout_mass_closure_is_warning(monkeypatch, tmp_path: Path):
@@ -2590,6 +2638,55 @@ def test_mass_trace_accepts_standalone_txtinout_for_locked_verification(tmp_path
     assert report.txtinout_dir == str(txt.resolve())
     assert report.selected_outlet_is_terminal is True
     assert Path(tmp_path, "mass_trace", "mass_trace.json").exists()
+
+
+def test_mass_trace_filters_closure_rows_to_evaluation_window(tmp_path: Path):
+    txt = tmp_path / "locked_calibrated_TxtInOut"
+    txt.mkdir(parents=True)
+    (txt / "file.cio").write_text("file.cio\n", encoding="utf-8")
+    (txt / "object.cnt").write_text("object.cnt:\nbasin 10000\n", encoding="utf-8")
+    (txt / "metadata.json").write_text('{"selected_outlet_gis_id": 24}\n', encoding="utf-8")
+    (txt / "chandeg.con").write_text(
+        "chandeg.con\n"
+        "id name gis_id out_tot obj_typ\n"
+        "1 cha24 24 0 cha\n",
+        encoding="utf-8",
+    )
+    (txt / "basin_wb_yr.txt").write_text(
+        "basin_wb_yr\n"
+        "jday mon day yr unit gis_id name precip et surq_gen latq wateryld perc\n"
+        "mm mm mm mm mm mm\n"
+        "365 12 31 2007 1 1 basin 300 100 10 10 100 10\n"
+        "365 12 31 2010 1 1 basin 900 300 100 100 500 100\n",
+        encoding="utf-8",
+    )
+    daily_flow_for_500_mm_over_100_km2 = 50_000_000.0 / 86_400.0
+    (txt / "channel_sd_day.txt").write_text(
+        "channel_sd_day\n"
+        "jday mon day yr unit gis_id name flo_in flo_out\n"
+        "m^3/s m^3/s\n"
+        "1 1 1 2007 1 24 cha24 1000.0 1000.0\n"
+        f"1 1 1 2010 1 24 cha24 {daily_flow_for_500_mm_over_100_km2:.9f} "
+        f"{daily_flow_for_500_mm_over_100_km2:.9f}\n",
+        encoding="utf-8",
+    )
+
+    report = trace_mass_balance(
+        txt,
+        selected_outlet_gis_id=24,
+        out_dir=tmp_path / "mass_trace",
+        evaluation_start="2010-01-01",
+        evaluation_end="2010-12-31",
+    )
+
+    assert report.evaluation_period == "2010-01-01..2010-12-31"
+    assert report.basin_wb_years == [2010]
+    assert report.channel_years == [2010]
+    assert report.selected_channel_years == [2010]
+    assert report.closure_status == "pass"
+    assert report.basin_wateryld_m3 == pytest.approx(50_000_000.0)
+    assert report.terminal_outflow_m3 == pytest.approx(50_000_000.0)
+    assert report.mass_closure_ratio == pytest.approx(1.0)
 
 
 def test_mass_trace_recovers_selected_outlet_from_run_root_provenance(tmp_path: Path):

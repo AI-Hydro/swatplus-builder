@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import shutil
 from dataclasses import asdict, dataclass, field
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -235,11 +236,14 @@ def run_diagnostic_calibration(
             if locked_txt.exists():
                 shutil.rmtree(locked_txt)
             shutil.copytree(verified_txt, locked_txt)
+        final_eval_window = _alignment_date_window(source_run / "benchmark" / "alignment.csv")
         final_routing_flow_gates = _check_locked_txt_routing_flow(
             locked_txt,
             out_dir=source_run / "calibration" / "locked_calibrated_routing_flow",
             basin_id=lock_context.get("basin_id"),
             selected_outlet_gis_id=_safe_int(lock_context.get("outlet_gis_id")),
+            evaluation_start=final_eval_window[0],
+            evaluation_end=final_eval_window[1],
             outlet_scope=str(lock_context.get("outlet_scope") or ""),
             outlet_policy=str(lock_context.get("outlet_policy") or ""),
             selected_outlet_gis_ids=lock_context.get("selected_outlet_gis_ids"),
@@ -512,6 +516,24 @@ def _build_screening_window(
         "score_start": score_start.date().isoformat(),
         "score_end": score_end.date().isoformat(),
     }
+
+
+def _alignment_date_window(path: Path) -> tuple[date | None, date | None]:
+    if not path.is_file():
+        return None, None
+    try:
+        import pandas as pd
+
+        df = pd.read_csv(path)
+    except Exception:
+        return None, None
+    date_col = next((c for c in df.columns if "date" in c.lower()), df.columns[0] if len(df.columns) else None)
+    if date_col is None:
+        return None, None
+    dates = pd.to_datetime(df[date_col], errors="coerce").dropna()
+    if dates.empty:
+        return None, None
+    return dates.min().date(), dates.max().date()
 
 
 def _read_time_sim_start(txtinout: Path) -> str | None:
@@ -1056,6 +1078,8 @@ def _check_locked_txt_routing_flow(
     out_dir: Path,
     basin_id: str | None = None,
     selected_outlet_gis_id: int | None = None,
+    evaluation_start: str | date | None = None,
+    evaluation_end: str | date | None = None,
     outlet_scope: str | None = None,
     outlet_policy: str | None = None,
     selected_outlet_gis_ids: object = None,
@@ -1072,6 +1096,8 @@ def _check_locked_txt_routing_flow(
             basin_id=basin_id or (locked_txt.parent.parent.name if locked_txt.parent else "unknown"),
             selected_outlet_gis_id=selected_outlet_gis_id,
             out_dir=out_dir,
+            evaluation_start=evaluation_start,
+            evaluation_end=evaluation_end,
         )
     except Exception as exc:
         return {"status": "failed", "pass": False, "reason": str(exc)}
@@ -1188,6 +1214,7 @@ def _check_locked_txt_routing_flow(
         "all_terminal_outflow_m3": report.all_terminal_outflow_m3,
         "mass_closure_ratio": report.mass_closure_ratio,
         "mass_trace_basin_wb_source_file": getattr(report, "basin_wb_source_file", None),
+        "mass_trace_evaluation_period": getattr(report, "evaluation_period", None),
         "mass_trace_basin_wb_row_count": getattr(report, "basin_wb_row_count", None),
         "mass_trace_basin_wb_years": getattr(report, "basin_wb_years", []),
         "mass_trace_channel_source_file": getattr(report, "channel_source_file", None),

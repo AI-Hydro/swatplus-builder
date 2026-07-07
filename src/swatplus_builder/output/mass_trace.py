@@ -10,7 +10,7 @@ import csv
 import json
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
 
@@ -448,6 +448,8 @@ def trace_mass_balance(
     out_dir: Path | str | None = None,
     min_closure_ratio: float = 0.7,
     max_closure_ratio: float = 1.3,
+    evaluation_start: str | date | None = None,
+    evaluation_end: str | date | None = None,
 ) -> MassTraceReport:
     """Trace water generation and routed channel output for one run artifact.
 
@@ -459,6 +461,8 @@ def trace_mass_balance(
             ``mass_trace.md``. Defaults to ``<run_dir>/reports``.
         min_closure_ratio: Lower acceptable terminal/basin-yield ratio.
         max_closure_ratio: Upper acceptable terminal/basin-yield ratio.
+        evaluation_start: Optional first date retained for closure sums.
+        evaluation_end: Optional last date retained for closure sums.
 
     Returns:
         A typed report. It is also written to disk when ``out_dir`` is not
@@ -479,18 +483,21 @@ def trace_mass_balance(
     basin = basin_id or str(metadata.get("usgs_id") or run.name)
 
     area_km2 = _model_area_km2(txt)
+    eval_start = _coerce_date(evaluation_start)
+    eval_end = _coerce_date(evaluation_end)
     basin_wb = _read_water_balance_optional(txt / "basin_wb_yr.txt") or _read_water_balance_optional(txt / "basin_wb_aa.txt")
-    basin_rows = basin_wb.rows if basin_wb else []
-    period = _period_from_rows(basin_rows)
+    basin_all_rows = basin_wb.rows if basin_wb else []
+    period = _period_from_rows(basin_all_rows)
+    basin_rows = _filter_rows_by_period(basin_all_rows, eval_start, eval_end)
     wb = _sum_basin_wb(basin_rows, area_km2)
 
     hru_depth_mm, hru_m3 = _weighted_wateryld_from_hru_lte(txt)
     lsu_m3 = _weighted_wateryld_from_lsu(txt)
-    ru_m3 = _ru_outflow_m3(txt)
-    basin_summary = _basin_summary_channel_trace(txt)
+    ru_m3 = _ru_outflow_m3(txt, evaluation_start=eval_start, evaluation_end=eval_end)
+    basin_summary = _basin_summary_channel_trace(txt, evaluation_start=eval_start, evaluation_end=eval_end)
 
     terminal_ids = _terminal_ids_from_chandeg_con(txt)
-    channel = _channel_trace(txt, selected, terminal_ids)
+    channel = _channel_trace(txt, selected, terminal_ids, evaluation_start=eval_start, evaluation_end=eval_end)
     water_yield_m3 = wb.get("wateryld_m3")
     routed_to_channel_m3 = wb.get("routed_to_channel_m3")
     expected_m3 = water_yield_m3
@@ -646,7 +653,7 @@ def trace_mass_balance(
         txtinout_dir=str(txt),
         generated_at=datetime.now(timezone.utc).isoformat(),
         simulation_period=period,
-        evaluation_period=_evaluation_period(run / "outputs" / "alignment.csv"),
+        evaluation_period=_period_label(eval_start, eval_end) or _evaluation_period(run / "outputs" / "alignment.csv"),
         model_area_km2=area_km2,
         precip_mm=wb.get("precip_mm"),
         et_mm=wb.get("et_mm"),
@@ -2220,17 +2227,28 @@ def _area_map(path: Path) -> dict[int, float]:
     return out
 
 
-def _ru_outflow_m3(txt: Path) -> float | None:
+def _ru_outflow_m3(
+    txt: Path,
+    *,
+    evaluation_start: date | None = None,
+    evaluation_end: date | None = None,
+) -> float | None:
     table = _read_routing_unit_optional(txt / "ru_yr.txt") or _read_routing_unit_optional(txt / "ru_aa.txt")
     if table is None:
         return None
-    if not table.rows:
+    rows = _filter_rows_by_period(table.rows, evaluation_start, evaluation_end)
+    if not rows:
         return 0.0
     unit = _unit_for_column(table, "flo")
-    return sum(_flow_value_to_m3(row.get("flo"), unit, row) or 0.0 for row in table.rows)
+    return sum(_flow_value_to_m3(row.get("flo"), unit, row) or 0.0 for row in rows)
 
 
-def _basin_summary_channel_trace(txt: Path) -> dict[str, Any]:
+def _basin_summary_channel_trace(
+    txt: Path,
+    *,
+    evaluation_start: date | None = None,
+    evaluation_end: date | None = None,
+) -> dict[str, Any]:
     for name in (
         "basin_sd_chamorph_day.txt",
         "basin_sd_chamorph_yr.txt",
@@ -2246,7 +2264,7 @@ def _basin_summary_channel_trace(txt: Path) -> dict[str, Any]:
         return {"source_note": "No basin-summary channel output file available for mass trace."}
 
     unit = _unit_for_column(source, "flo_out")
-    rows = source.rows
+    rows = _filter_rows_by_period(source.rows, evaluation_start, evaluation_end)
     outflow = sum(_flow_value_to_m3(r.get("flo_out"), unit, r) or 0.0 for r in rows)
     source_note = "Using basin-summary channel output with header units for aggregate closure comparison."
     return {
@@ -2259,7 +2277,14 @@ def _basin_summary_channel_trace(txt: Path) -> dict[str, Any]:
     }
 
 
-def _channel_trace(txt: Path, selected: int | None, terminal_ids: set[int]) -> dict[str, Any]:
+def _channel_trace(
+    txt: Path,
+    selected: int | None,
+    terminal_ids: set[int],
+    *,
+    evaluation_start: date | None = None,
+    evaluation_end: date | None = None,
+) -> dict[str, Any]:
     source = _read_optional(txt / "channel_sdmorph_day.txt")
     source_file = "channel_sdmorph_day.txt" if source is not None else None
     source_note = "Using morphology daily channel rates (`m3/s`) for mass trace."
@@ -2271,14 +2296,15 @@ def _channel_trace(txt: Path, selected: int | None, terminal_ids: set[int]) -> d
         return {"source_note": "No channel output file available for mass trace."}
 
     unit = _unit_for_column(source, "flo_out")
-    selected_rows = [r for r in source.rows if selected is not None and _safe_int(r.get("gis_id")) == int(selected)]
-    terminal_rows = [r for r in source.rows if _safe_int(r.get("gis_id")) in terminal_ids]
+    rows = _filter_rows_by_period(source.rows, evaluation_start, evaluation_end)
+    selected_rows = [r for r in rows if selected is not None and _safe_int(r.get("gis_id")) == int(selected)]
+    terminal_rows = [r for r in rows if _safe_int(r.get("gis_id")) in terminal_ids]
     return {
         "source_file": source_file,
         "unit": unit,
         "source_note": source_note,
-        "row_count": len(source.rows),
-        "years": _year_list(source.rows),
+        "row_count": len(rows),
+        "years": _year_list(rows),
         "selected_row_count": len(selected_rows),
         "selected_years": _year_list(selected_rows),
         "terminal_row_count": len(terminal_rows),
@@ -2318,6 +2344,70 @@ def _row_seconds(row: dict[str, Any]) -> float:
     if day and mon:
         return _SECONDS_PER_DAY
     return _SECONDS_PER_YEAR
+
+
+def _coerce_date(value: str | date | datetime | None) -> date | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    parsed = pd.to_datetime(value, errors="coerce")
+    if pd.isna(parsed):
+        return None
+    return parsed.date()
+
+
+def _row_date(row: dict[str, Any]) -> date | None:
+    year = _safe_int(row.get("yr"))
+    if year is None or year <= 0:
+        return None
+    mon = _safe_int(row.get("mon"))
+    day = _safe_int(row.get("day"))
+    if mon and day:
+        try:
+            return date(year, mon, day)
+        except ValueError:
+            return None
+    jday = _safe_int(row.get("jday"))
+    if jday and 1 <= jday <= 366:
+        try:
+            return date(year, 1, 1) + timedelta(days=jday - 1)
+        except Exception:
+            return None
+    # Annual rows represent the whole water-balance year; use mid-year so
+    # ordinary Jan-1..Dec-31 score windows include that year.
+    return date(year, 7, 1)
+
+
+def _filter_rows_by_period(
+    rows: list[dict[str, Any]],
+    evaluation_start: date | None,
+    evaluation_end: date | None,
+) -> list[dict[str, Any]]:
+    if evaluation_start is None and evaluation_end is None:
+        return list(rows)
+    filtered: list[dict[str, Any]] = []
+    for row in rows:
+        row_date = _row_date(row)
+        if row_date is None:
+            filtered.append(row)
+            continue
+        if evaluation_start is not None and row_date < evaluation_start:
+            continue
+        if evaluation_end is not None and row_date > evaluation_end:
+            continue
+        filtered.append(row)
+    return filtered
+
+
+def _period_label(start: date | None, end: date | None) -> str | None:
+    if start is None and end is None:
+        return None
+    left = start.isoformat() if start is not None else "open"
+    right = end.isoformat() if end is not None else "open"
+    return f"{left}..{right}"
 
 
 def _depth_mm_to_m3(depth_mm: float | None, area_km2: float | None) -> float | None:

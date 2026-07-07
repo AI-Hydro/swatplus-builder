@@ -7,6 +7,43 @@ Phase 3L — Full-Mode Engine Compatibility & Research-Grade Pipeline
 
 **Current focus:** The canonical full-mode workflow is implemented and auditable, but the objective-suite target is still scientifically open. As of 2026-07-02, the summarize-only objective report has been regenerated from refreshed evidence for all 11 canonical rows where available: seven fresh `0.7.10` no-calibration reruns, two `0.7.9` no-calibration reruns, and two current hardening calibration runs. It reports `research_grade_count=0/11`, `target_hypothesis_evaluation.status=not_supported_by_current_evidence`, and blocker domains `science=9`, `diagnostics=1`, `provenance=1`. Treat older `69/97`, `96/97`, one-research-grade, or stale-provenance/build-row language as historical unless explicitly tied to an older dated entry.
 
+### [2026-07-06] — Locked routing-flow gate now uses the benchmark evaluation window
+
+Audited the release-candidate calibrated `03349000` run after noticing that
+baseline routing closure passed while final locked calibrated routing closure
+was retained as a warning:
+
+- Run:
+  `/Users/mgalib/swatplus_runs/release_candidate_validate_20260703/03349000_2010_2018_fulloverlay_diag`.
+- Baseline `reports/mass_trace.json` was already evaluated over
+  `2010-01-01..2018-12-31` and passed:
+  `mass_closure_ratio=0.898274`,
+  `all_terminal_routed_to_channel_closure_ratio=0.900102`,
+  selected terminal fraction `1.0`, selected outlet GIS `77`.
+- The locked calibrated routing gate had been tracing
+  `calibration/locked_calibrated_TxtInOut` over `2007..2018`, mixing warm-up
+  years with the benchmark/evaluation period. The mass-trace API now accepts
+  explicit `evaluation_start`/`evaluation_end` dates, filters basin,
+  routing-unit, basin-summary, and channel rows to that window, and records the
+  applied `mass_trace_evaluation_period` in `routing_flow_gates.json`.
+  Diagnostic calibration now derives that window from `benchmark/alignment.csv`
+  before checking the locked calibrated TxtInOut.
+- A direct regression test verifies that a deliberately bad warm-up year is
+  excluded from closure sums when an evaluation window is supplied.
+- Rechecking the real locked calibrated artifact with the corrected
+  `2010-01-01..2018-12-31` window still gives a retained warning:
+  `closure_status=fail_mass_closure`, `mass_closure_ratio=1.676263`,
+  `all_terminal_routed_to_channel_closure_ratio=1.679641`, selected terminal
+  fraction `1.0`. This means the patch fixes the window authority bug, but it
+  does **not** promote `03349000`: the calibrated artifact genuinely routes
+  more terminal/channel flow than its calibrated basin water-yield term, and
+  physical gates still fail with negative NSE.
+
+Verification:
+
+- `PYTHONPATH=src python -m py_compile src/swatplus_builder/output/mass_trace.py src/swatplus_builder/calibration/diagnostic_calibrator.py`
+- `PYTHONPATH=src python -m pytest -q tests/test_workflow_usgs_e2e.py -k 'mass_trace or locked_calibrated_txtinout_routing_gate'`
+
 ### [2026-07-03] — Full-overlay calibrated validation passes diagnostic gates
 
 Ran the fresh calibrated full-overlay validation for Marsh Creek:
