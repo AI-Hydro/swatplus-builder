@@ -2,6 +2,30 @@
 
 All notable changes to swatplus-builder are documented here.
 
+## [0.7.13] — 2026-07-10
+
+### Fixed
+- Benchmark locks now seal the static TxtInOut configuration in addition to
+  alignment, metrics, and outlet-provenance hashes. New artifact-backed
+  calibration, sensitivity, and verification paths fail closed when a sealed
+  input or benchmark artifact has drifted; historical unsealed locks require a
+  fresh relock before reuse for calibration.
+- The canonical workflow now passes its recorded chronological 60/40 split into
+  calibration. Candidate search excludes the held-out period and evaluates the
+  selected solution against that period using the physical gate. Fresh locked
+  reruns remain reproducibility checks, not a substitute for temporal transfer.
+- Schema-versioned `evidence_v1.json` is now a required final artifact. A
+  schema write failure fails the workflow rather than silently leaving a
+  legacy-only evidence bundle.
+- The generic hydrologic figure suite now accepts sealed final alignment and
+  verification-metric overrides. A successful locked calibration renders
+  calibrated hydrograph/FDC/scatter/residual/seasonal figures and labels them
+  accordingly; an absent explicit final alignment fails figure regeneration
+  rather than falling back to stale baseline plots.
+- Verified-but-blocked calibrations now use the same final verified figure
+  source, visibly labeled `claim blocked`, so diagnostic improvement is shown
+  without implying a promoted claim.
+
 ## [0.7.12] — 2026-07-03
 
 ### Fixed

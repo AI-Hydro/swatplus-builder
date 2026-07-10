@@ -142,6 +142,59 @@ Verification:
 - `PYTHONPATH=src python -m py_compile src/swatplus_builder/output/eval.py src/swatplus_builder/output/mass_trace.py src/swatplus_builder/workflows/usgs_e2e.py src/swatplus_builder/calibration/diagnostic_calibrator.py scripts/run_objective_10basin.py src/swatplus_builder/governance/gates.py src/swatplus_builder/output/dashboard.py src/swatplus_builder/output/landuse_fidelity.py src/swatplus_builder/output/plots/landuse_composition.py src/swatplus_builder/output/plots/wrapper.py`
 - `git diff --check`
 
+## 2026-07-10 — Sealed Full-Overlay Calibration Validation And Figure Provenance Repair
+
+Completed a fresh real-engine full-overlay workflow for `01547700` (2010-2019)
+at `/Users/mgalib/swatplus_runs/calibration_contract_validate_20260709/01547700_2010_2019_fulloverlay_diag`.
+
+Findings:
+
+- The new lock sealed 230 static TxtInOut files. The workflow calibrated on
+  2010-2015, kept 2016-2019 withheld, ran all 16 governed sensitivity checks,
+  evaluated 30 staged candidates, and performed a fresh final rerun.
+- Final verification was `NSE=0.3533`, `KGE=0.5824`, `PBIAS=-4.92%`; withheld
+  transfer was `NSE=0.3770`, `KGE=0.6300`, `PBIAS=+0.91%`. Physical and
+  routing-flow gates passed, including selected-terminal scope and closure.
+  The workflow wrote `evidence_v1.json` and received
+  `effective_claim_tier=research_grade`.
+- Visual QA found a real artifact-provenance defect: the top-level generic
+  hydrograph showed baseline values despite successful calibration. The
+  dedicated calibrated comparison was correct. The plot wrapper now accepts
+  explicit final alignment/metrics overrides and errors on a missing override;
+  calibrated workflow figures are labeled `locked calibrated verification`.
+- The corrected hydrograph is visually consistent with the final metrics but
+  still underpredicts several observed extremes. This is retained as a model
+  limitation, not interpreted as complete peak-process resolution.
+
+Verification:
+
+- Focused plot/workflow/lock regression tests passed.
+- `ruff check` and `py_compile` passed for modified modules; `git diff --check`
+  passed.
+- Raster visual QA confirmed the final primary hydrograph title and metrics
+  match the sealed verification source.
+
+## 2026-07-10 — Contrasting Sealed Validation And Blocked-Claim Figure Path
+
+Completed a matching fresh full-overlay workflow for `03349000` (2010-2019)
+at `/Users/mgalib/swatplus_runs/calibration_contract_validate_20260710/03349000_2010_2019_fulloverlay_diag`.
+
+Findings:
+
+- All 16 governed sensitivity checks completed and calibration was freshly
+  verified. Metrics improved from `NSE=-0.4202`, `KGE=0.0841`,
+  `PBIAS=-51.13%` to `NSE=-0.0199`, `KGE=0.3548`, `PBIAS=-19.12%`.
+- Final physical gates retained `NEGATIVE_SKILL`; withheld 2016-2019 transfer
+  also failed (`NSE=0.0087`, `KGE=0.3010`, `PBIAS=-18.33%`). Routing-flow
+  gates passed. The workflow correctly emitted
+  `calibration_status=verified_diagnostic_claim_blocked` and
+  `effective_claim_tier=exploratory`.
+- Dashboard collection exposed verified calibration metrics and 3,652 aligned
+  calibrated daily values. Its generic hydrograph now shows the final verified
+  curve and is visibly labeled `locked calibrated verification (claim blocked)`.
+  The improved curve is therefore available for diagnosis without being
+  mistaken for a promoted result.
+
 ### [2026-07-03] — 12031000 routing blocker narrowed to output-semantics audit
 
 Investigated the strongest current objective-suite row,
@@ -10185,3 +10238,35 @@ Verification:
 - `/tmp/swatplus-builder-0712-smoke/bin/swat version --json`
 - `/tmp/swatplus-builder-0712-smoke/bin/swat workflow run --help`
 - `python -m mkdocs build --strict`
+
+## 2026-07-09 — Calibration And Evidence Contract Hardening
+
+Completed a focused pipeline audit and implemented the remaining high-impact
+calibration/evidence fixes.
+
+Findings and changes:
+
+- New benchmark locks now seal a static TxtInOut configuration fingerprint,
+  and artifact-backed sensitivity, calibration, and verification compare that
+  fingerprint plus alignment/metrics/outlet-provenance hashes before use.
+  Drift and legacy unsealed calibration artifacts fail closed with a relock
+  requirement.
+- The workflow's existing chronological 60/40 split is now functional:
+  candidate search excludes the held-out dates, runs the selected parameters on
+  that period, records transfer metrics, and requires the withheld-period
+  physical gate for calibrated claim success. Fresh full-lock reruns remain
+  reproducibility evidence rather than a substitute for temporal transfer.
+- Schema-versioned `evidence_v1.json` is now required and generated after
+  dashboard payload finalization. A schema-write failure aborts the workflow
+  instead of silently leaving legacy-only evidence.
+- Existing July artifacts predate input sealing. They remain historical
+  evidence but cannot start another calibration without a fresh lock; no
+  metrics were altered or promoted by this code change.
+
+Verification:
+
+- `PYTHONPATH=src python -m py_compile src/swatplus_builder/calibration/locked_benchmark.py src/swatplus_builder/calibration/diagnostic_calibrator.py src/swatplus_builder/workflows/usgs_e2e.py`
+- `PYTHONPATH=src python -m pytest -q tests/test_locked_benchmark.py tests/test_workflow_usgs_e2e.py tests/test_evidence_schema.py` (`123 passed`)
+- `PYTHONPATH=src python -m pytest -q tests/test_calibration_real_engine.py tests/test_governance_gates.py tests/test_output_eval.py tests/test_water_balance_gate.py tests/test_output_dashboard.py` (`81 passed`)
+- `PYTHONPATH=src python -m ruff check src/swatplus_builder/calibration/locked_benchmark.py src/swatplus_builder/calibration/diagnostic_calibrator.py src/swatplus_builder/workflows/usgs_e2e.py tests/test_locked_benchmark.py tests/test_workflow_usgs_e2e.py`
+- `git diff --check`

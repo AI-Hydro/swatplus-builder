@@ -9,8 +9,9 @@ Provides a complete, reproducible lock → calibrate → verify workflow:
    against the locked alignment context and return a
    :class:`CalibrationEvidence` summary.
 
-3. :func:`verify_calibration` — independently rerun the best parameter
-   set and confirm metric improvement vs. the locked baseline.
+3. :func:`verify_calibration` — reproducibly rerun the best parameter
+   set and confirm metric improvement vs. the locked baseline. Temporal
+   transfer is evaluated separately when a validation period is supplied.
 
 4. :func:`build_readiness_table` — scan a directory tree for
    ``verification_summary.json`` files and produce a markdown table.
@@ -48,6 +49,8 @@ class BenchmarkLock(BaseModel):
     alignment_sha256: str
     metrics_sha256: str
     provenance_sha256: str | None = None
+    input_configuration_sha256: str | None = None
+    input_configuration_file_count: int | None = None
     outlet_gis_id: int
     outlet_policy: str = "strict"
     outlet_scope: str = "single_channel"
@@ -295,12 +298,15 @@ def lock_benchmark(
     )
 
     sha_git = git_sha or try_git_sha(Path(__file__).resolve().parents[3]) or "unknown"
+    input_configuration_sha256, input_configuration_file_count = _input_configuration_fingerprint(txt)
     lock = BenchmarkLock(
         basin_id=basin_id,
         locked_at_utc=datetime.now(timezone.utc).isoformat(),
         alignment_sha256=_sha256_file(alignment_csv) or "",
         metrics_sha256=_sha256_file(metrics_json) or "",
         provenance_sha256=_sha256_file(provenance_json),
+        input_configuration_sha256=input_configuration_sha256,
+        input_configuration_file_count=input_configuration_file_count,
         outlet_gis_id=pinned_outlet,
         outlet_policy=lock_outlet_policy,
         outlet_scope=outlet_scope,
@@ -367,7 +373,13 @@ def calibrate_against_lock(
     if parameters is None:
         parameters = ["CN2", "ALPHA_BF"]
 
+    lock_source_is_artifact = not isinstance(lock, BenchmarkLock)
     lock = _resolve_lock(lock)
+    _assert_benchmark_integrity(
+        lock,
+        Path(base_txtinout),
+        require_input_configuration=lock_source_is_artifact,
+    )
     out = Path(out_dir).expanduser().resolve()
     bmark_dir = Path(lock.benchmark_dir)
     alignment_csv = bmark_dir / "alignment.csv"
@@ -884,9 +896,13 @@ def calibrate_against_lock(
                 include_physical_gate=True,
                 nyskip_years=0,
                 simulation_start=simulation_start,
-                simulation_end=simulation_end,
-                score_start=score_start,
-                score_end=score_end,
+                simulation_end=(
+                    max(str(simulation_end), validation_period[1])
+                    if simulation_end is not None
+                    else validation_period[1]
+                ),
+                score_start=validation_period[0],
+                score_end=validation_period[1],
             )
             val_evidence = val_objective(best_params)
         except Exception as _e:  # noqa: BLE001
@@ -931,7 +947,12 @@ def calibrate_against_lock(
     if validation_period is not None:
         best_solution_payload["validation_period"] = list(validation_period)
         best_solution_payload["validation_metrics"] = val_evidence
-        best_solution_payload["validation_transfer_passed"] = _volume_gate_passed(val_evidence)
+        validation_process_pass = _candidate_physical_gate_passed(val_evidence)
+        best_solution_payload["validation_transfer_passed"] = (
+            validation_process_pass
+            if validation_process_pass is not None
+            else _volume_gate_passed(val_evidence)
+        )
     if dds_n_seeds > 1:
         best_solution_payload["ensemble_n_seeds"] = dds_n_seeds
         best_solution_payload["ensemble_best_nse_per_seed"] = ensemble_nse_per_seed
@@ -975,7 +996,7 @@ def calibrate_against_lock(
             f"- Validation period: `{validation_period[0]}` – `{validation_period[1]}`",
             f"- Validation NSE/KGE: `{val_nse:.6f}` / `{val_kge:.6f}`",
             f"- Validation PBIAS: `{val_pbias:.2f}%`",
-            f"- Transfer passed (volume gate): `{'YES' if val_pass else 'NO'}`",
+            f"- Transfer passed (withheld-period physical gate): `{'YES' if val_pass else 'NO'}`",
         ]
     summary_md = cal_dir / "summary.md"
     summary_md.write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
@@ -994,7 +1015,15 @@ def calibrate_against_lock(
         validation_nse=float(val_evidence["nse"]) if val_evidence else None,
         validation_kge=float(val_evidence.get("kge", float("nan"))) if val_evidence else None,
         validation_pbias=float(val_evidence.get("pbias", float("nan"))) if val_evidence else None,
-        validation_transfer_passed=_volume_gate_passed(val_evidence) if val_evidence else None,
+        validation_transfer_passed=(
+            (
+                _candidate_physical_gate_passed(val_evidence)
+                if _candidate_physical_gate_passed(val_evidence) is not None
+                else _volume_gate_passed(val_evidence)
+            )
+            if val_evidence
+            else None
+        ),
         ensemble_n_seeds=dds_n_seeds if (search_method == "dds" and dds_n_seeds > 1) else None,
         ensemble_best_nse_per_seed=ensemble_nse_per_seed if dds_n_seeds > 1 else [],
         ensemble_best_kge_per_seed=ensemble_kge_per_seed if dds_n_seeds > 1 else [],
@@ -1025,7 +1054,13 @@ def screen_parameters_against_lock(
     as calibration candidates, so this artifact can govern research-grade
     calibration eligibility without relying on static/global activity labels.
     """
+    lock_source_is_artifact = not isinstance(lock, BenchmarkLock)
     lock = _resolve_lock(lock)
+    _assert_benchmark_integrity(
+        lock,
+        Path(base_txtinout),
+        require_input_configuration=lock_source_is_artifact,
+    )
     out = Path(out_dir).expanduser().resolve()
     screen_dir = out / "sensitivity_screen_locked"
     screen_dir.mkdir(parents=True, exist_ok=True)
@@ -1861,7 +1896,13 @@ def verify_calibration(
     Returns:
         :class:`VerificationResult` with deltas and improvement flag.
     """
+    lock_source_is_artifact = not isinstance(lock, BenchmarkLock)
     lock = _resolve_lock(lock)
+    _assert_benchmark_integrity(
+        lock,
+        Path(base_txtinout),
+        require_input_configuration=lock_source_is_artifact,
+    )
     out = Path(out_dir).expanduser().resolve()
     verify_dir = out / "verification_real_objective"
     verify_dir.mkdir(parents=True, exist_ok=True)
@@ -2125,3 +2166,84 @@ def _sha256_file(path: Path) -> str | None:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+_DYNAMIC_OUTPUT_PREFIXES = (
+    "basin_",
+    "channel_",
+    "chandeg_",
+    "hru_",
+    "hyd_",
+    "lsunit_",
+    "mgt_",
+    "ru_",
+    "soil_nut_",
+    "aqu_",
+    "outflow_",
+    "flow_duration",
+)
+
+
+def _input_configuration_fingerprint(txtinout_dir: Path | str) -> tuple[str, int]:
+    """Hash static TxtInOut configuration while excluding engine output tables."""
+
+    txt = Path(txtinout_dir).expanduser().resolve()
+    digest = hashlib.sha256()
+    files: list[Path] = []
+    for path in txt.rglob("*"):
+        if not path.is_file():
+            continue
+        name = path.name.lower()
+        if name.startswith(_DYNAMIC_OUTPUT_PREFIXES) and name.endswith((".txt", ".csv")):
+            continue
+        files.append(path)
+    for path in sorted(files, key=lambda item: item.relative_to(txt).as_posix()):
+        digest.update(path.relative_to(txt).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        digest.update(b"\0")
+    return digest.hexdigest(), len(files)
+
+
+def _assert_benchmark_integrity(
+    lock: BenchmarkLock,
+    base_txtinout: Path | str,
+    *,
+    require_input_configuration: bool = False,
+) -> None:
+    """Fail closed when a sealed benchmark or its input model has drifted."""
+
+    # Historical locks remain readable for reporting. An artifact path used for
+    # a new calibration, however, must be sealed against model-input drift.
+    if not lock.input_configuration_sha256:
+        if require_input_configuration:
+            raise SwatBuilderInputError(
+                "Benchmark lock predates input sealing; relock before calibration.",
+                benchmark_dir=lock.benchmark_dir,
+            )
+        return
+
+    benchmark_dir = Path(lock.benchmark_dir).expanduser().resolve()
+    expected = {
+        "alignment.csv": lock.alignment_sha256,
+        "metrics.json": lock.metrics_sha256,
+        "outlet_provenance.json": lock.provenance_sha256,
+    }
+    mismatches: list[str] = []
+    for name, expected_hash in expected.items():
+        if expected_hash and _sha256_file(benchmark_dir / name) != expected_hash:
+            mismatches.append(name)
+
+    actual_hash, actual_count = _input_configuration_fingerprint(base_txtinout)
+    if actual_hash != lock.input_configuration_sha256:
+        mismatches.append("TxtInOut input configuration")
+    if lock.input_configuration_file_count is not None and actual_count != lock.input_configuration_file_count:
+        mismatches.append("TxtInOut input file inventory")
+    if mismatches:
+        raise SwatBuilderInputError(
+            "Benchmark lock integrity check failed; relock before calibration.",
+            mismatched_artifacts=mismatches,
+            benchmark_dir=str(benchmark_dir),
+        )

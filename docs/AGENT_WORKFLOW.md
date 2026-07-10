@@ -211,6 +211,11 @@ Behavior:
      `calibration_final_claim_gates_passed=false`; agents may cite the locked
      diagnostic verification, but must not report a calibrated model skill
      claim or `research_grade`.
+   - The canonical workflow derives a chronological 60/40 calibration /
+     validation split from the requested window. Candidate search excludes the
+     held-out dates; the selected solution is evaluated on those dates with the
+     same physical gate. A fresh full-lock rerun checks reproducibility, but it
+     is not described as independent temporal validation.
    - When locked verification alignments are available, the workflow writes an
      observed/baseline-simulated/calibrated-simulated hydrograph comparison
      under `calibration/hydrograph_comparison/`.

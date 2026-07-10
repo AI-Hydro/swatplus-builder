@@ -12,6 +12,7 @@ import pytest
 from swatplus_builder.calibration.locked_benchmark import (
     BenchmarkLock,
     ReadinessRow,
+    _assert_benchmark_integrity,
     _diagnostic_calibration_phases,
     _phase_candidate_points,
     _resolve_lock,
@@ -117,6 +118,48 @@ def test_lock_benchmark_metrics_finite(tmp_path, obs_series):
     assert lock.alignment_sha256 != ""
     assert lock.outlet_gis_id == 1
     assert lock.outlet_policy == "strict"
+    assert lock.input_configuration_sha256 is not None
+    assert lock.input_configuration_file_count is not None
+
+
+def test_benchmark_lock_rejects_changed_input_configuration(tmp_path, obs_series):
+    """A sealed lock must not calibrate a model edited after the baseline run."""
+    txtinout = tmp_path / "TxtInOut"
+    txtinout.mkdir()
+    _make_fake_sim_file(txtinout)
+    _make_chandeg_con(txtinout)
+    lock = lock_benchmark(
+        txtinout_dir=txtinout,
+        obs_series=obs_series,
+        out_dir=tmp_path / "lock_out",
+        basin_id="usgs_integrity",
+        outlet_gis_id=1,
+        sim_source_file="channel_sd_day.txt",
+    )
+
+    _assert_benchmark_integrity(lock, txtinout)
+    (txtinout / "parameters.bsn").write_text("mutated after lock\n", encoding="utf-8")
+
+    with pytest.raises(SwatBuilderInputError, match="integrity check failed"):
+        _assert_benchmark_integrity(lock, txtinout)
+
+
+def test_calibration_rejects_unsealed_legacy_lock_artifact(tmp_path: Path) -> None:
+    """Historical locks may be reported but cannot start a fresh calibration."""
+    lock, benchmark_dir = _make_lock_and_alignment(tmp_path, n_days=120)
+    legacy_path = benchmark_dir / "benchmark_lock.json"
+    legacy_path.write_text(lock.model_dump_json(indent=2), encoding="utf-8")
+    txt = tmp_path / "TxtInOut"
+    txt.mkdir()
+
+    with pytest.raises(SwatBuilderInputError, match="predates input sealing"):
+        calibrate_against_lock(
+            legacy_path,
+            txt,
+            tmp_path / "cal",
+            parameters=["CN2"],
+            n_evaluations=1,
+        )
 
 
 def test_lock_benchmark_hash_determinism(tmp_path, obs_series):
@@ -1359,6 +1402,8 @@ def test_split_sample_validation_fields_populated(monkeypatch, tmp_path: Path) -
                 "n_obs": len(obs),
                 "work_root": str(kwargs["work_root"]),
                 "nyskip_years": kwargs["nyskip_years"],
+                "score_start": kwargs["score_start"],
+                "score_end": kwargs["score_end"],
             }
         )
 
@@ -1395,6 +1440,8 @@ def test_split_sample_validation_fields_populated(monkeypatch, tmp_path: Path) -
     assert call_log[1]["n_obs"] < call_log[0]["n_obs"]
     # "validation_eval" must appear in the second call's work_root
     assert "validation_eval" in call_log[1]["work_root"]
+    assert call_log[1]["score_start"] == "2010-04-01"
+    assert call_log[1]["score_end"] == "2010-04-30"
 
     assert evidence.validation_period == ("2010-04-01", "2010-04-30")
     assert evidence.validation_nse is not None

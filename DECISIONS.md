@@ -915,3 +915,63 @@ Consequences:
 - Standalone `run_diagnostic_calibration()` writes root
   `calibration_provenance.json` so debug reruns do not leave stale failed
   provenance beside successful report artifacts.
+
+## 2026-07-09 — Seal Calibration Inputs And Separate Reproducibility From Transfer
+
+Decision:
+
+- A new benchmark lock must seal the static TxtInOut configuration as well as
+  its alignment, metrics, and outlet-provenance artifacts. Artifact-backed
+  calibration, sensitivity screening, and final verification must fail closed
+  when any sealed input has drifted.
+- The canonical workflow's chronological 60/40 period split must be passed to
+  calibration. Candidate scoring excludes the validation period; the selected
+  parameter set must pass a withheld-period physical gate before calibration
+  can satisfy final claim gates.
+- A fresh full-lock rerun is named a reproducibility check, not independent
+  temporal validation.
+
+Why:
+
+- The prior lock held SHA-256 fields but did not verify them before use, and it
+  had no fingerprint for the model inputs. An input edit could therefore change
+  the calibrated model without invalidating the locked comparison.
+- The workflow recorded a calibration/validation split but did not pass it
+  into the automated calibration path. That made the metadata imply a temporal
+  transfer test that was not actually being run.
+
+Consequences:
+
+- Historical locks remain readable as evidence, but a new calibration from an
+  old unsealed lock requires a fresh relock.
+- New calibration provenance records the held-out period, its metrics, and its
+  pass/fail result. A transfer failure preserves diagnostics but blocks the
+  calibrated claim.
+
+## 2026-07-10 — Final Hydrologic Figures Must Use Final Calibration Authority
+
+Decision:
+
+- When locked calibration completes, generic hydrologic figures must receive
+  the sealed final alignment and fresh verification metrics explicitly. They
+  must identify themselves as locked calibrated verification outputs.
+- An explicit requested alignment that does not exist is an error; it must not
+  silently fall back to the baseline benchmark alignment.
+
+Why:
+
+- The fresh `01547700` workflow correctly wrote calibrated evidence and a
+  dedicated comparison figure, but its generic `fig_01_hydrograph` still read
+  `benchmark/alignment.csv` and displayed baseline `NSE=0.29`, `KGE=0.35`.
+  Final evidence was `NSE=0.3533`, `KGE=0.5824`. This is a presentation
+  provenance defect that could mislead a modeller even though the numerical
+  claim authority was correct.
+
+Consequences:
+
+- Generic figure-suite hydrologic outputs now match the final evidence source
+  after successful calibration; the dedicated three-series comparison remains
+  available for baseline-versus-calibrated diagnosis.
+- A plot-generation failure cannot manufacture a baseline-looking calibrated
+  graphic. The workflow retains the error rather than rendering ambiguous
+  figures.

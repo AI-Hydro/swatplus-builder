@@ -66,6 +66,9 @@ def build_figure_title(base_title: str, metrics: dict | None, metadata: dict | N
             time_range = f"{metadata['start_date']} to {metadata['end_date']}"
         if time_range:
             meta_str.append(f"| {time_range}")
+        result_label = str(metadata.get("result_label", "")).strip()
+        if result_label:
+            meta_str.append(f"| {result_label}")
         
         if meta_str:
             parts.append(" ".join(meta_str))

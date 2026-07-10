@@ -38,6 +38,7 @@ def run_diagnostic_calibration(
     strict: bool = True,
     screening_window_years: int | None = 6,
     screening_warmup_years: int = 3,
+    validation_period: tuple[str, str] | None = None,
 ) -> DiagnosticCalibrationResult:
     source_run = Path(source_run).expanduser().resolve()
     reports = source_run / "reports"
@@ -119,6 +120,7 @@ def run_diagnostic_calibration(
         txtinout=txtinout,
         score_years=screening_window_years,
         warmup_years=screening_warmup_years,
+        validation_period=validation_period,
     )
     _write_calibration_progress(
         progress_path,
@@ -208,6 +210,7 @@ def run_diagnostic_calibration(
             out_dir=source_run / "calibration",
             parameters=screened_parameters,
             parameter_mode="full",
+            validation_period=validation_period,
             **screening_window,
         )
         best_solution = json.loads(Path(evidence.best_solution_json).read_text(encoding="utf-8"))
@@ -275,9 +278,12 @@ def run_diagnostic_calibration(
             timing_limitation_documented=timing_limitation["documented"],
             timing_limitation_basis=timing_limitation["basis"],
         )
+        temporal_validation_passed = (
+            validation_period is None or evidence.validation_transfer_passed is True
+        )
         final_gates_passed = bool(final_physical_gates.get("pass")) and not bool(
             final_routing_flow_gates.get("calibration_blocking", not final_routing_flow_gates.get("pass"))
-        )
+        ) and temporal_validation_passed
         locked_verification_succeeded = bool(verification.improved and locked_txt.exists())
         runs.append(
             PhaseRun(
@@ -303,6 +309,18 @@ def run_diagnostic_calibration(
                 "strict": strict,
                 "source_run": str(source_run),
                 "screening_window": screening_window or None,
+                "validation_period": list(validation_period) if validation_period else None,
+                "validation_metrics": (
+                    {
+                        "nse": evidence.validation_nse,
+                        "kge": evidence.validation_kge,
+                        "pbias": evidence.validation_pbias,
+                    }
+                    if validation_period
+                    else None
+                ),
+                "validation_transfer_passed": evidence.validation_transfer_passed,
+                "temporal_validation_gate_passed": temporal_validation_passed,
                 "blocked_parameters": blocked_parameters,
                 "eligible_parameters": eligible_parameters,
                 "screened_parameters": screened_parameters,
@@ -472,6 +490,7 @@ def _build_screening_window(
     txtinout: Path,
     score_years: int | None,
     warmup_years: int,
+    validation_period: tuple[str, str] | None = None,
 ) -> dict[str, str]:
     """Return an explicit calibration screen window, preserving full verification.
 
@@ -498,6 +517,11 @@ def _build_screening_window(
 
     first = dates.min().normalize()
     last = dates.max().normalize()
+    if validation_period is not None:
+        validation_start = pd.Timestamp(validation_period[0]).normalize()
+        last = min(last, validation_start - pd.Timedelta(days=1))
+        if last < first:
+            return {}
     if (last - first).days < max(365 * 3, int(score_years) * 365 // 2):
         return {}
 

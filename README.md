@@ -16,7 +16,8 @@
 calibrated SWAT+ hydrologic model — entirely in Python, with **no desktop GIS**.
 A person or an AI agent can drive it; either way the **software, not the
 operator, decides what each result is allowed to claim**, through runtime gates,
-provenance hashes, independently verified reruns, and explicit claim tiers.
+sealed provenance, fresh reproducibility reruns, withheld-period transfer checks,
+and explicit claim tiers.
 
 ### What makes it different
 
@@ -50,7 +51,8 @@ swat workflow run --usgs-id <id> --model-family full \
 ```
 
 It builds the model, runs the engine, locks a benchmark, runs gated diagnostic
-calibration, independently verifies a locked rerun, and writes a machine-readable
+calibration, reruns the selected solution from a fresh copy, checks transfer on a
+withheld period, and writes a machine-readable
 **evidence bundle** with explicit allowed/blocked claims. The package — not the
 agent — decides what may be claimed.
 
@@ -63,7 +65,7 @@ agent — decides what may be claimed.
 
 ## Status
 
-**Alpha, v0.7.12** — locked-benchmark calibration, claim-governed diagnostic calibration, dashboard evidence, and 13-tool agent (MCP) surface.
+**Alpha, v0.7.13** — sealed locked-benchmark calibration, withheld-period claim governance, calibrated dashboard evidence, and 13-tool agent (MCP) surface.
 
 - [x] Pure-Python GIS (WhiteboxTools, rasterio, geopandas)
 - [x] Automated SWAT+ project generation
@@ -99,7 +101,7 @@ The **lock → calibrate → verify** chain is the only scientifically defensibl
        ↓
 2. swat locked-calibrate   # real-engine DDS against declared parameters
        ↓                   # (calls verify automatically unless --skip-verify)
-3. metrics reported        # delta NSE/KGE vs locked baseline, independently verified
+3. metrics reported        # fresh locked rerun; workflow also checks transfer
 ```
 
 **Rules** (enforced by the toolchain):
@@ -112,9 +114,15 @@ The **lock → calibrate → verify** chain is the only scientifically defensibl
   `RCHG_DP`), and timing/channel/snow parameters (`SURLAG`, `CH_N2`, `CH_K2`,
   `SFTMP`, `SMTMP`), with dead controls excluded.
 - No silent scope expansion: candidate parameters must be declared, screened,
-  recorded, and independently verified before claim use.
+  recorded, and reproducibly rerun before claim use.
 - Calibrated metrics are always delta-reported against the locked baseline.
-- `verify_calibration` is mandatory — it re-runs the best solution independently to confirm reproducibility.
+- A new benchmark lock seals the alignment, metrics, outlet provenance, and
+  static TxtInOut configuration. Calibration refuses a changed or legacy
+  unsealed artifact until it is relocked.
+- `verify_calibration` is mandatory — it re-runs the best solution from a
+  fresh copy to confirm reproducibility. The end-to-end workflow separately
+  withholds its chronological validation period and requires that transfer gate
+  before a calibrated claim can pass.
 - `evaluate_run` is the authoritative metric source for all reporting.
 
 One-liner for agents:
@@ -386,7 +394,7 @@ If you use swatplus-builder in your research, please cite:
                    modeling from a USGS gauge ID}},
   year         = {2026},
   publisher    = {Zenodo},
-  version      = {0.7.12},
+  version      = {0.7.13},
   doi          = {10.5281/zenodo.20650908},
   url          = {https://doi.org/10.5281/zenodo.20650908}
 }

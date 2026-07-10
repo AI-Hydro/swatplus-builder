@@ -40,3 +40,32 @@ def test_plot_wrapper_falls_back_to_legacy_output_artifacts(tmp_path: Path) -> N
 
     assert _preferred_metrics_path(tmp_path) == reports / "metrics.json"
     assert _preferred_alignment_path(tmp_path) == outputs / "alignment.csv"
+
+
+def test_plot_wrapper_rejects_missing_explicit_alignment(tmp_path: Path) -> None:
+    from swatplus_builder.output.plots.wrapper import generate_all_plots
+
+    missing = tmp_path / "locked" / "alignment_calibration.csv"
+    try:
+        generate_all_plots(
+            tmp_path,
+            include_spatial=False,
+            include_soil=False,
+            alignment_override=missing,
+        )
+    except FileNotFoundError as exc:
+        assert str(missing) in str(exc)
+    else:
+        raise AssertionError("An explicit missing alignment must not fall back to baseline artifacts")
+
+
+def test_figure_title_marks_locked_calibrated_results() -> None:
+    from swatplus_builder.output.plots.utils import build_figure_title
+
+    title = build_figure_title(
+        "Hydrograph",
+        {"nse": 0.35, "kge": 0.58},
+        {"usgs_id": "01547700", "result_label": "locked calibrated verification"},
+    )
+
+    assert "locked calibrated verification" in title

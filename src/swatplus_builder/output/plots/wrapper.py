@@ -54,6 +54,8 @@ def generate_all_plots(
     include_spatial: bool = True,
     include_soil: bool = True,
     metadata: dict | None = None,
+    metrics_override: dict[str, Any] | None = None,
+    alignment_override: str | Path | None = None,
 ) -> dict[str, Any]:
     """Generate the complete manuscript figure suite.
 
@@ -63,6 +65,12 @@ def generate_all_plots(
         include_soil: Generate soil provenance bar chart.
         metadata: Optional ``{"basin_name", "usgs_id", "time_range"}`` passed
             through to every figure title for automatic manuscript-level labelling.
+        metrics_override: Explicit final metrics for hydrologic figure annotations.
+            A successful locked calibration uses verification metrics rather than
+            the baseline benchmark metrics persisted at the run root.
+        alignment_override: Explicit observed/simulated alignment for
+            hydrologic figures. This is required to prevent a calibrated
+            workflow from rendering stale baseline hydrographs.
 
     Returns:
         Summary dictionary with ``{"plots_generated", "n_plots", "path", "files"}``.
@@ -95,13 +103,16 @@ def generate_all_plots(
 
     # ── Load metrics for title annotation (best-effort) ────────────────────
     metrics: dict | None = None
-    metrics_path = _preferred_metrics_path(run_dir)
-    if metrics_path is not None:
-        try:
-            with metrics_path.open(encoding="utf-8") as f:
-                metrics = json.load(f)
-        except Exception:
-            pass
+    if metrics_override is not None:
+        metrics = dict(metrics_override)
+    else:
+        metrics_path = _preferred_metrics_path(run_dir)
+        if metrics_path is not None:
+            try:
+                with metrics_path.open(encoding="utf-8") as f:
+                    metrics = json.load(f)
+            except Exception:
+                pass
 
     # ── fig_07 Soil sources ────────────────────────────────────────────────
     if include_soil:
@@ -180,7 +191,9 @@ def generate_all_plots(
         log.warning("Land-use composition plot failed: %s", exc)
 
     # ── Load aligned timeseries ────────────────────────────────────────────
-    ts_path = _preferred_alignment_path(run_dir)
+    ts_path = Path(alignment_override) if alignment_override is not None else _preferred_alignment_path(run_dir)
+    if ts_path is not None and not ts_path.is_file():
+        raise FileNotFoundError(f"Requested figure alignment does not exist: {ts_path}")
     if ts_path is None:
         log.info("No authoritative alignment.csv found; skipping hydrological plots.")
         return _summary(plots_dir, files, partial=True)

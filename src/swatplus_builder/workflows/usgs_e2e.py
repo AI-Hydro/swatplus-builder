@@ -1103,6 +1103,7 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
                 out,
                 claim_tier=allowed_tier,
                 strict=True,
+                validation_period=(split["validation_start"], split["validation_end"]),
             )
             values["calibration_attempted"] = True
             values["calibration_success"] = bool(cal.success)
@@ -1510,11 +1511,11 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
             _event("volume_bias_diagnostics", "failed", error=str(exc)[-500:])
 
     try:
-        from ..output.plots.wrapper import generate_all_plots
         from ..output.plots.forcing_context import plot_forcing_context
         from ..output.plots.landuse_composition import plot_landuse_composition
         from ..output.plots.spatial import plot_basin_spatial_overview
         from ..output.plots.water_balance import plot_water_balance
+        from ..output.plots.wrapper import generate_all_plots
 
         plots_dir = out / "plots"
         plots_dir.mkdir(parents=True, exist_ok=True)
@@ -1530,7 +1531,33 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
         }
         generated_plots: list[str] = []
         try:
-            plot_suite_summary = generate_all_plots(out, metadata=plot_metadata)
+            # A fresh locked verification is the final hydrologic artifact even
+            # when a claim is later blocked by temporal or physical gates. The
+            # figure must disclose that blocked status, not fall back to an
+            # unrelated baseline curve that hides the calibration evidence.
+            calibrated_plot_inputs = isinstance(values.get("calibrated_metrics"), dict)
+            final_alignment = values.get("alignment_csv") if calibrated_plot_inputs else None
+            final_metrics = values.get("metrics") if calibrated_plot_inputs else None
+            if calibrated_plot_inputs and (
+                not isinstance(final_metrics, dict)
+                or not final_alignment
+                or not Path(str(final_alignment)).is_file()
+            ):
+                raise RuntimeError(
+                    "Locked calibration completed without a final verification alignment and metrics; "
+                    "refusing to render stale baseline hydrologic figures."
+                )
+            if calibrated_plot_inputs:
+                if values.get("calibration_status") == "done":
+                    plot_metadata["result_label"] = "locked calibrated verification"
+                else:
+                    plot_metadata["result_label"] = "locked calibrated verification (claim blocked)"
+            plot_suite_summary = generate_all_plots(
+                out,
+                metadata=plot_metadata,
+                metrics_override=final_metrics if isinstance(final_metrics, dict) else None,
+                alignment_override=final_alignment,
+            )
             generated_plots.extend(
                 str(name)
                 for name in plot_suite_summary.get("files", [])
@@ -1694,14 +1721,6 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     evidence_md_path.write_text(_render_evidence_summary_md(payload), encoding="utf-8")
 
-    # Write schema-versioned evidence bundle alongside the legacy format.
-    try:
-        from ..evidence import write_evidence_v1
-        write_evidence_v1(payload, out)
-    except Exception:
-        pass  # never let v1 write failure abort the run
-
-    _event("workflow", "completed", success=bool(success), evidence_summary=str(path))
     manifest_payload = {
         "run_id": run_id,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
@@ -1713,6 +1732,7 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
         "artifacts": {
             "evidence_summary": str(path),
             "evidence_summary_md": str(evidence_md_path),
+            "evidence_v1": str(out / "evidence_v1.json"),
             "outlet_provenance": str(outlet_path),
             "calibration_provenance": str(calibration_provenance_path),
             "parameter_screen": str(parameter_screen_path),
@@ -1844,14 +1864,28 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
         payload["provenance_hash"] = _provenance_hash(payload)
         path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
         evidence_md_path.write_text(_render_evidence_summary_md(payload), encoding="utf-8")
-        try:
-            from ..evidence import write_evidence_v1
-            write_evidence_v1(payload, out)
-        except Exception:
-            pass
         _write_json(run_manifest_path, manifest_payload)
     except Exception as dashboard_exc:
         _event("dashboard", "failed", error=str(dashboard_exc)[:500])
+
+    # This is the required machine-readable authority. Generate it only after
+    # the optional dashboard has finished updating the final payload/hash.
+    try:
+        from ..evidence import write_evidence_v1
+
+        evidence_v1_path = write_evidence_v1(payload, out)
+        if not evidence_v1_path.is_file():
+            raise RuntimeError("evidence_v1.json was not created")
+        _event("evidence_schema", "completed", path=str(evidence_v1_path))
+    except Exception as exc:
+        _event("evidence_schema", "failed", error=str(exc)[:500])
+        manifest_payload["events_recorded"] = len(events)
+        _write_json(run_manifest_path, manifest_payload)
+        raise RuntimeError("Required schema-versioned evidence bundle could not be written") from exc
+
+    _event("workflow", "completed", success=bool(success), evidence_summary=str(path))
+    manifest_payload["events_recorded"] = len(events)
+    _write_json(run_manifest_path, manifest_payload)
 
     return RunUSGSWorkflowResult(
         success=bool(success),

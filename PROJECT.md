@@ -11,7 +11,7 @@ runtime gates, provenance, diagnostics, and machine-readable evidence.
 ## Status
 
 Active hardening toward research-grade production pipeline. Last updated:
-2026-07-06.
+2026-07-10.
 
 ## Where To Read Next
 
@@ -28,6 +28,39 @@ Active hardening toward research-grade production pipeline. Last updated:
 - Track lessons that generalized across basins: `docs/PIPELINE_LEARNING_LOG.md`.
 
 ## Current State
+
+- Fresh current-code validation now exists for `01547700` at
+  `/Users/mgalib/swatplus_runs/calibration_contract_validate_20260709/01547700_2010_2019_fulloverlay_diag`.
+  It sealed 230 static TxtInOut inputs, calibrated only on 2010-2015, and
+  passed a 2016-2019 withheld transfer test. Final fresh verification was
+  `NSE=0.3533`, `KGE=0.5824`, `PBIAS=-4.92%`; the physical and routing-flow
+  gates passed, as did the research-grade claim contract. Its hydrograph still
+  underpredicts some observed extremes, which remains a documented model
+  limitation rather than a hidden failure. During QA, the generic plot suite
+  was found to render the baseline alignment after calibration. It now accepts
+  an explicit final alignment/metrics override and refuses fallback to a stale
+  baseline when locked calibration has completed. The current figure suite is
+  labeled `locked calibrated verification` and matches the final authority.
+  The contrasting `03349000` run now also completed under the same sealed
+  contract at
+  `/Users/mgalib/swatplus_runs/calibration_contract_validate_20260710/03349000_2010_2019_fulloverlay_diag`.
+  It improved from `NSE=-0.4202`, `KGE=0.0841`, `PBIAS=-51.13%` to fresh
+  verification `NSE=-0.0199`, `KGE=0.3548`, `PBIAS=-19.12%`, but failed both
+  the negative-skill and withheld-transfer requirements. The final tier is
+  correctly exploratory. This positive/negative pair completes the live
+  release validation gate; remaining work is release verification and version
+  publication.
+
+- The current checkout adds three calibration/evidence hardening controls not
+  present in the `0.7.12` release: new benchmark locks seal static TxtInOut
+  configuration and verify all benchmark artifact hashes before calibration;
+  the workflow's chronological 60/40 split is now passed into a real withheld
+  temporal-transfer evaluation; and `evidence_v1.json` is required rather than
+  best-effort. The earlier July run artifacts predate input sealing and remain
+  valid historical evidence, but must be relocked before another calibration.
+  Focused regression suites pass (`204` tests across calibration, workflow,
+  evidence, evaluation, physical-gate, and dashboard surfaces). A fresh real
+  engine end-to-end rerun is the remaining release gate before a version bump.
 
 - Release `0.7.12` is published on PyPI and tagged as `v0.7.12` at commit
   `af3254c`. A clean PyPI install smoke passed on supported Python `3.13.2`;
