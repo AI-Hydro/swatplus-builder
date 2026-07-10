@@ -1002,3 +1002,30 @@ Consequences:
   worker count is written to sensitivity and calibration provenance artifacts.
 - No cached candidate replaces an authoritative fresh verification or transfer
   run, so the runtime improvement does not lower claim-evidence standards.
+
+## 2026-07-10 — Parallelize Only Fixed Warm-Start Anchors
+
+Decision:
+
+- Derive a hash-linked `diagnostic_warm_start.json` from basin-specific locked
+  sensitivity evidence and evaluate its fixed phase anchors with a bounded
+  worker pool.
+- Keep adaptive DDS proposals, phase promotion, final locked verification, and
+  withheld-period transfer serial.
+
+Why:
+
+- Fixed anchors are independent isolated SWAT+ jobs. DDS proposals depend on
+  the currently best feasible point, so parallelizing them would change the
+  search path and make reproducibility harder to audit.
+- The warm-start plan is useful as a transparent optimization aid, but it is
+  not a calibrated result and must not become a claim-authority bypass.
+
+Consequences:
+
+- The workflow records `anchor_workers` and warm-start paths in calibration
+  provenance and best-solution artifacts.
+- A modified or disconnected warm-start artifact falls back to the original
+  sensitivity-derived anchor construction.
+- A fresh full workflow benchmark remains required before a new release can
+  claim an end-to-end runtime improvement.

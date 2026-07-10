@@ -47,7 +47,8 @@ The canonical end-to-end path is a single command:
 ```bash
 swat workflow run --usgs-id <id> --model-family full \
   --start 2000-01-01 --end 2019-12-31 --warmup-years 3 \
-  --calibrate --claim-tier research_grade --sensitivity-workers 4 --json
+  --calibrate --claim-tier research_grade \
+  --sensitivity-workers 4 --anchor-workers 4 --json
 ```
 
 It builds the model, runs the engine, locks a benchmark, runs gated diagnostic
@@ -123,6 +124,10 @@ The **lock → calibrate → verify** chain is the only scientifically defensibl
   fresh copy to confirm reproducibility. The end-to-end workflow separately
   withholds its chronological validation period and requires that transfer gate
   before a calibrated claim can pass.
+- Locked sensitivity evidence also writes a `diagnostic_warm_start.json` plan.
+  Its fixed candidate anchors may run concurrently with `--anchor-workers`,
+  but the plan is explicitly exploratory: it cannot supply final metrics or
+  bypass fresh verification, temporal transfer, or claim gates.
 - `evaluate_run` is the authoritative metric source for all reporting.
 
 One-liner for agents:

@@ -9,6 +9,10 @@ All notable changes to swatplus-builder are documented here.
   worker pool (`--sensitivity-workers`, default `4`) while each SWAT+ worker
   remains single-threaded. Candidate search, locked verification, and withheld
   transfer evaluation remain serial and fresh.
+- Sensitivity-derived, fixed phase anchors now run through a separate bounded
+  worker pool (`--anchor-workers`, default `4`). The workflow writes a hashed
+  `diagnostic_warm_start.json` artifact, explicitly marked exploratory; it
+  cannot authorize final metrics or claims.
 
 ## [0.7.13] — 2026-07-10
 

@@ -81,6 +81,7 @@ class RunUSGSWorkflowRequest:
     hru_mode: str = "dominant_only"
     min_hru_fraction: float = 0.0
     sensitivity_workers: int = 4
+    anchor_workers: int = 4
     virtual_all_terminal_outlet: bool = False
     virtual_outlet_authority: str | None = None
 
@@ -958,6 +959,7 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
         "hru_mode_requested": request.hru_mode,
         "min_hru_fraction_requested": float(request.min_hru_fraction),
         "sensitivity_workers": max(1, int(request.sensitivity_workers)),
+        "anchor_workers": max(1, int(request.anchor_workers)),
         "start": request.start,
         "end": request.end,
         "window_years": datetime.fromisoformat(request.end).year - datetime.fromisoformat(request.start).year + 1,
@@ -1107,6 +1109,7 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
                 strict=True,
                 validation_period=(split["validation_start"], split["validation_end"]),
                 sensitivity_workers=max(1, int(request.sensitivity_workers)),
+                anchor_workers=max(1, int(request.anchor_workers)),
             )
             values["calibration_attempted"] = True
             values["calibration_success"] = bool(cal.success)
@@ -1211,6 +1214,12 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
                         parameter_screen_payload["model_family"] = request.model_family
                     except Exception:
                         pass
+            if cal_provenance.get("diagnostic_warm_start_json"):
+                values["diagnostic_warm_start_json"] = cal_provenance.get("diagnostic_warm_start_json")
+                values["diagnostic_warm_start_md"] = cal_provenance.get("diagnostic_warm_start_md")
+                values["diagnostic_warm_start_authority"] = cal_provenance.get(
+                    "diagnostic_warm_start_authority"
+                )
             calibration_provenance_payload = {
                 "status": values["calibration_status"],
                 "success": bool(cal.success),
@@ -1738,6 +1747,11 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
             "evidence_v1": str(out / "evidence_v1.json"),
             "outlet_provenance": str(outlet_path),
             "calibration_provenance": str(calibration_provenance_path),
+            **(
+                {"diagnostic_warm_start": str(values.get("diagnostic_warm_start_json"))}
+                if values.get("diagnostic_warm_start_json")
+                else {}
+            ),
             "parameter_screen": str(parameter_screen_path),
             "physical_gates": str(physical_gates_path),
             "routing_flow_gates": str(routing_gates_path),

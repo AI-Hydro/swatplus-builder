@@ -20,7 +20,7 @@ If policy fails, returns `status=needs_input` with `policy_issues`.
 
 ## 2) Run
 Command:
-`swat workflow run --usgs-id <id> --model-family full --start <YYYY-MM-DD> --end <YYYY-MM-DD> --warmup-years <N> --calibrate --claim-tier <tier> [--sensitivity-workers <N>] [--hru-mode dominant_only|full_overlay] [--min-hru-fraction <fraction>] [--contract <path>]`
+`swat workflow run --usgs-id <id> --model-family full --start <YYYY-MM-DD> --end <YYYY-MM-DD> --warmup-years <N> --calibrate --claim-tier <tier> [--sensitivity-workers <N>] [--anchor-workers <N>] [--hru-mode dominant_only|full_overlay] [--min-hru-fraction <fraction>] [--contract <path>]`
 
 Research-grade CLI runs can pass accepted contract metadata directly with:
 `--contract-status accepted --accepted-by user` or
@@ -46,8 +46,11 @@ Behavior:
    - If build, provider, topology, engine, or output discovery fails, the run is
      blocked with a structured `blocker_class`; no calibration metrics are
      allowed.
-3. Executes sensitivity screen artifact generation.
-4. Executes phased diagnostic calibration attempt.
+3. Executes sensitivity screen artifact generation and writes an exploratory
+   `diagnostic_warm_start.json` from the locked sensitivity evidence.
+4. Executes phased diagnostic calibration attempt. Fixed warm-start anchors may
+   run concurrently; adaptive DDS, locked verification, and temporal transfer
+   remain serial and fresh.
    - Calibration is blocked before the volume stage when routing evidence
      shows hard defects such as no land generation, no HRU-to-channel
      transfer, no channel entry, transfer-scale failure, wrong outlet, or

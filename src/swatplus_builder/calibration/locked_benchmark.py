@@ -93,6 +93,8 @@ class CalibrationEvidence(BaseModel):
     ensemble_kge_spread: float | None = None
     nyskip_years: int = 0
     screening_window: dict[str, str] | None = None
+    anchor_workers: int = 1
+    warm_start_json: str | None = None
 
 
 class LockedSensitivityEvidence(BaseModel):
@@ -102,6 +104,22 @@ class LockedSensitivityEvidence(BaseModel):
     basis: str = "basin_specific"
     parameters: list[dict[str, Any]]
     warnings: list[str] = Field(default_factory=list)
+    json_path: str
+    markdown_path: str
+
+
+class DiagnosticWarmStartEvidence(BaseModel):
+    """Exploratory candidate directions derived from a locked sensitivity screen.
+
+    This artifact is deliberately not a calibration result: every suggested
+    point still requires a fresh real-engine evaluation and the complete locked
+    verification path before it can influence a scientific claim.
+    """
+
+    basin_id: str
+    basis: str = "basin_specific_locked_sensitivity"
+    authority: str = "exploratory_warm_start_only"
+    directions: list[dict[str, Any]] = Field(default_factory=list)
     json_path: str
     markdown_path: str
 
@@ -351,6 +369,8 @@ def calibrate_against_lock(
     simulation_end: str | None = None,
     score_start: str | None = None,
     score_end: str | None = None,
+    anchor_workers: int = 1,
+    warm_start_json: Path | str | None = None,
 ) -> CalibrationEvidence:
     """Run real-engine DDS calibration against a locked benchmark.
 
@@ -422,6 +442,12 @@ def calibrate_against_lock(
 
     cal_dir = out / "calibration_reports_locked"
     cal_dir.mkdir(parents=True, exist_ok=True)
+    workers = max(1, int(anchor_workers))
+    resolved_warm_start = (
+        Path(warm_start_json).expanduser().resolve()
+        if warm_start_json is not None
+        else None
+    )
 
     objective = make_real_objective(
         base_txtinout=base_txtinout,
@@ -493,6 +519,8 @@ def calibrate_against_lock(
             ),
             "recorded_events": len(evaluations),
             "total_budget": int(n_evaluations),
+            "anchor_workers": workers,
+            "warm_start_json": str(resolved_warm_start) if resolved_warm_start else None,
             "phase": None if phase is None else phase.get("phase"),
             "phase_order": phase_order,
             "phase_objective": None if phase is None else phase.get("objective"),
@@ -588,32 +616,11 @@ def calibrate_against_lock(
 
         phase_objective = str(phase["objective"])
         phase_budget = max(1, int(phase["budget"]))
-        phase_anchor_points = _sensitivity_guided_anchor_points(
-            cal_dir.parent / "sensitivity_screen_locked" / "sensitivity_screen.json",
-            current_params=current_params,
-            phase_parameters=phase_parameters,
-            param_bounds=param_bounds,
-            max_points=min(8, max(4, phase_budget)),
-        )
 
-        def _evaluate_and_record(
+        def _evaluate_metrics(
             point: dict[str, float],
-            _phase: dict[str, Any] = phase,
-            _phase_index: int = phase_index,
-            _phase_parameters: list[str] = phase_parameters,
-        ) -> dict[str, Any]:
-            """Run one real-engine evaluation and append it to the history.
-
-            Shared by both the DDS and grid search drivers so every evaluation
-            is recorded identically (gates, condition codes, eval index).
-            """
-            nonlocal eval_idx
-            _write_calibration_progress(
-                status="evaluating",
-                phase=_phase,
-                phase_order=_phase_index,
-                point=point,
-            )
+        ) -> tuple[dict[str, Any], str | None]:
+            """Evaluate one isolated real-engine point without mutating history."""
             failure_reason: str | None = None
             try:
                 metrics = objective(point)
@@ -624,6 +631,18 @@ def calibrate_against_lock(
                 missing = _nonfinite_required_objective_metrics(metrics)
                 if missing:
                     failure_reason = "nonfinite_required_objective_metrics: " + ",".join(missing)
+            return metrics, failure_reason
+
+        def _record_evaluation(
+            point: dict[str, float],
+            metrics: dict[str, Any],
+            failure_reason: str | None,
+            _phase: dict[str, Any] = phase,
+            _phase_index: int = phase_index,
+            _phase_parameters: list[str] = phase_parameters,
+        ) -> dict[str, Any]:
+            """Append an already-evaluated point in deterministic order."""
+            nonlocal eval_idx
             volume_gate_passed = _volume_gate_passed(metrics)
             physical_gate_passed = _candidate_physical_gate_passed(metrics)
             calibration_process_gate_passed = _candidate_calibration_process_gate_passed(metrics)
@@ -660,8 +679,80 @@ def calibrate_against_lock(
             )
             return metrics
 
-        for anchor_point in phase_anchor_points:
-            metrics = _evaluate_and_record(anchor_point)
+        def _evaluate_and_record(
+            point: dict[str, float],
+            _phase: dict[str, Any] = phase,
+            _phase_index: int = phase_index,
+            _phase_parameters: list[str] = phase_parameters,
+        ) -> dict[str, Any]:
+            """Run and record one serial/adaptive real-engine evaluation."""
+            _write_calibration_progress(
+                status="evaluating",
+                phase=_phase,
+                phase_order=_phase_index,
+                point=point,
+            )
+            metrics, failure_reason = _evaluate_metrics(point)
+            return _record_evaluation(
+                point,
+                metrics,
+                failure_reason,
+                _phase,
+                _phase_index,
+                _phase_parameters,
+            )
+
+        if resolved_warm_start is not None and resolved_warm_start.is_file():
+            phase_anchor_points = _warm_start_anchor_points(
+                resolved_warm_start,
+                current_params=current_params,
+                phase_parameters=phase_parameters,
+                param_bounds=param_bounds,
+                max_points=min(8, max(4, phase_budget)),
+            )
+            if not phase_anchor_points:
+                phase_anchor_points = _sensitivity_guided_anchor_points(
+                    cal_dir.parent / "sensitivity_screen_locked" / "sensitivity_screen.json",
+                    current_params=current_params,
+                    phase_parameters=phase_parameters,
+                    param_bounds=param_bounds,
+                    max_points=min(8, max(4, phase_budget)),
+                )
+        else:
+            phase_anchor_points = _sensitivity_guided_anchor_points(
+                cal_dir.parent / "sensitivity_screen_locked" / "sensitivity_screen.json",
+                current_params=current_params,
+                phase_parameters=phase_parameters,
+                param_bounds=param_bounds,
+                max_points=min(8, max(4, phase_budget)),
+            )
+
+        anchor_results: list[tuple[dict[str, Any], str | None]] = []
+        if workers == 1 or len(phase_anchor_points) <= 1:
+            anchor_results = [_evaluate_metrics(point) for point in phase_anchor_points]
+        else:
+            _write_calibration_progress(
+                status="evaluating_parallel_anchors",
+                phase=phase,
+                phase_order=phase_index,
+                point={"anchor_count": float(len(phase_anchor_points))},
+            )
+            indexed_results: dict[int, tuple[dict[str, Any], str | None]] = {}
+            with ThreadPoolExecutor(max_workers=min(workers, len(phase_anchor_points))) as executor:
+                futures = {
+                    executor.submit(_evaluate_metrics, point): index
+                    for index, point in enumerate(phase_anchor_points)
+                }
+                for future in as_completed(futures):
+                    indexed_results[futures[future]] = future.result()
+            anchor_results = [indexed_results[index] for index in range(len(phase_anchor_points))]
+
+        for anchor_point, (anchor_metrics, anchor_failure_reason) in zip(
+            phase_anchor_points,
+            anchor_results,
+            strict=True,
+        ):
+            metrics = _record_evaluation(anchor_point, anchor_metrics, anchor_failure_reason)
             volume_gate_passed = _volume_gate_passed(metrics)
             score = _score_candidate(metrics, objective=phase_objective)
             if not volume_gate_passed or score == float("-inf"):
@@ -926,6 +1017,8 @@ def calibrate_against_lock(
         "benchmark_baseline_kge": lock.baseline_kge,
         "selection_policy": "staged_volume_baseflow_peaks_then_nse_kge",
         "calibration_strategy": "diagnostic_guided_dds_window_screen_then_locked_verify",
+        "anchor_workers": workers,
+        "warm_start_json": str(resolved_warm_start) if resolved_warm_start else None,
         "volume_gate": "abs(pbias) <= 30",
         "kge_nse_finetune_gate": (
             "candidate calibration process gates must pass when available; "
@@ -977,6 +1070,7 @@ def calibrate_against_lock(
         f"- Delta NSE/KGE: `{best_nse_val - lock.baseline_nse:+.6f}` / `{best_kge_val - lock.baseline_kge:+.6f}`",
         f"- Evaluations: `{len(evaluations)}`",
         f"- Parameters: `{', '.join(parameters)}`",
+        f"- Parallel anchor workers: `{workers}`",
         f"- Warm-up (nyskip): `{nyskip_years}` years",
         "- Selection policy: `staged_volume_baseflow_peaks_then_nse_kge`",
     ]
@@ -1032,6 +1126,8 @@ def calibrate_against_lock(
         ensemble_kge_spread=_finite_std(ensemble_kge_per_seed) if dds_n_seeds > 1 else None,
         nyskip_years=nyskip_years,
         screening_window=screening_window or None,
+        anchor_workers=workers,
+        warm_start_json=str(resolved_warm_start) if resolved_warm_start else None,
     )
 
 
@@ -1324,6 +1420,65 @@ def screen_parameters_against_lock(
         warnings=warnings,
         json_path=str(json_path),
         markdown_path=str(md_path),
+    )
+
+
+def write_diagnostic_warm_start(
+    sensitivity_json: Path | str,
+    out_dir: Path | str,
+    *,
+    max_directions: int = 8,
+) -> DiagnosticWarmStartEvidence:
+    """Write a non-authoritative warm-start plan from locked sensitivity output.
+
+    The plan retains only one-at-a-time directions that improve absolute volume
+    bias relative to the sensitivity baseline. It does not evaluate or select a
+    model run, so it cannot be used as final calibration or claim evidence.
+    """
+    source = Path(sensitivity_json).expanduser().resolve()
+    target = Path(out_dir).expanduser().resolve()
+    target.mkdir(parents=True, exist_ok=True)
+    payload = _read_sensitivity_payload(source)
+    basin_id = str(payload.get("basin_id") or "unknown")
+    directions = _rank_sensitivity_warm_start_directions(payload)[: max(0, int(max_directions))]
+    artifact = {
+        "artifact_type": "diagnostic_warm_start_v1",
+        "basin_id": basin_id,
+        "basis": "basin_specific_locked_sensitivity",
+        "authority": "exploratory_warm_start_only",
+        "source_sensitivity_json": str(source),
+        "source_sensitivity_sha256": hashlib.sha256(source.read_bytes()).hexdigest() if source.is_file() else None,
+        "claim_rule": (
+            "Directions require fresh real-engine evaluation, locked verification, "
+            "and withheld-period validation before any calibrated claim."
+        ),
+        "directions": directions,
+    }
+    json_path = target / "diagnostic_warm_start.json"
+    markdown_path = target / "diagnostic_warm_start.md"
+    json_path.write_text(json.dumps(artifact, indent=2) + "\n", encoding="utf-8")
+    lines = [
+        "# Diagnostic Warm Start",
+        "",
+        "- Authority: `exploratory_warm_start_only`",
+        f"- Source sensitivity: `{source}`",
+        "- Claim rule: every direction requires a fresh engine evaluation, locked verification, and withheld-period validation.",
+        "",
+        "| Parameter | Suggested value | Absolute PBIAS | Score delta |",
+        "|---|---:|---:|---:|",
+    ]
+    for row in directions:
+        lines.append(
+            "| `{parameter}` | `{value:.6g}` | `{abs_pbias:.6g}` | `{score_delta:+.6g}` |".format(**row)
+        )
+    if not directions:
+        lines.append("| _none_ | - | - | - |")
+    markdown_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return DiagnosticWarmStartEvidence(
+        basin_id=basin_id,
+        directions=directions,
+        json_path=str(json_path),
+        markdown_path=str(markdown_path),
     )
 
 
@@ -1622,81 +1777,142 @@ def _sensitivity_guided_anchor_points(
     first.
     """
 
-    if max_points <= 0 or not sensitivity_json.is_file():
+    payload = _read_sensitivity_payload(sensitivity_json)
+    return _warm_start_points_from_directions(
+        _rank_sensitivity_warm_start_directions(payload),
+        current_params=current_params,
+        phase_parameters=phase_parameters,
+        param_bounds=param_bounds,
+        max_points=max_points,
+    )
+
+
+def _warm_start_anchor_points(
+    warm_start_json: Path,
+    *,
+    current_params: dict[str, float],
+    phase_parameters: list[str],
+    param_bounds: dict[str, tuple[float, float]],
+    max_points: int,
+) -> list[dict[str, float]]:
+    """Materialize phase anchors from an explicit exploratory warm-start plan."""
+    payload = _read_sensitivity_payload(warm_start_json)
+    if payload.get("artifact_type") != "diagnostic_warm_start_v1":
         return []
+    if payload.get("authority") != "exploratory_warm_start_only":
+        return []
+    source = payload.get("source_sensitivity_json")
+    source_hash = payload.get("source_sensitivity_sha256")
+    if not isinstance(source, str) or not isinstance(source_hash, str):
+        return []
+    source_path = Path(source).expanduser()
+    if not source_path.is_file():
+        return []
+    if hashlib.sha256(source_path.read_bytes()).hexdigest() != source_hash:
+        return []
+    directions = payload.get("directions")
+    if not isinstance(directions, list):
+        return []
+    return _warm_start_points_from_directions(
+        [row for row in directions if isinstance(row, dict)],
+        current_params=current_params,
+        phase_parameters=phase_parameters,
+        param_bounds=param_bounds,
+        max_points=max_points,
+    )
+
+
+def _read_sensitivity_payload(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
     try:
-        payload = json.loads(sensitivity_json.read_text(encoding="utf-8"))
-    except Exception:
-        return []
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _rank_sensitivity_warm_start_directions(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Retain screened directions that reduce absolute volume bias."""
     rows = payload.get("parameters")
     if not isinstance(rows, list):
         return []
-    baseline_pbias = None
-    candidates: list[dict[str, Any]] = []
-    phase_set = set(phase_parameters)
+    baseline_pbias: float | None = None
+    directions: list[dict[str, Any]] = []
     for row in rows:
         if not isinstance(row, dict):
             continue
         name = str(row.get("parameter") or "")
-        if name not in phase_set:
-            continue
         evidence = row.get("evidence")
-        if not isinstance(evidence, dict):
+        if not name or not isinstance(evidence, dict):
             continue
         baseline_metrics = evidence.get("baseline_metrics")
         if baseline_pbias is None and isinstance(baseline_metrics, dict):
-            raw_baseline_pbias = baseline_metrics.get("pbias")
-            if isinstance(raw_baseline_pbias, (int, float)):
-                baseline_pbias = float(raw_baseline_pbias)
+            raw = baseline_metrics.get("pbias")
+            if isinstance(raw, (int, float)):
+                baseline_pbias = float(raw)
         value = evidence.get("best_score_value")
-        if not isinstance(value, (int, float)):
-            continue
-        lo, hi = param_bounds.get(name, (None, None))
-        if lo is None or hi is None:
-            continue
-        value = float(value)
-        if value < float(lo) or value > float(hi):
-            continue
         metrics = evidence.get("best_score_metrics")
         pbias = metrics.get("pbias") if isinstance(metrics, dict) else None
-        if not isinstance(pbias, (int, float)):
+        if not isinstance(value, (int, float)) or not isinstance(pbias, (int, float)):
             continue
-        pbias = float(pbias)
-        if baseline_pbias is not None and abs(pbias) >= abs(float(baseline_pbias)):
+        if baseline_pbias is not None and abs(float(pbias)) >= abs(baseline_pbias):
             continue
-        candidates.append(
+        directions.append(
             {
                 "parameter": name,
-                "value": value,
-                "abs_pbias": abs(pbias),
+                "value": float(value),
+                "abs_pbias": abs(float(pbias)),
                 "score_delta": float(evidence.get("best_score_delta") or 0.0),
             }
         )
-    candidates.sort(key=lambda row: (row["abs_pbias"], -row["score_delta"], row["parameter"]))
+    return sorted(
+        directions,
+        key=lambda row: (float(row["abs_pbias"]), -float(row["score_delta"]), str(row["parameter"])),
+    )
 
+
+def _warm_start_points_from_directions(
+    directions: list[dict[str, Any]],
+    *,
+    current_params: dict[str, float],
+    phase_parameters: list[str],
+    param_bounds: dict[str, tuple[float, float]],
+    max_points: int,
+) -> list[dict[str, float]]:
+    if max_points <= 0:
+        return []
+    phase_set = set(phase_parameters)
+    candidates = [
+        row
+        for row in directions
+        if str(row.get("parameter") or "") in phase_set
+        and isinstance(row.get("value"), (int, float))
+        and _value_within_bounds(str(row["parameter"]), float(row["value"]), param_bounds)
+    ]
     anchors: list[dict[str, float]] = []
     seen: set[tuple[tuple[str, float], ...]] = set()
 
     def add(point: dict[str, float]) -> None:
         key = tuple(sorted((name, round(float(value), 12)) for name, value in point.items()))
-        if key in seen:
-            return
-        seen.add(key)
-        anchors.append(point)
+        if key not in seen:
+            seen.add(key)
+            anchors.append(point)
 
     cumulative = dict(current_params)
     for row in candidates:
+        name, value = str(row["parameter"]), float(row["value"])
         point = dict(current_params)
-        point[str(row["parameter"])] = float(row["value"])
+        point[name] = value
         add(point)
-        cumulative[str(row["parameter"])] = float(row["value"])
+        cumulative[name] = value
         add(dict(cumulative))
         if len(anchors) >= max_points:
             return anchors[:max_points]
 
     top = candidates[:4]
-    for i, left in enumerate(top):
-        for right in top[i + 1 :]:
+    for index, left in enumerate(top):
+        for right in top[index + 1 :]:
             point = dict(current_params)
             point[str(left["parameter"])] = float(left["value"])
             point[str(right["parameter"])] = float(right["value"])
@@ -1704,6 +1920,15 @@ def _sensitivity_guided_anchor_points(
             if len(anchors) >= max_points:
                 return anchors[:max_points]
     return anchors[:max_points]
+
+
+def _value_within_bounds(
+    parameter: str,
+    value: float,
+    param_bounds: dict[str, tuple[float, float]],
+) -> bool:
+    bounds = param_bounds.get(parameter)
+    return bounds is not None and float(bounds[0]) <= value <= float(bounds[1])
 
 
 def _score_candidate(metrics: dict[str, Any], *, objective: str) -> float:

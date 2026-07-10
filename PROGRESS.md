@@ -10295,3 +10295,23 @@ Verification:
   worker-aware artifacts, and exactly reproduced the prior serial activity
   classes/best scores. The temporary benchmark lives under `/tmp` and is not
   a repository artifact.
+
+## 2026-07-10 — Warm-Start Artifact And Parallel Fixed Anchors
+
+- Added `diagnostic_warm_start.json`/`.md`, derived from the sealed
+  basin-specific sensitivity artifact and hash-linked to that source. It retains
+  only directions that reduce absolute PBIAS and is marked
+  `exploratory_warm_start_only`.
+- Added `--anchor-workers` (default `4`) for independent fixed warm-start
+  anchors. Objective metrics are evaluated concurrently in isolated work
+  directories, then recorded, gated, and ranked in deterministic planned order.
+  Adaptive DDS, final locked verification, and withheld temporal transfer remain
+  serial and fresh.
+- Focused calibration, workflow, dashboard, evidence-schema, and governance
+  suites passed. No full new real workflow has yet been run, so the total
+  end-to-end speedup is not claimed or released.
+- A sealed real-engine `01547700` integration used four parallel fixed anchors
+  plus one serial DDS step. It completed in `74.4 s`, wrote five ordered
+  history rows, and retained the hash-linked `exploratory_warm_start_only`
+  artifact. The scratch directory under `/tmp` was removed after inspection;
+  its provisional candidate metrics are not retained as workflow evidence.

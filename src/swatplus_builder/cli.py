@@ -1826,6 +1826,11 @@ def cmd_workflow_run(
         "--sensitivity-workers",
         help="Concurrent isolated SWAT+ workers for independent sensitivity bounds (default: 4).",
     ),
+    anchor_workers: int = typer.Option(
+        4,
+        "--anchor-workers",
+        help="Concurrent isolated SWAT+ workers for fixed warm-start anchors (default: 4).",
+    ),
     contract: str = typer.Option(None, "--contract", help="Path to workflow_contract.json."),
     contract_status: str | None = typer.Option(
         None,
@@ -1868,6 +1873,9 @@ def cmd_workflow_run(
     if sensitivity_workers < 1:
         rprint("[red]error:[/red] --sensitivity-workers must be at least 1")
         raise typer.Exit(2)
+    if anchor_workers < 1:
+        rprint("[red]error:[/red] --anchor-workers must be at least 1")
+        raise typer.Exit(2)
 
     contract_path = None
     if contract:
@@ -1894,6 +1902,7 @@ def cmd_workflow_run(
         hru_mode=normalized_hru_mode,
         min_hru_fraction=min_hru_fraction,
         sensitivity_workers=sensitivity_workers,
+        anchor_workers=anchor_workers,
         virtual_all_terminal_outlet=virtual_all_terminal_outlet,
         virtual_outlet_authority=virtual_outlet_authority,
     )

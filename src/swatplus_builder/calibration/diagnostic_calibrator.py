@@ -40,9 +40,11 @@ def run_diagnostic_calibration(
     screening_warmup_years: int = 3,
     validation_period: tuple[str, str] | None = None,
     sensitivity_workers: int = 4,
+    anchor_workers: int = 4,
 ) -> DiagnosticCalibrationResult:
     source_run = Path(source_run).expanduser().resolve()
     sensitivity_workers = max(1, int(sensitivity_workers))
+    anchor_workers = max(1, int(anchor_workers))
     reports = source_run / "reports"
     reports.mkdir(parents=True, exist_ok=True)
     progress_path = _calibration_progress_path(source_run)
@@ -113,6 +115,7 @@ def run_diagnostic_calibration(
         calibrate_against_lock,
         screen_parameters_against_lock,
         verify_calibration,
+        write_diagnostic_warm_start,
     )
     from .real_engine import params_hash
 
@@ -163,6 +166,10 @@ def run_diagnostic_calibration(
             sensitivity_classes,
             governance_blocked,
         )
+        warm_start = write_diagnostic_warm_start(
+            sensitivity.json_path,
+            source_run / "calibration",
+        )
         _write_calibration_progress(
             progress_path,
             status="screened",
@@ -173,6 +180,7 @@ def run_diagnostic_calibration(
             eligible_parameters=eligible_parameters,
             screened_parameters=screened_parameters,
             blocked_parameters=blocked_parameters,
+            diagnostic_warm_start_json=warm_start.json_path,
         )
         runs[1] = PhaseRun(
             2,
@@ -214,6 +222,8 @@ def run_diagnostic_calibration(
             parameters=screened_parameters,
             parameter_mode="full",
             validation_period=validation_period,
+            anchor_workers=anchor_workers,
+            warm_start_json=warm_start.json_path,
             **screening_window,
         )
         best_solution = json.loads(Path(evidence.best_solution_json).read_text(encoding="utf-8"))
@@ -313,6 +323,7 @@ def run_diagnostic_calibration(
                 "source_run": str(source_run),
                 "screening_window": screening_window or None,
                 "sensitivity_workers": sensitivity_workers,
+                "anchor_workers": anchor_workers,
                 "validation_period": list(validation_period) if validation_period else None,
                 "validation_metrics": (
                     {
@@ -332,6 +343,9 @@ def run_diagnostic_calibration(
                 "sensitivity_screen_path": sensitivity.json_path,
                 "sensitivity_screen_md": sensitivity.markdown_path,
                 "sensitivity_screen_activity_classes": sensitivity_classes,
+                "diagnostic_warm_start_json": warm_start.json_path,
+                "diagnostic_warm_start_md": warm_start.markdown_path,
+                "diagnostic_warm_start_authority": warm_start.authority,
                 "fresh_candidate_outputs": True,
                 "selection_policy": best_solution.get("selection_policy"),
                 "calibration_protocol": best_solution.get("calibration_protocol", []),
@@ -429,6 +443,7 @@ def run_diagnostic_calibration(
                 "source_run": str(source_run),
                 "screening_window": locals().get("screening_window") or None,
                 "sensitivity_workers": sensitivity_workers,
+                "anchor_workers": anchor_workers,
                 "blocked_parameters": locals().get("blocked_parameters", governance_blocked),
                 "eligible_parameters": eligible_parameters,
                 "screened_parameters": locals().get("screened_parameters", []),
@@ -436,6 +451,8 @@ def run_diagnostic_calibration(
                 "sensitivity_screen_path": getattr(locals().get("sensitivity"), "json_path", None),
                 "sensitivity_screen_md": getattr(locals().get("sensitivity"), "markdown_path", None),
                 "sensitivity_screen_activity_classes": locals().get("sensitivity_classes", {}),
+                "diagnostic_warm_start_json": getattr(locals().get("warm_start"), "json_path", None),
+                "diagnostic_warm_start_md": getattr(locals().get("warm_start"), "markdown_path", None),
                 "final_metrics_authority": "none",
                 "temporary_candidate_metrics_allowed_as_final": False,
                 "error": str(exc),

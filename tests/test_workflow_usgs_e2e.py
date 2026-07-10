@@ -1958,11 +1958,12 @@ def test_volume_bias_gate_allows_diagnostic_calibration_attempt_but_blocks_claim
         }
 
     def fake_run_diagnostic_calibration(
-        source_run, *, claim_tier, strict, validation_period, sensitivity_workers
+        source_run, *, claim_tier, strict, validation_period, sensitivity_workers, anchor_workers
     ):
         assert Path(source_run) == tmp_path / "run4"
         assert validation_period == ("2016-01-01", "2019-12-31")
         assert sensitivity_workers == 4
+        assert anchor_workers == 4
         return DiagnosticCalibrationResult(
             success=False,
             phases=[
@@ -3801,6 +3802,8 @@ def test_diagnostic_calibration_provenance_records_staged_protocol(monkeypatch, 
     assert result.provenance["diagnostic_guidance"]["claim_rule"].startswith("screening candidates are provisional")
     assert result.provenance["sensitivity_screen_basis"] == "basin_specific"
     assert result.provenance["screened_parameters"] == ["CN2"]
+    assert result.provenance["diagnostic_warm_start_authority"] == "exploratory_warm_start_only"
+    assert Path(result.provenance["diagnostic_warm_start_json"]).is_file()
     assert result.provenance["selection_policy"] == "staged_volume_baseflow_peaks_then_nse_kge"
     assert result.provenance["verification_improvement_basis"] == "nse_and_kge"
     assert result.provenance["verification_metrics"] == {"nse": 0.3, "kge": 0.4, "pbias": None}

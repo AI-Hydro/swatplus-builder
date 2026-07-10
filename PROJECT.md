@@ -29,15 +29,20 @@ Active hardening toward research-grade production pipeline. Last updated:
 
 ## Current State
 
-- The current checkout adds bounded parallel sensitivity screening after
-  `0.7.13`: independent locked bound perturbations use four isolated
-  single-threaded SWAT+ workers by default, while adaptive candidate search,
-  final verification, and withheld transfer remain serial. A real 01547700
-  four-parameter benchmark reproduced the serial activity/bound results
-  exactly in `163.6 s` versus an estimated `~360 s` serial path (2.2x). This
-  should reduce the full 16-parameter screening stage by roughly 14 minutes,
-  not weaken the scientific contract. The temporary benchmark is outside the
-  repository and will be removed after verification.
+- The current checkout adds bounded parallel sensitivity screening and fixed
+  warm-start anchors after `0.7.13`: independent locked bound perturbations
+  and precomputed, sensitivity-derived anchors use four isolated single-threaded
+  SWAT+ workers by default. Adaptive DDS, candidate selection, final
+  verification, and withheld transfer remain serial. A real 01547700
+  four-parameter sensitivity benchmark reproduced the serial activity/bound
+  results exactly in `163.6 s` versus an estimated `~360 s` serial path
+  (2.2x). `diagnostic_warm_start.json` is hash-linked to its sensitivity source
+  and explicitly exploratory; it cannot authorize a result. A real locked
+  01547700 four-anchor integration completed in `74.4 s` (five candidate rows,
+  including the serial DDS step) and retained deterministic history order. A
+  fresh complete workflow is still required to measure total wall-time
+  reduction before a release. The temporary benchmarks are outside the
+  repository and have been removed.
 
 - Fresh current-code validation now exists for `01547700` at
   `/Users/mgalib/swatplus_runs/calibration_contract_validate_20260709/01547700_2010_2019_fulloverlay_diag`.

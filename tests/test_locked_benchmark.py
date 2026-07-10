@@ -18,12 +18,14 @@ from swatplus_builder.calibration.locked_benchmark import (
     _resolve_lock,
     _score_candidate,
     _volume_gate_passed,
+    _warm_start_anchor_points,
     _write_readiness_markdown,
     build_readiness_table,
     calibrate_against_lock,
     lock_benchmark,
     screen_parameters_against_lock,
     verify_calibration,
+    write_diagnostic_warm_start,
 )
 from swatplus_builder.calibration.real_engine import params_hash
 from swatplus_builder.errors import SwatBuilderInputError, SwatBuilderPipelineError
@@ -448,6 +450,10 @@ def test_calibrate_against_lock_uses_sensitivity_guided_anchor_combinations(
         return objective
 
     monkeypatch.setattr("swatplus_builder.calibration.real_engine.make_real_objective", fake_make_real_objective)
+    warm_start = write_diagnostic_warm_start(
+        screen_dir / "sensitivity_screen.json",
+        tmp_path / "cal",
+    )
 
     evidence = calibrate_against_lock(
         lock,
@@ -455,6 +461,7 @@ def test_calibrate_against_lock_uses_sensitivity_guided_anchor_combinations(
         tmp_path / "cal",
         parameters=["ESCO", "PET_CO"],
         n_evaluations=2,
+        warm_start_json=warm_start.json_path,
         calibration_phases=[
             {
                 "phase": "volume",
@@ -468,6 +475,135 @@ def test_calibrate_against_lock_uses_sensitivity_guided_anchor_combinations(
     assert {"ESCO": 0.01, "PET_CO": 0.8} in evaluated
     assert evidence.best_parameters == {"ESCO": 0.01, "PET_CO": 0.8}
     assert evidence.best_kge == pytest.approx(0.5)
+    assert evidence.warm_start_json == warm_start.json_path
+
+
+def test_calibrate_against_lock_parallelizes_fixed_anchor_points_in_history_order(
+    monkeypatch, tmp_path: Path
+) -> None:
+    import threading
+
+    benchmark_dir = tmp_path / "benchmark"
+    benchmark_dir.mkdir()
+    pd.DataFrame(
+        {"obs": [1.0, 2.0], "sim": [0.2, 0.4]},
+        index=pd.date_range("2010-01-01", periods=2, freq="D"),
+    ).to_csv(benchmark_dir / "alignment.csv")
+    lock = BenchmarkLock(
+        basin_id="usgs_parallel_anchor",
+        locked_at_utc="2026-07-10T00:00:00+00:00",
+        alignment_sha256="alignment",
+        metrics_sha256="metrics",
+        outlet_gis_id=1,
+        sim_source_file="channel_sd_day.txt",
+        baseline_nse=-1.0,
+        baseline_kge=-1.0,
+        benchmark_dir=str(benchmark_dir),
+    )
+    txt = tmp_path / "TxtInOut"
+    txt.mkdir()
+    anchors = [{"CN2": 36.0}, {"CN2": 37.0}, {"CN2": 38.0}]
+    barrier = threading.Barrier(3)
+    worker_ids: set[int] = set()
+
+    def fake_make_real_objective(**kwargs):
+        def objective(params: dict[str, float]) -> dict[str, float]:
+            if params in anchors:
+                worker_ids.add(threading.get_ident())
+                barrier.wait(timeout=2.0)
+            return {
+                "nse": float(params.get("CN2", 35.0)) / 100.0,
+                "kge": float(params.get("CN2", 35.0)) / 100.0,
+                "pbias": 5.0,
+                "physical_gate_passed": 1.0,
+                "calibration_process_gate_passed": 1.0,
+            }
+
+        return objective
+
+    monkeypatch.setattr("swatplus_builder.calibration.real_engine.make_real_objective", fake_make_real_objective)
+    monkeypatch.setattr(
+        "swatplus_builder.calibration.locked_benchmark._sensitivity_guided_anchor_points",
+        lambda *args, **kwargs: anchors,
+    )
+
+    evidence = calibrate_against_lock(
+        lock,
+        txt,
+        tmp_path / "cal",
+        parameters=["CN2"],
+        n_evaluations=3,
+        anchor_workers=3,
+        calibration_phases=[
+            {
+                "phase": "volume",
+                "parameters": ["CN2"],
+                "budget": 3,
+                "objective": "minimize_abs_pbias_then_kge_nse",
+            }
+        ],
+    )
+
+    assert barrier.broken is False
+    assert len(worker_ids) >= 2
+    history = pd.read_csv(evidence.history_csv)
+    assert history.loc[:2, "param_CN2"].tolist() == [36.0, 37.0, 38.0]
+    best = json.loads(Path(evidence.best_solution_json).read_text(encoding="utf-8"))
+    assert best["anchor_workers"] == 3
+
+
+def test_write_diagnostic_warm_start_is_exploratory_and_filters_nonvolume_improving_directions(
+    tmp_path: Path,
+) -> None:
+    sensitivity = tmp_path / "sensitivity_screen.json"
+    sensitivity.write_text(
+        json.dumps(
+            {
+                "basin_id": "usgs_warm_start",
+                "parameters": [
+                    {
+                        "parameter": "CN2",
+                        "evidence": {
+                            "baseline_metrics": {"pbias": -60.0},
+                            "best_score_value": 70.0,
+                            "best_score_delta": 0.4,
+                            "best_score_metrics": {"pbias": -20.0},
+                        },
+                    },
+                    {
+                        "parameter": "PERCO",
+                        "evidence": {
+                            "baseline_metrics": {"pbias": -60.0},
+                            "best_score_value": 1.0,
+                            "best_score_delta": 0.9,
+                            "best_score_metrics": {"pbias": -70.0},
+                        },
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    warm_start = write_diagnostic_warm_start(sensitivity, tmp_path / "calibration")
+
+    assert warm_start.authority == "exploratory_warm_start_only"
+    assert warm_start.directions == [
+        {"parameter": "CN2", "value": 70.0, "abs_pbias": 20.0, "score_delta": 0.4}
+    ]
+    payload = json.loads(Path(warm_start.json_path).read_text(encoding="utf-8"))
+    assert payload["authority"] == "exploratory_warm_start_only"
+    assert "locked verification" in payload["claim_rule"]
+    assert Path(warm_start.markdown_path).is_file()
+
+    sensitivity.write_text(json.dumps({"basin_id": "usgs_warm_start", "parameters": []}), encoding="utf-8")
+    assert _warm_start_anchor_points(
+        Path(warm_start.json_path),
+        current_params={},
+        phase_parameters=["CN2"],
+        param_bounds={"CN2": (35.0, 98.0)},
+        max_points=4,
+    ) == []
 
 
 def test_verify_calibration_scores_virtual_outlet_lock_with_same_scope(

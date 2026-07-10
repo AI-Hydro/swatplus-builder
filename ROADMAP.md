@@ -1,6 +1,6 @@
 # swatplus-builder Roadmap
 
-Last updated: 2026-05-12.
+Last updated: 2026-07-10.
 
 ## Mission
 
@@ -83,6 +83,9 @@ Acceptance criteria:
 - Each candidate is classified as accepted, rejected by physics, rejected by
   sensitivity, rejected by structure, rejected by engine, rejected by data,
   needs diagnostic, needs bridge, or needs model-family change.
+- Sensitivity-derived warm starts may reduce exploratory search time, but only
+  fresh locked verification and withheld-period transfer may authorize a
+  calibrated claim.
 
 ## Phase 5 — Runtime Claim Governance
 
@@ -127,4 +130,3 @@ Acceptance criteria:
   `docs/SWATPLUS_MODELING_PLAYBOOK.md`, `docs/AGENT_WORKFLOW.md`,
   `docs/CALIBRATION_PARAMETER_REGISTRY.md`, and
   `docs/PIPELINE_LEARNING_LOG.md` stay synchronized with implementation.
-
