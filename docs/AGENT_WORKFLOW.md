@@ -51,6 +51,9 @@ Behavior:
 4. Executes phased diagnostic calibration attempt. Fixed warm-start anchors may
    run concurrently; adaptive DDS, locked verification, and temporal transfer
    remain serial and fresh.
+   - Exact interrupted sensitivity/candidate vectors may reuse a signed compact
+     trace only under the same sealed benchmark and scoring context. This reuse
+     never applies to final verification or withheld validation.
    - Calibration is blocked before the volume stage when routing evidence
      shows hard defects such as no land generation, no HRU-to-channel
      transfer, no channel entry, transfer-scale failure, wrong outlet, or

@@ -10315,3 +10315,21 @@ Verification:
   history rows, and retained the hash-linked `exploratory_warm_start_only`
   artifact. The scratch directory under `/tmp` was removed after inspection;
   its provisional candidate metrics are not retained as workflow evidence.
+
+## 2026-07-10 — Sealed Objective Resume After Interrupted Full Validation
+
+- A fresh full-overlay `01547700` workflow completed build/benchmark setup and
+  all 16 sensitivity classifications, then was externally interrupted during
+  adaptive calibration at candidate `18/30`. The package wrote no completion
+  event or final evidence bundle, so the run is explicitly non-authoritative.
+- Added tamper-evident compact trace reuse for exact sensitivity/calibration
+  parameter vectors. Reuse requires an exact context signature covering sealed
+  benchmark/input identity, scoring window, engine binary, and implementation
+  hashes. Legacy traces from the interrupted run are not eligible.
+- Tests prove exact reuse avoids a second engine call, while payload tampering
+  and context changes force a fresh call. Verification and withheld transfer
+  remain force-fresh.
+- A real sealed `01547700` objective (`PET_CO=1.2`, 2010-2015 score window)
+  took `66.54 s` fresh and `0.00035 s` on the exact signed repeat; metrics were
+  identical and both context/payload signatures were present. This is resume
+  evidence only, not promotion of the below-research-skill candidate.

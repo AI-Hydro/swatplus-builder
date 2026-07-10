@@ -1029,3 +1029,30 @@ Consequences:
   sensitivity-derived anchor construction.
 - A fresh full workflow benchmark remains required before a new release can
   claim an end-to-end runtime improvement.
+
+## 2026-07-10 — Resume Exact Objective Traces Under A Sealed Context
+
+Decision:
+
+- Reuse a compact sensitivity or calibration objective trace only when its
+  parameter vector, payload hash, and context signature match exactly.
+- Seal the context with benchmark/input hashes, scoring dates, outlet scope,
+  engine binary, builder version, and calibration implementation hashes.
+- Never reuse compact traces for final locked verification or withheld-period
+  validation.
+
+Why:
+
+- A fresh full `01547700` validation process was externally interrupted at
+  candidate `18/30`. All objective traces existed, but legacy traces lacked the
+  context signature needed to prove their scoring/input identity after restart.
+- Repeating expensive exact vectors wastes hours, while accepting unsigned or
+  stale metrics would violate package-owned evidence authority.
+
+Consequences:
+
+- New interrupted runs can deterministically replay the search and skip exact
+  vectors whose sealed traces remain valid.
+- Legacy, tampered, mismatched, or incomplete traces are ignored and rerun.
+- The interrupted validation is not a completed workflow and cannot support a
+  release or scientific claim.

@@ -128,6 +128,10 @@ The **lock → calibrate → verify** chain is the only scientifically defensibl
   Its fixed candidate anchors may run concurrently with `--anchor-workers`,
   but the plan is explicitly exploratory: it cannot supply final metrics or
   bypass fresh verification, temporal transfer, or claim gates.
+- Exact sensitivity/candidate vectors may resume from compact objective traces
+  only when their sealed context and payload hashes match. Legacy, changed, or
+  incomplete traces are rerun. Final verification and withheld validation are
+  always fresh.
 - `evaluate_run` is the authoritative metric source for all reporting.
 
 One-liner for agents:

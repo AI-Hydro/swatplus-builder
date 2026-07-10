@@ -665,6 +665,77 @@ def test_make_real_objective_can_discard_scratch_workdirs(monkeypatch, tmp_path:
     assert not any(path.is_dir() for path in (tmp_path / "work").iterdir())
 
 
+def test_make_real_objective_reuses_only_sealed_exact_compact_trace(monkeypatch, tmp_path: Path) -> None:
+    base = tmp_path / "base"
+    base.mkdir(parents=True, exist_ok=True)
+    _write(
+        base / "print.prt",
+        "hdr\n"
+        "nyskip day_start yrc_start day_end yrc_end interval\n"
+        "1 0 0 0 0 1\n"
+        "aa_int_cnt\n"
+        "0\n"
+        "csvout dbout cdfout\n"
+        "n n n\n"
+        "objects daily monthly yearly avann\n"
+        "channel n n y y\n"
+        "channel_sd n n y y\n"
+        "basin_cha n n y y\n"
+        "basin_sd_cha n n y y\n",
+    )
+    calls = {"run": 0}
+
+    def _fake_run(*args, **kwargs):
+        calls["run"] += 1
+
+    def _fake_eval(*args, **kwargs):
+        df = pd.DataFrame({"obs": [1.0], "sim": [1.0]}, index=pd.to_datetime(["2015-01-01"]))
+        metrics = {"nse": 0.5 + calls["run"] / 100.0, "kge": 0.4, "pbias": 1.0}
+        diagnostics = {
+            "requested_outlet_gis_id": 1,
+            "selected_outlet_gis_id": 1,
+            "outlet_autodetected": False,
+            "outlet_selection_reason": "strict_requested_outlet",
+            "sim_source_file": "basin_sd_cha_day.txt",
+        }
+        return df, metrics, diagnostics
+
+    monkeypatch.setattr(real_engine, "run_swat", _fake_run)
+    monkeypatch.setattr(real_engine, "evaluate_run", _fake_eval)
+    monkeypatch.setattr(
+        real_engine,
+        "_candidate_physical_gate",
+        lambda *args, **kwargs: {"pass": True, "calibration_process_gate_pass": True},
+    )
+    kwargs = {
+        "base_txtinout": base,
+        "observed_series": pd.Series([1.0], index=pd.to_datetime(["2015-01-01"])),
+        "work_root": tmp_path / "work",
+        "objective_sim_file": "basin_sd_cha_day.txt",
+        "keep_workdirs": False,
+        "nyskip_years": 0,
+        "reuse_compact_traces": True,
+        "include_physical_gate": True,
+    }
+    params: dict[str, float] = {}
+    objective = make_real_objective(**kwargs, trace_context_sha256="sealed-context-a")
+
+    assert objective(params)["nse"] == pytest.approx(0.51)
+    assert objective(params)["nse"] == pytest.approx(0.51)
+    assert calls["run"] == 1
+
+    trace = tmp_path / "work" / f"{params_hash(params)}_objective_trace.json"
+    tampered = json.loads(trace.read_text(encoding="utf-8"))
+    tampered["metrics"]["nse"] = 9.0
+    trace.write_text(json.dumps(tampered), encoding="utf-8")
+    assert objective(params)["nse"] == pytest.approx(0.52)
+    assert calls["run"] == 2
+
+    changed_context = make_real_objective(**kwargs, trace_context_sha256="sealed-context-b")
+    assert changed_context(params)["nse"] == pytest.approx(0.53)
+    assert calls["run"] == 3
+
+
 def test_make_real_objective_invalidates_legacy_objective_cache(monkeypatch, tmp_path: Path) -> None:
     base = tmp_path / "base"
     base.mkdir(parents=True, exist_ok=True)

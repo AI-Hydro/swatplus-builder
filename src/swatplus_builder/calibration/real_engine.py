@@ -13,9 +13,9 @@ from typing import Any
 
 import pandas as pd
 
+from .. import __version__ as _builder_version
 from ..output.eval import evaluate_run
 from ..run import run as run_swat
-from .. import __version__ as _builder_version
 
 RealObjective = Callable[[dict[str, float]], dict[str, Any]]
 
@@ -42,6 +42,8 @@ def make_real_objective(
     simulation_end: str | date | None = None,
     score_start: str | date | None = None,
     score_end: str | date | None = None,
+    reuse_compact_traces: bool = False,
+    trace_context_sha256: str | None = None,
 ) -> RealObjective:
     """Build an objective function that runs SWAT+ per parameter vector.
 
@@ -101,25 +103,41 @@ def make_real_objective(
         raise ValueError(
             "objective_outlet_policy='auto' requires allow_outlet_autodetect=True."
         )
+    if reuse_compact_traces and not trace_context_sha256:
+        raise ValueError("reuse_compact_traces requires trace_context_sha256.")
+    if reuse_compact_traces and force_fresh:
+        raise ValueError("force_fresh and reuse_compact_traces are mutually exclusive.")
+    cache_signature = _objective_cache_signature(
+        parameter_mode,
+        binary=binary,
+        simulation_start=simulation_start_date,
+        simulation_end=simulation_end_date,
+        score_start=score_start_date,
+        score_end=score_end_date,
+        nyskip_years=warmup_years,
+        objective_sim_file=requested_file,
+        outlet_gis_id=int(outlet_gis_id),
+        objective_outlet_policy=outlet_policy,
+        trace_context_sha256=trace_context_sha256,
+    )
 
     def _objective(params: dict[str, float]) -> dict[str, float]:
         key = params_hash(params)
+        compact_trace = root / f"{key}_objective_trace.json"
+        if reuse_compact_traces:
+            cached_metrics = _load_reusable_objective_trace(
+                compact_trace,
+                params=params,
+                cache_signature=cache_signature,
+                requested_sim_file=requested_file,
+                require_physical_gate=include_physical_gate,
+            )
+            if cached_metrics is not None:
+                return cached_metrics
         run_dir = (
             root / key
             if keep_workdirs
             else Path(tempfile.mkdtemp(prefix=f"swatplus_obj_{key[:12]}_"))
-        )
-        cache_signature = _objective_cache_signature(
-            parameter_mode,
-            binary=binary,
-            simulation_start=simulation_start_date,
-            simulation_end=simulation_end_date,
-            score_start=score_start_date,
-            score_end=score_end_date,
-            nyskip_years=warmup_years,
-            objective_sim_file=requested_file,
-            outlet_gis_id=int(outlet_gis_id),
-            objective_outlet_policy=outlet_policy,
         )
         try:
             txt = run_dir / "TxtInOut"
@@ -203,9 +221,9 @@ def make_real_objective(
                 requested_sim_file=requested_file,
                 diagnostics=diagnostics,
                 metrics=metrics,
+                cache_signature=cache_signature,
             )
             if not keep_workdirs:
-                compact_trace = root / f"{key}_objective_trace.json"
                 shutil.copy2(trace_path, compact_trace)
             return {k: float(v) for k, v in metrics.items() if isinstance(v, (int, float))}
         finally:
@@ -268,6 +286,7 @@ def _objective_cache_signature(
     objective_sim_file: str | None = None,
     outlet_gis_id: int | None = None,
     objective_outlet_policy: str | None = None,
+    trace_context_sha256: str | None = None,
 ) -> str:
     payload: dict[str, str] = {
         "parameter_mode": str(parameter_mode or "lte").strip().lower(),
@@ -280,6 +299,7 @@ def _objective_cache_signature(
         "objective_sim_file": str(objective_sim_file or ""),
         "outlet_gis_id": "" if outlet_gis_id is None else str(int(outlet_gis_id)),
         "objective_outlet_policy": str(objective_outlet_policy or ""),
+        "trace_context_sha256": str(trace_context_sha256 or ""),
     }
     # Include the SWAT+ engine binary hash so cached workdirs are invalidated
     # when the executable changes (upgraded, rebuilt, or swapped).
@@ -613,6 +633,7 @@ def _write_objective_trace(
     requested_sim_file: str,
     diagnostics: dict[str, object],
     metrics: dict[str, float],
+    cache_signature: str,
 ) -> None:
     payload = {
         "params": {k: float(v) for k, v in sorted(params.items())},
@@ -626,7 +647,54 @@ def _write_objective_trace(
         "outlet_autodetected": bool(diagnostics.get("outlet_autodetected", False)),
         "outlet_selection_reason": diagnostics.get("outlet_selection_reason"),
         "metrics": {k: float(v) for k, v in metrics.items() if isinstance(v, (int, float))},
+        "cache_signature": cache_signature,
     }
     if "candidate_physical_gate" in diagnostics:
         payload["candidate_physical_gate"] = diagnostics.get("candidate_physical_gate")
+    payload["payload_sha256"] = _objective_trace_payload_sha256(payload)
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def _objective_trace_payload_sha256(payload: dict[str, Any]) -> str:
+    sealed = {key: value for key, value in payload.items() if key != "payload_sha256"}
+    return sha256(json.dumps(sealed, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def _load_reusable_objective_trace(
+    path: Path,
+    *,
+    params: dict[str, float],
+    cache_signature: str,
+    requested_sim_file: str,
+    require_physical_gate: bool,
+) -> dict[str, float] | None:
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("cache_signature") != cache_signature:
+        return None
+    if payload.get("payload_sha256") != _objective_trace_payload_sha256(payload):
+        return None
+    expected_params = {key: float(value) for key, value in sorted(params.items())}
+    if payload.get("params") != expected_params:
+        return None
+    if payload.get("requested_sim_file") != requested_sim_file:
+        return None
+    if payload.get("actual_sim_file") != requested_sim_file:
+        return None
+    metrics = payload.get("metrics")
+    if not isinstance(metrics, dict):
+        return None
+    if require_physical_gate and not isinstance(payload.get("candidate_physical_gate"), dict):
+        return None
+    required = {"nse", "kge", "pbias"}
+    if not required.issubset(metrics):
+        return None
+    if not all(isinstance(value, (int, float)) for value in metrics.values()):
+        return None
+    return {key: float(value) for key, value in metrics.items()}

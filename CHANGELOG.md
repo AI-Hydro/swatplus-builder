@@ -13,6 +13,11 @@ All notable changes to swatplus-builder are documented here.
   worker pool (`--anchor-workers`, default `4`). The workflow writes a hashed
   `diagnostic_warm_start.json` artifact, explicitly marked exploratory; it
   cannot authorize final metrics or claims.
+- Interrupted sensitivity and adaptive-search runs can reuse exact compact
+  objective traces only when a tamper-evident signature matches the sealed
+  benchmark/input identity, scoring window, engine binary, and calibration
+  implementation. Final verification and withheld validation never use this
+  cache.
 
 ## [0.7.13] — 2026-07-10
 

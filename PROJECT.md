@@ -44,6 +44,16 @@ Active hardening toward research-grade production pipeline. Last updated:
   reduction before a release. The temporary benchmarks are outside the
   repository and have been removed.
 
+- A subsequent full `01547700` validation completed build and the 16-parameter
+  sensitivity screen but was externally interrupted at adaptive candidate
+  `18/30`; it wrote no final evidence and is not a release result. The current
+  checkout now adds sealed exact-trace resume for sensitivity/calibration
+  candidates. Legacy/tampered/context-mismatched traces rerun, and final locked
+  verification plus withheld transfer remain fresh. A real sealed 01547700
+  objective took `66.54 s` fresh and `0.00035 s` on an exact signed repeat with
+  identical metrics. A new uninterrupted full workflow remains the release
+  gate.
+
 - Fresh current-code validation now exists for `01547700` at
   `/Users/mgalib/swatplus_runs/calibration_contract_validate_20260709/01547700_2010_2019_fulloverlay_diag`.
   It sealed 230 static TxtInOut inputs, calibrated only on 2010-2015, and

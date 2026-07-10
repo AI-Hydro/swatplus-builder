@@ -471,6 +471,16 @@ def calibrate_against_lock(
         simulation_end=simulation_end,
         score_start=score_start,
         score_end=score_end,
+        reuse_compact_traces=True,
+        trace_context_sha256=_objective_trace_context_sha256(
+            lock,
+            purpose="calibration_training",
+            validation_period=validation_period,
+            simulation_start=simulation_start,
+            simulation_end=simulation_end,
+            score_start=score_start,
+            score_end=score_end,
+        ),
     )
 
     # Deterministic staged diagnostic search. Each phase only opens the
@@ -1197,6 +1207,15 @@ def screen_parameters_against_lock(
         simulation_end=simulation_end,
         score_start=score_start,
         score_end=score_end,
+        reuse_compact_traces=True,
+        trace_context_sha256=_objective_trace_context_sha256(
+            lock,
+            purpose="sensitivity_screen",
+            simulation_start=simulation_start,
+            simulation_end=simulation_end,
+            score_start=score_start,
+            score_end=score_end,
+        ),
     )
 
     # The lock represents the generated model, whose spatially distributed
@@ -2432,6 +2451,40 @@ def _objective_outlet_policy_for_lock(lock: BenchmarkLock) -> str:
         outlet_policy=lock.outlet_policy,
         virtual_outlet_claim_authority=lock.virtual_outlet_claim_authority,
     )
+
+
+def _objective_trace_context_sha256(
+    lock: BenchmarkLock,
+    *,
+    purpose: str,
+    validation_period: tuple[str, str] | None = None,
+    simulation_start: str | None = None,
+    simulation_end: str | None = None,
+    score_start: str | None = None,
+    score_end: str | None = None,
+) -> str:
+    """Seal the benchmark and scoring identity used by resumable objectives."""
+    payload = {
+        "purpose": purpose,
+        "basin_id": lock.basin_id,
+        "alignment_sha256": lock.alignment_sha256,
+        "metrics_sha256": lock.metrics_sha256,
+        "provenance_sha256": lock.provenance_sha256,
+        "input_configuration_sha256": lock.input_configuration_sha256,
+        "outlet_gis_id": lock.outlet_gis_id,
+        "outlet_policy": lock.outlet_policy,
+        "outlet_scope": lock.outlet_scope,
+        "selected_outlet_gis_ids": lock.selected_outlet_gis_ids,
+        "sim_source_file": lock.sim_source_file,
+        "validation_period": list(validation_period) if validation_period else None,
+        "simulation_start": simulation_start,
+        "simulation_end": simulation_end,
+        "score_start": score_start,
+        "score_end": score_end,
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
 
 
 def _sha256_file(path: Path) -> str | None:
