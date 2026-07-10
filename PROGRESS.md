@@ -10270,3 +10270,14 @@ Verification:
 - `PYTHONPATH=src python -m pytest -q tests/test_calibration_real_engine.py tests/test_governance_gates.py tests/test_output_eval.py tests/test_water_balance_gate.py tests/test_output_dashboard.py` (`81 passed`)
 - `PYTHONPATH=src python -m ruff check src/swatplus_builder/calibration/locked_benchmark.py src/swatplus_builder/calibration/diagnostic_calibrator.py src/swatplus_builder/workflows/usgs_e2e.py tests/test_locked_benchmark.py tests/test_workflow_usgs_e2e.py`
 - `git diff --check`
+
+## 2026-07-10 — Release 0.7.13
+
+- Committed the sealed-calibration, temporal-transfer, required-evidence, and
+  calibrated-figure provenance changes as `a40884d`
+  (`Harden calibrated evidence and figure provenance`).
+- Built and checked the wheel and sdist, built the documentation with
+  `mkdocs build --strict`, and clean-installed the wheel before publication.
+- Published `swatplus-builder==0.7.13` to PyPI, created and pushed tag
+  `v0.7.13`, and confirmed a separate clean environment can install `0.7.13`
+  directly from the public PyPI index and load `swat workflow run --help`.

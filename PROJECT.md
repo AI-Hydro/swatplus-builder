@@ -48,8 +48,9 @@ Active hardening toward research-grade production pipeline. Last updated:
   verification `NSE=-0.0199`, `KGE=0.3548`, `PBIAS=-19.12%`, but failed both
   the negative-skill and withheld-transfer requirements. The final tier is
   correctly exploratory. This positive/negative pair completes the live
-  release validation gate; remaining work is release verification and version
-  publication.
+  release validation gate. Patch release `0.7.13` was published to PyPI,
+  clean-installed from the public index, and tagged `v0.7.13` at commit
+  `a40884d` on 2026-07-10.
 
 - The current checkout adds three calibration/evidence hardening controls not
   present in the `0.7.12` release: new benchmark locks seal static TxtInOut
