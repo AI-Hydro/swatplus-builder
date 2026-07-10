@@ -39,8 +39,10 @@ def run_diagnostic_calibration(
     screening_window_years: int | None = 6,
     screening_warmup_years: int = 3,
     validation_period: tuple[str, str] | None = None,
+    sensitivity_workers: int = 4,
 ) -> DiagnosticCalibrationResult:
     source_run = Path(source_run).expanduser().resolve()
+    sensitivity_workers = max(1, int(sensitivity_workers))
     reports = source_run / "reports"
     reports.mkdir(parents=True, exist_ok=True)
     progress_path = _calibration_progress_path(source_run)
@@ -144,6 +146,7 @@ def run_diagnostic_calibration(
             out_dir=source_run / "calibration",
             parameters=eligible_parameters,
             parameter_mode="full",
+            max_workers=sensitivity_workers,
             **screening_window,
         )
         sensitivity_classes = {
@@ -309,6 +312,7 @@ def run_diagnostic_calibration(
                 "strict": strict,
                 "source_run": str(source_run),
                 "screening_window": screening_window or None,
+                "sensitivity_workers": sensitivity_workers,
                 "validation_period": list(validation_period) if validation_period else None,
                 "validation_metrics": (
                     {
@@ -424,6 +428,7 @@ def run_diagnostic_calibration(
                 "strict": strict,
                 "source_run": str(source_run),
                 "screening_window": locals().get("screening_window") or None,
+                "sensitivity_workers": sensitivity_workers,
                 "blocked_parameters": locals().get("blocked_parameters", governance_blocked),
                 "eligible_parameters": eligible_parameters,
                 "screened_parameters": locals().get("screened_parameters", []),

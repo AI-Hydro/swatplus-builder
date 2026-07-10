@@ -1199,7 +1199,63 @@ def test_screen_parameters_against_lock_writes_basin_specific_artifact(monkeypat
     assert progress["status"] == "complete"
     assert progress["completed_parameters"] == 1
     assert progress["total_parameters"] == 1
+    assert progress["max_workers"] == 1
     assert progress["parameters"][0]["parameter"] == "CN2"
+
+
+def test_screen_parameters_parallelizes_independent_bounds(monkeypatch, tmp_path: Path) -> None:
+    import threading
+
+    benchmark_dir = tmp_path / "benchmark"
+    benchmark_dir.mkdir()
+    pd.DataFrame(
+        {"obs": [1.0, 2.0, 3.0], "sim": [1.1, 1.9, 3.2]},
+        index=pd.date_range("2010-01-01", periods=3, freq="D"),
+    ).to_csv(benchmark_dir / "alignment.csv")
+    lock = BenchmarkLock(
+        basin_id="usgs_parallel_sens",
+        locked_at_utc="2026-07-10T00:00:00+00:00",
+        alignment_sha256="alignment",
+        metrics_sha256="metrics",
+        outlet_gis_id=1,
+        sim_source_file="channel_sd_day.txt",
+        baseline_nse=0.10,
+        baseline_kge=0.10,
+        benchmark_dir=str(benchmark_dir),
+    )
+    txt = tmp_path / "TxtInOut"
+    txt.mkdir()
+    barrier = threading.Barrier(4)
+    worker_ids: set[int] = set()
+
+    def fake_make_real_objective(**kwargs):
+        def objective(params: dict[str, float]) -> dict[str, float]:
+            if not params:
+                return {"nse": 0.10, "kge": 0.20, "pbias": 5.0}
+            worker_ids.add(threading.get_ident())
+            barrier.wait(timeout=2.0)
+            value = next(iter(params.values()))
+            return {"nse": 0.10 + value / 1000.0, "kge": 0.20, "pbias": 5.0}
+
+        return objective
+
+    monkeypatch.setattr("swatplus_builder.calibration.real_engine.make_real_objective", fake_make_real_objective)
+
+    evidence = screen_parameters_against_lock(
+        lock,
+        txt,
+        tmp_path / "cal",
+        parameters=["CN2", "PERCO"],
+        parameter_mode="full",
+        max_workers=4,
+    )
+
+    assert barrier.broken is False
+    assert len(worker_ids) >= 2
+    assert [row["parameter"] for row in evidence.parameters] == ["CN2", "PERCO"]
+    payload = json.loads(Path(evidence.json_path).read_text(encoding="utf-8"))
+    assert payload["max_workers"] == 4
+    assert all(len(row["evidence"]["bound_results"]) == 2 for row in payload["parameters"])
 
 
 # ---------------------------------------------------------------------------

@@ -1821,6 +1821,11 @@ def cmd_workflow_run(
         "--min-hru-fraction",
         help="Minimum LSU-area fraction retained for full-overlay HRU combinations.",
     ),
+    sensitivity_workers: int = typer.Option(
+        4,
+        "--sensitivity-workers",
+        help="Concurrent isolated SWAT+ workers for independent sensitivity bounds (default: 4).",
+    ),
     contract: str = typer.Option(None, "--contract", help="Path to workflow_contract.json."),
     contract_status: str | None = typer.Option(
         None,
@@ -1860,6 +1865,9 @@ def cmd_workflow_run(
     if min_hru_fraction < 0.0:
         rprint("[red]error:[/red] --min-hru-fraction must be non-negative")
         raise typer.Exit(2)
+    if sensitivity_workers < 1:
+        rprint("[red]error:[/red] --sensitivity-workers must be at least 1")
+        raise typer.Exit(2)
 
     contract_path = None
     if contract:
@@ -1885,6 +1893,7 @@ def cmd_workflow_run(
         calibrate=calibrate,
         hru_mode=normalized_hru_mode,
         min_hru_fraction=min_hru_fraction,
+        sensitivity_workers=sensitivity_workers,
         virtual_all_terminal_outlet=virtual_all_terminal_outlet,
         virtual_outlet_authority=virtual_outlet_authority,
     )

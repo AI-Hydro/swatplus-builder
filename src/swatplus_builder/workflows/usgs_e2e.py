@@ -80,6 +80,7 @@ class RunUSGSWorkflowRequest:
     calibrate: bool = True
     hru_mode: str = "dominant_only"
     min_hru_fraction: float = 0.0
+    sensitivity_workers: int = 4
     virtual_all_terminal_outlet: bool = False
     virtual_outlet_authority: str | None = None
 
@@ -956,6 +957,7 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
         "warmup_years": int(request.warmup_years),
         "hru_mode_requested": request.hru_mode,
         "min_hru_fraction_requested": float(request.min_hru_fraction),
+        "sensitivity_workers": max(1, int(request.sensitivity_workers)),
         "start": request.start,
         "end": request.end,
         "window_years": datetime.fromisoformat(request.end).year - datetime.fromisoformat(request.start).year + 1,
@@ -1104,6 +1106,7 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
                 claim_tier=allowed_tier,
                 strict=True,
                 validation_period=(split["validation_start"], split["validation_end"]),
+                sensitivity_workers=max(1, int(request.sensitivity_workers)),
             )
             values["calibration_attempted"] = True
             values["calibration_success"] = bool(cal.success)

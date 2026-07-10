@@ -29,6 +29,16 @@ Active hardening toward research-grade production pipeline. Last updated:
 
 ## Current State
 
+- The current checkout adds bounded parallel sensitivity screening after
+  `0.7.13`: independent locked bound perturbations use four isolated
+  single-threaded SWAT+ workers by default, while adaptive candidate search,
+  final verification, and withheld transfer remain serial. A real 01547700
+  four-parameter benchmark reproduced the serial activity/bound results
+  exactly in `163.6 s` versus an estimated `~360 s` serial path (2.2x). This
+  should reduce the full 16-parameter screening stage by roughly 14 minutes,
+  not weaken the scientific contract. The temporary benchmark is outside the
+  repository and will be removed after verification.
+
 - Fresh current-code validation now exists for `01547700` at
   `/Users/mgalib/swatplus_runs/calibration_contract_validate_20260709/01547700_2010_2019_fulloverlay_diag`.
   It sealed 230 static TxtInOut inputs, calibrated only on 2010-2015, and

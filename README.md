@@ -47,7 +47,7 @@ The canonical end-to-end path is a single command:
 ```bash
 swat workflow run --usgs-id <id> --model-family full \
   --start 2000-01-01 --end 2019-12-31 --warmup-years 3 \
-  --calibrate --claim-tier research_grade --json
+  --calibrate --claim-tier research_grade --sensitivity-workers 4 --json
 ```
 
 It builds the model, runs the engine, locks a benchmark, runs gated diagnostic

@@ -10281,3 +10281,17 @@ Verification:
 - Published `swatplus-builder==0.7.13` to PyPI, created and pushed tag
   `v0.7.13`, and confirmed a separate clean environment can install `0.7.13`
   directly from the public PyPI index and load `swat workflow run --help`.
+
+## 2026-07-10 — Calibration Throughput Benchmark And Parallel Sensitivity
+
+- Measured the sealed 01547700 objective rather than assuming SWAT+ thread
+  scaling. One, two, and four OpenMP threads took `40.4 s`, `42.1 s`, and
+  `41.5 s`; engine threading is not adopted as a speed strategy.
+- Two and four independent single-thread objectives completed in `46.5 s` and
+  `54.4 s`, respectively, compared with approximately `80.7 s` and `161 s`
+  serial. Implemented a bounded four-worker pool for independent sensitivity
+  bounds only.
+- A real four-parameter locked screen completed in `163.6 s`, wrote complete
+  worker-aware artifacts, and exactly reproduced the prior serial activity
+  classes/best scores. The temporary benchmark lives under `/tmp` and is not
+  a repository artifact.

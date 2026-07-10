@@ -1957,9 +1957,12 @@ def test_volume_bias_gate_allows_diagnostic_calibration_attempt_but_blocks_claim
             "metrics": {"nse": 0.30, "kge": 0.45, "pbias": 80.0},
         }
 
-    def fake_run_diagnostic_calibration(source_run, *, claim_tier, strict, validation_period):
+    def fake_run_diagnostic_calibration(
+        source_run, *, claim_tier, strict, validation_period, sensitivity_workers
+    ):
         assert Path(source_run) == tmp_path / "run4"
         assert validation_period == ("2016-01-01", "2019-12-31")
+        assert sensitivity_workers == 4
         return DiagnosticCalibrationResult(
             success=False,
             phases=[

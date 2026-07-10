@@ -25,6 +25,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -1047,15 +1048,20 @@ def screen_parameters_against_lock(
     simulation_end: str | None = None,
     score_start: str | None = None,
     score_end: str | None = None,
+    max_workers: int = 1,
 ) -> LockedSensitivityEvidence:
     """Run a basin-specific one-at-a-time sensitivity screen against a lock.
 
     Each parameter perturbation uses the same fresh real-engine objective path
     as calibration candidates, so this artifact can govern research-grade
     calibration eligibility without relying on static/global activity labels.
+    Bound perturbations are independent and may run concurrently; each worker
+    receives an isolated objective directory and uses the objective's
+    single-threaded SWAT+ engine setting.
     """
     lock_source_is_artifact = not isinstance(lock, BenchmarkLock)
     lock = _resolve_lock(lock)
+    workers = max(1, int(max_workers))
     _assert_benchmark_integrity(
         lock,
         Path(base_txtinout),
@@ -1113,6 +1119,7 @@ def screen_parameters_against_lock(
             "basin_id": lock.basin_id,
             "basis": "basin_specific",
             "status": status,
+            "max_workers": workers,
             "current_parameter": current_parameter,
             "completed_parameters": len(rows),
             "total_parameters": len(parameters),
@@ -1125,14 +1132,11 @@ def screen_parameters_against_lock(
         progress_path.write_text(json.dumps(progress, indent=2, default=str) + "\n", encoding="utf-8")
 
     _write_progress(status="running")
+    parameter_bounds: dict[str, list[tuple[str, float]]] = {}
     for name in parameters:
         spec = get_parameter(name)
         lo, hi = spec.range
         default = float(spec.default)
-        baseline_score = _score_candidate(
-            baseline_metrics,
-            objective="maintain_volume_gate_then_rank_nse_kge",
-        )
         bound_values: list[tuple[str, float]] = []
         if abs(default - lo) > 1e-12:
             bound_values.append(("lower", float(lo)))
@@ -1140,11 +1144,57 @@ def screen_parameters_against_lock(
             bound_values.append(("upper", float(hi)))
         if not bound_values:
             bound_values.append(("default", default))
+        parameter_bounds[name] = bound_values
+
+    def _evaluate_bound(name: str, bound: str, value: float) -> tuple[str, str, float, dict[str, Any]]:
+        return name, bound, value, objective({name: value})
+
+    bound_results_by_parameter: dict[str, list[tuple[str, float, dict[str, Any]]]] = {
+        name: [] for name in parameters
+    }
+    bound_errors: dict[str, str] = {}
+    tasks = [
+        (name, bound, value)
+        for name in parameters
+        for bound, value in parameter_bounds[name]
+    ]
+    if workers == 1 or len(tasks) <= 1:
+        for name, bound, value in tasks:
+            try:
+                _name, _bound, _value, metrics = _evaluate_bound(name, bound, value)
+                bound_results_by_parameter[_name].append((_bound, _value, metrics))
+            except Exception as exc:  # noqa: BLE001
+                bound_errors[name] = str(exc)
+    else:
+        with ThreadPoolExecutor(max_workers=min(workers, len(tasks))) as executor:
+            futures = {
+                executor.submit(_evaluate_bound, name, bound, value): (name, bound, value)
+                for name, bound, value in tasks
+            }
+            for future in as_completed(futures):
+                name, _bound, _value = futures[future]
+                try:
+                    result_name, bound, value, metrics = future.result()
+                    bound_results_by_parameter[result_name].append((bound, value, metrics))
+                except Exception as exc:  # noqa: BLE001
+                    bound_errors[name] = str(exc)
+
+    baseline_score = _score_candidate(
+        baseline_metrics,
+        objective="maintain_volume_gate_then_rank_nse_kge",
+    )
+    for name in parameters:
+        bound_values = parameter_bounds[name]
         try:
+            if name in bound_errors:
+                raise RuntimeError(bound_errors[name])
             bound_results: list[dict[str, Any]] = []
+            result_by_bound = {
+                (bound, value): metrics
+                for bound, value, metrics in bound_results_by_parameter[name]
+            }
             for bound, perturbed_value in bound_values:
-                point = {name: perturbed_value}
-                metrics = objective(point)
+                metrics = result_by_bound[(bound, perturbed_value)]
                 metric_nse = _optional_float(metrics.get("nse"))
                 base_nse = _optional_float(baseline_metrics.get("nse"))
                 metric_kge = _optional_float(metrics.get("kge"))
@@ -1242,6 +1292,7 @@ def screen_parameters_against_lock(
     payload = {
         "basin_id": lock.basin_id,
         "basis": "basin_specific",
+        "max_workers": workers,
         "selection_policy": "one_at_a_time_default_to_lower_and_upper_bound_locked_objective",
         "parameters": rows,
         "warnings": warnings,

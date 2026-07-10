@@ -2,6 +2,14 @@
 
 All notable changes to swatplus-builder are documented here.
 
+## [Unreleased]
+
+### Improved
+- Independent locked sensitivity-bound evaluations now run through a bounded
+  worker pool (`--sensitivity-workers`, default `4`) while each SWAT+ worker
+  remains single-threaded. Candidate search, locked verification, and withheld
+  transfer evaluation remain serial and fresh.
+
 ## [0.7.13] — 2026-07-10
 
 ### Fixed

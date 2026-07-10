@@ -975,3 +975,30 @@ Consequences:
 - A plot-generation failure cannot manufacture a baseline-looking calibrated
   graphic. The workflow retains the error rather than rendering ambiguous
   figures.
+
+## 2026-07-10 — Parallelize Only Independent Sensitivity Bounds
+
+Decision:
+
+- The locked sensitivity screen may evaluate independent lower/upper bound
+  perturbations concurrently, with a bounded default of four workers. Each
+  worker runs SWAT+ with one OpenMP thread in an isolated objective directory.
+- Adaptive candidate search, final locked verification, and withheld-period
+  transfer remain serial and use fresh outputs.
+
+Why:
+
+- On the sealed 01547700 objective, one, two, and four OpenMP threads took
+  `40.4`, `42.1`, and `41.5` seconds respectively, so engine threading did
+  not improve throughput. Four independent single-thread objectives completed
+  in `54.4` seconds versus approximately `161` serial seconds.
+- A real four-parameter screen completed in `163.6` seconds and reproduced
+  the prior serial classes and best bound scores exactly. The bound points do
+  not depend on one another, unlike staged DDS candidate selection.
+
+Consequences:
+
+- `--sensitivity-workers 1` preserves fully serial behavior. The effective
+  worker count is written to sensitivity and calibration provenance artifacts.
+- No cached candidate replaces an authoritative fresh verification or transfer
+  run, so the runtime improvement does not lower claim-evidence standards.
