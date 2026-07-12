@@ -10333,3 +10333,39 @@ Verification:
   took `66.54 s` fresh and `0.00035 s` on the exact signed repeat; metrics were
   identical and both context/payload signatures were present. This is resume
   evidence only, not promotion of the below-research-skill candidate.
+
+## 2026-07-11 — Fresh Full Validation With Parallel Sensitivity, Anchors, And Resume
+
+- Completed a fresh uninterrupted `01547700` full-overlay workflow at
+  `/Users/mgalib/swatplus_runs/calibration_resume_validate_20260710/01547700_2010_2019_fulloverlay`
+  using `--sensitivity-workers 4`, `--anchor-workers 4`, sealed exact-trace
+  reuse, locked final verification, and 2016-2019 withheld transfer.
+- Wall time was `86 min 48 s` from workflow start (`2026-07-10T19:18:56Z`) to
+  evidence completion (`2026-07-10T20:45:44Z`). The 16-parameter sensitivity
+  screen completed at `2026-07-10T20:00:34Z`; locked calibration completed all
+  `30/30` evaluations and wrote final claim gates at
+  `2026-07-10T20:45:23Z`.
+- Final metric authority is
+  `calibration/verification_summary.json`: benchmark `NSE=0.2875`,
+  `KGE=0.3522`, `PBIAS=+15.56%`; fresh locked verification `NSE=0.3536`,
+  `KGE=0.5856`, `PBIAS=-1.52%`; improvement basis `nse_and_kge`.
+- `calibration_provenance.json` reports withheld validation passed for
+  2016-2019 with `NSE=0.3742`, `KGE=0.6260`, `PBIAS=+4.27%`,
+  `calibration_claim_status=verified_and_claim_gates_passed`, and
+  `diagnostic_warm_start_authority=exploratory_warm_start_only`.
+- `evidence_v1.json` reports `effective_claim_tier=research_grade`.
+  Terrain-length/lapse derived claims remain blocked by
+  `constant_dist_cha,lapse_disabled,lapse_disabled_with_substantial_relief`;
+  this does not block the calibrated workflow claim but prevents terrain/lapse
+  derived overclaims.
+- Visual QA inspected
+  `calibration/hydrograph_comparison/hydrograph_observed_simulated_calibrated.png`
+  and `plots/fig_08_basin_spatial_overview.png`. The selected outlet is no
+  longer near-zero and the spatial overview uses clipped common basin geometry;
+  sharp peak underprediction remains a documented model limitation.
+
+Verification:
+
+- `PYTHONPATH=src python -m py_compile src/swatplus_builder/calibration/diagnostic_calibrator.py src/swatplus_builder/calibration/locked_benchmark.py src/swatplus_builder/workflows/usgs_e2e.py`
+- `PYTHONPATH=src python -m pytest -q tests/test_calibration_real_engine.py tests/test_workflow_usgs_e2e.py tests/test_evidence_schema.py tests/test_output_dashboard.py` (`121 passed`)
+- `git diff --check`

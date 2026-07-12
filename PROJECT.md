@@ -11,7 +11,7 @@ runtime gates, provenance, diagnostics, and machine-readable evidence.
 ## Status
 
 Active hardening toward research-grade production pipeline. Last updated:
-2026-07-10.
+2026-07-11.
 
 ## Where To Read Next
 
@@ -29,30 +29,20 @@ Active hardening toward research-grade production pipeline. Last updated:
 
 ## Current State
 
-- The current checkout adds bounded parallel sensitivity screening and fixed
-  warm-start anchors after `0.7.13`: independent locked bound perturbations
-  and precomputed, sensitivity-derived anchors use four isolated single-threaded
-  SWAT+ workers by default. Adaptive DDS, candidate selection, final
-  verification, and withheld transfer remain serial. A real 01547700
-  four-parameter sensitivity benchmark reproduced the serial activity/bound
-  results exactly in `163.6 s` versus an estimated `~360 s` serial path
-  (2.2x). `diagnostic_warm_start.json` is hash-linked to its sensitivity source
-  and explicitly exploratory; it cannot authorize a result. A real locked
-  01547700 four-anchor integration completed in `74.4 s` (five candidate rows,
-  including the serial DDS step) and retained deterministic history order. A
-  fresh complete workflow is still required to measure total wall-time
-  reduction before a release. The temporary benchmarks are outside the
-  repository and have been removed.
-
-- A subsequent full `01547700` validation completed build and the 16-parameter
-  sensitivity screen but was externally interrupted at adaptive candidate
-  `18/30`; it wrote no final evidence and is not a release result. The current
-  checkout now adds sealed exact-trace resume for sensitivity/calibration
-  candidates. Legacy/tampered/context-mismatched traces rerun, and final locked
-  verification plus withheld transfer remain fresh. A real sealed 01547700
-  objective took `66.54 s` fresh and `0.00035 s` on an exact signed repeat with
-  identical metrics. A new uninterrupted full workflow remains the release
-  gate.
+- The current checkout after `0.7.13` now has a complete fresh full-overlay
+  validation for `01547700` with bounded parallel sensitivity, four parallel
+  fixed warm-start anchors, sealed exact-trace resume, fresh locked
+  verification, and withheld temporal transfer. The authoritative run is
+  `/Users/mgalib/swatplus_runs/calibration_resume_validate_20260710/01547700_2010_2019_fulloverlay`.
+  It ran from `2026-07-10T19:18:56Z` to `2026-07-10T20:45:44Z`
+  (`86 min 48 s`). Benchmark metrics were `NSE=0.2875`, `KGE=0.3522`,
+  `PBIAS=+15.56%`; final fresh verification improved to `NSE=0.3536`,
+  `KGE=0.5856`, `PBIAS=-1.52%`; the withheld 2016-2019 transfer passed with
+  `NSE=0.3742`, `KGE=0.6260`, `PBIAS=+4.27%`. The effective claim tier is
+  `research_grade` for the calibrated workflow, while terrain-length/lapse
+  derived claims remain blocked until those defaults are audited. Hydrograph QA
+  confirms the near-zero-flow failure mode is gone, but sharp observed peaks are
+  still imperfectly represented and should remain a documented model limitation.
 
 - Fresh current-code validation now exists for `01547700` at
   `/Users/mgalib/swatplus_runs/calibration_contract_validate_20260709/01547700_2010_2019_fulloverlay_diag`.
