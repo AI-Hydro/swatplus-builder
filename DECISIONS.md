@@ -1142,3 +1142,6 @@ Consequences:
   direct links to the license, source, and documentation.
 - A packaged text-free masthead can be reused across runs without baking stale
   gauge IDs, metrics, claim tiers, or scientific results into the image.
+- Dashboard titles must explain that the artifact is SWAT+ model evidence and
+  use the station name only when a retained run artifact provides it. The USGS
+  gauge ID remains visible as the stable machine-facing identifier.

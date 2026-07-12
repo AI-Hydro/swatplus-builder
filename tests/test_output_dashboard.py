@@ -65,6 +65,32 @@ def test_dashboard_embeds_brand_masthead_and_accurate_license_attribution() -> N
     assert "respective owners and terms" in html
     assert "all rights reserved" not in html.lower()
     assert 'name="theme-color"' in html
+    assert "Auditable SWAT+ model evidence" in html
+
+
+def test_dashboard_uses_source_backed_station_name_in_hero(tmp_path: Path) -> None:
+    (tmp_path / "run_config.json").write_text(
+        json.dumps({"usgs_id": "01547700", "status": "SUCCESS"}),
+        encoding="utf-8",
+    )
+    (tmp_path / "metadata.json").write_text(
+        json.dumps(
+            {
+                "notes": [
+                    "usgs_site_metadata: station_nm=Marsh Creek at Blanchard, PA; "
+                    "source=https://waterservices.usgs.gov"
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    data = _collect_all_data(tmp_path)
+    html = _render_html(data)
+
+    assert data["station_name"] == "Marsh Creek at Blanchard, PA"
+    assert "Marsh Creek at Blanchard, PA" in html
+    assert "USGS ' + basin" in html
 
 
 def test_dashboard_embeds_spatial_model_layers(tmp_path: Path) -> None:

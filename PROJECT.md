@@ -44,7 +44,11 @@ Active hardening toward research-grade production pipeline. Last updated:
   self-contained dashboard. The footer identifies Mohammad Galib as the
   software copyright holder, links the MIT License and project documentation,
   and explicitly leaves SWAT+, third-party software, and source data under
-  their respective ownership and terms.
+  their respective ownership and terms. The hero identifies the artifact as an
+  auditable SWAT+ model-evidence dashboard, displays a source-backed USGS
+  station name when retained in run metadata, and preserves the gauge ID as
+  the stable identifier. Metric labels use high-contrast text and shadows so
+  the masthead never obscures BFI or other evidence.
 
 - The current checkout after `0.7.13` now has a complete fresh full-overlay
   validation for `01547700` with bounded parallel sensitivity, four parallel

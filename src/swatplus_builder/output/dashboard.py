@@ -333,6 +333,9 @@ def _collect_all_data(run_dir: Path) -> dict[str, Any]:
     meta = _load_json(run_dir / "metadata.json")
     if meta:
         data["metadata"] = meta
+        station_name = _extract_station_name(meta, rc)
+        if station_name:
+            data["station_name"] = station_name
 
     # ── Basin delineation area ───────────────────────────────────────────
     delin_json = run_dir / "delin" / "validation_result.json"
@@ -480,9 +483,12 @@ body {
   box-shadow: var(--shadow-lg);
 }
 .hero-top { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; }
-.hero-basin { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em; }
-.hero-usgs { font-size: 1rem; color: #94a3b8; margin-top: 4px; }
-.hero-date { font-size: 0.875rem; color: #94a3b8; margin-top: 2px; }
+.hero-identity { max-width: 680px; min-width: 0; }
+.hero-kicker { color: #6ee7d2; font-size: .72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 3px; text-shadow: 0 1px 4px rgba(2,6,23,.95); }
+.hero-basin { font-size: 1.75rem; font-weight: 700; letter-spacing: 0; text-shadow: 0 2px 7px rgba(2,6,23,.98); }
+.hero-site-id { color: #f1f5f9; font-size: .82rem; font-weight: 750; margin-top: 1px; text-shadow: 0 1px 4px rgba(2,6,23,.98); }
+.hero-usgs { font-size: 1rem; color: #dbe5f0; margin-top: 5px; text-shadow: 0 1px 4px rgba(2,6,23,.98); }
+.hero-date { font-size: 0.875rem; color: #dbe5f0; margin-top: 2px; text-shadow: 0 1px 4px rgba(2,6,23,.98); }
 .badge {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 6px 14px; border-radius: 20px; font-size: 0.8rem; font-weight: 600;
@@ -496,11 +502,11 @@ body {
 
 .hero-metrics { display: flex; gap: 24px; margin-top: 20px; flex-wrap: wrap; }
 .hero-metric { text-align: center; min-width: 80px; }
-.hero-metric .val { font-size: 2rem; font-weight: 800; line-height: 1.1; }
+.hero-metric .val { font-size: 2rem; font-weight: 800; line-height: 1.1; text-shadow: 0 2px 7px rgba(2,6,23,.98); }
 .hero-metric .val.good { color: #34d399; }
 .hero-metric .val.warn { color: #fbbf24; }
 .hero-metric .val.bad { color: #f87171; }
-.hero-metric .lbl { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: #94a3b8; margin-top: 2px; }
+.hero-metric .lbl { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: #edf4fb; margin-top: 2px; font-weight: 700; text-shadow: 0 1px 4px rgba(2,6,23,1); }
 
 /* ── Grid layout ───────────────── */
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
@@ -632,7 +638,8 @@ body {
   .hero { border-radius: 0; padding: 24px 18px; }
   .hero { background-position: 42% center; background-color: rgba(6, 20, 36, .72); background-blend-mode: multiply; }
   .hero-basin { font-size: 1.45rem; }
-  .hero-usgs, .hero-date { overflow-wrap: anywhere; word-break: break-word; }
+  .hero-kicker { font-size: .66rem; }
+  .hero-usgs, .hero-date, .hero-basin { overflow-wrap: anywhere; word-break: break-word; }
   .hero-top > div { min-width: 0; max-width: 100%; }
   .hero-top > div:last-child { align-items: flex-start !important; }
   .hero-metrics { width: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 8px; }
@@ -742,6 +749,7 @@ def _javascript() -> str:
   const root = $('#dashboard-root');
 
   const basin = esc(D.usgs_id || 'Unknown Basin');
+  const stationName = D.station_name || '';
   const startDate = D.start_date || '';
   const endDate = D.end_date || '';
   const modelFamily = D.model_family || '';
@@ -776,8 +784,10 @@ def _javascript() -> str:
   // ── Hero ─────────────────────────────────────────────────────────────
   html += '<div class="hero">';
   html += '<div class="hero-top">';
-  html += '<div>';
-  html += '<div class="hero-basin">USGS ' + basin + '</div>';
+  html += '<div class="hero-identity">';
+  html += '<div class="hero-kicker">SWATPlus-Builder · Auditable SWAT+ model evidence</div>';
+  html += '<div class="hero-basin">' + (stationName ? esc(stationName) : 'USGS gauge ' + basin) + '</div>';
+  html += '<div class="hero-site-id">USGS ' + basin + '</div>';
   html += '<div class="hero-usgs">Model Family: ' + esc(modelFamily.toUpperCase()) + (D.warmup_years ? ' • Warmup: ' + D.warmup_years + ' yr' : '') + (D.hru_mode ? ' • HRU: ' + esc(D.hru_mode) : '') + '</div>';
   html += '<div class="hero-date">' + esc(startDate) + ' → ' + esc(endDate) + '</div>';
   html += '</div>';
@@ -1640,6 +1650,29 @@ def _dashboard_masthead_data_uri() -> str:
         log.warning("Dashboard masthead unavailable at %s: %s", path, exc)
         return ""
     return f"data:image/webp;base64,{encoded}"
+
+
+def _extract_station_name(
+    metadata: dict[str, Any],
+    run_config: dict[str, Any] | None,
+) -> str | None:
+    """Extract a source-backed USGS station name from retained run metadata."""
+    for payload in (run_config or {}, metadata):
+        for key in ("station_name", "station_nm", "site_name"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    notes = metadata.get("notes")
+    if not isinstance(notes, list):
+        return None
+    marker = "station_nm="
+    for note in notes:
+        if not isinstance(note, str) or marker not in note:
+            continue
+        value = note.split(marker, 1)[1].split(";", 1)[0].strip()
+        if value:
+            return value
+    return None
 
 
 def _load_json(path: Path) -> dict[str, Any] | None:

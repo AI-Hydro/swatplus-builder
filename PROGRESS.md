@@ -10445,13 +10445,19 @@ Verification:
 - Regenerated and visually inspected the retained `01547700` dashboard on
   desktop and true 390 px mobile emulation. Mobile width remained exact
   (`document.scrollWidth == window.innerWidth == 390`).
+- Follow-up visual QA at the reported `1322 x 686` viewport increased metric
+  label contrast and added a self-sufficient hero hierarchy: product/evidence
+  context, source-backed station name, stable USGS gauge ID, model setup, and
+  evidence metrics. For `01547700`, the retained metadata resolves the title to
+  `Marsh Creek at Blanchard, PA`; no station name is invented when metadata is
+  absent.
 - Built the `0.7.13` wheel in a temporary directory and verified that
   `swatplus_builder/assets/dashboard-masthead.webp` is included. Temporary
   wheel and browser-review artifacts were removed after verification.
 
 Verification:
 
-- `PYTHONPATH=src python -m pytest -q tests/test_output_dashboard.py`
+- `PYTHONPATH=src python -m pytest -q tests/test_output_dashboard.py` (`8 passed`)
 - `PYTHONPATH=src python -m ruff check src/swatplus_builder/output/dashboard.py tests/test_output_dashboard.py`
 - `python -m build --wheel --outdir /tmp/swatplus-builder-wheel-check`
 - `git diff --check`
