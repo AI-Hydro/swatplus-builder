@@ -44,6 +44,14 @@ Active hardening toward research-grade production pipeline. Last updated:
   confirms the near-zero-flow failure mode is gone, but sharp observed peaks are
   still imperfectly represented and should remain a documented model limitation.
 
+- Candidate staging now copies only model inputs into each fresh objective
+  directory and excludes recognized SWAT+ output tables. On the sealed
+  `01547700` objective this reduced runtime from `110.29 s` to `106.02 s`
+  (`3.9%`) with bit-for-bit identical metrics, while preventing about `249 MB`
+  of stale output from being copied per candidate. Parallel batch DDS and a
+  minimal `print.prt` candidate profile were measured and rejected: neither
+  improved wall time on the current machine.
+
 - Fresh current-code validation now exists for `01547700` at
   `/Users/mgalib/swatplus_runs/calibration_contract_validate_20260709/01547700_2010_2019_fulloverlay_diag`.
   It sealed 230 static TxtInOut inputs, calibrated only on 2010-2015, and

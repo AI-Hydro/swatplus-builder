@@ -1056,3 +1056,33 @@ Consequences:
 - Legacy, tampered, mismatched, or incomplete traces are ignored and rerun.
 - The interrupted validation is not a completed workflow and cannot support a
   release or scientific claim.
+
+## 2026-07-11 — Stage Fresh Candidate Inputs Without Prior Engine Outputs
+
+Decision:
+
+- Candidate, sensitivity, verification, and transfer objectives copy static
+  `TxtInOut` inputs but exclude recognized SWAT+ engine output tables.
+- Keep the existing scientific output profile. Do not enable batch DDS on the
+  current machine and do not reduce `print.prt` outputs for candidate runs.
+
+Why:
+
+- The sealed `01547700` baseline `TxtInOut` was `267 MB`; generated `.txt`
+  outputs accounted for about `249 MB`. Copying those tables into every fresh
+  candidate wastes I/O and permits stale files to coexist with fresh outputs.
+- Fresh-input staging preserved every objective metric exactly and reduced one
+  controlled objective from `110.29 s` to `106.02 s` (`3.9%`).
+- A fixed five-evaluation DDS benchmark took `583.94 s` serial and `584.70 s`
+  with four concurrent workers. A minimal candidate output profile took
+  `189.94 s` versus `106.02 s` for the existing profile. Both speed hypotheses
+  were therefore rejected.
+
+Consequences:
+
+- Final verification remains a fresh engine run with the required output
+  profile; no evidence or gate is bypassed.
+- The real-engine implementation hash changes, so prior compact candidate
+  traces fail context matching and are recomputed rather than silently reused.
+- The measured gain is modest on wall time but substantial for temporary disk
+  pressure and stale-output isolation.

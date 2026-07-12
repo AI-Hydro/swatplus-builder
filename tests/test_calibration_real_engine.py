@@ -8,6 +8,7 @@ import pytest
 
 from swatplus_builder.calibration import real_engine
 from swatplus_builder.calibration.real_engine import (
+    _copy_fresh_txtinout,
     _prepare_txtinout_for_objective,
     _set_print_prt_for_daily_channel_outputs,
     _set_time_sim_window,
@@ -77,6 +78,34 @@ def test_params_hash_is_deterministic() -> None:
     a = params_hash({"CN2": 72.0, "SURLAG": 4.0})
     b = params_hash({"SURLAG": 4.0, "CN2": 72.0})
     assert a == b
+
+
+def test_copy_fresh_txtinout_excludes_engine_outputs_and_preserves_inputs(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source"
+    destination = tmp_path / "destination"
+    _write(source / "file.cio", "static input\n")
+    _write(source / "weather.pcp", "weather input\n")
+    _write(source / "custom_notes.txt", "unrecognized text input\n")
+    _write(source / "channel_sd_day.txt", "stale daily output\n")
+    _write(source / "basin_wb_aa.txt", "stale annual-average output\n")
+    _write(source / "basin_totc.txt", "stale carbon output\n")
+    _write(source / "lu_change_out.txt", "stale land-use output\n")
+    _write(source / "diagnostics.out", "stale diagnostics\n")
+    _write(source / "alignment_calibration.csv", "stale alignment\n")
+
+    _copy_fresh_txtinout(source, destination)
+
+    assert (destination / "file.cio").read_text(encoding="utf-8") == "static input\n"
+    assert (destination / "weather.pcp").exists()
+    assert (destination / "custom_notes.txt").exists()
+    assert not (destination / "channel_sd_day.txt").exists()
+    assert not (destination / "basin_wb_aa.txt").exists()
+    assert not (destination / "basin_totc.txt").exists()
+    assert not (destination / "lu_change_out.txt").exists()
+    assert not (destination / "diagnostics.out").exists()
+    assert not (destination / "alignment_calibration.csv").exists()
 
 
 def test_set_print_prt_for_daily_channel_outputs_enables_daily_and_window(tmp_path: Path) -> None:

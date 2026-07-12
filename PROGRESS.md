@@ -10369,3 +10369,31 @@ Verification:
 - `PYTHONPATH=src python -m py_compile src/swatplus_builder/calibration/diagnostic_calibrator.py src/swatplus_builder/calibration/locked_benchmark.py src/swatplus_builder/workflows/usgs_e2e.py`
 - `PYTHONPATH=src python -m pytest -q tests/test_calibration_real_engine.py tests/test_workflow_usgs_e2e.py tests/test_evidence_schema.py tests/test_output_dashboard.py` (`121 passed`)
 - `git diff --check`
+
+## 2026-07-11 — Fresh Candidate Staging Benchmark
+
+- Tested deterministic four-worker batch DDS on the sealed `01547700`
+  objective with identical parameters, budget, and random seed. Serial DDS took
+  `583.94 s`; four-worker DDS took `584.70 s`; both returned the same best
+  metrics. The machine divided available CPU among engines, so the experimental
+  batch-DDS code was removed.
+- Tested candidate-only `print.prt` reduction. Metrics remained identical, but
+  fresh-input minimal-output execution took `189.94 s` versus `106.02 s` for
+  the existing output profile. The reduced profile was rejected.
+- Identified that the baseline `TxtInOut` was `267 MB`, including about `249 MB`
+  of generated `.txt` output. Added fresh staging that excludes recognized
+  timed, summary, diagnostic, alignment, and flow-duration outputs while
+  retaining static model inputs and unrecognized text inputs.
+- Controlled A/B evidence for `CN2=55`, `2010-2015`, outlet GIS `351`:
+  legacy copy-all staging `110.29 s`; fresh-input staging `106.02 s`, a `3.9%`
+  reduction. NSE, KGE, PBIAS, BFI, terminal-flow, and physical-gate metrics were
+  bit-for-bit identical.
+- Benchmark scratch directories were created under the system temporary
+  directory and deleted after inspection.
+
+Verification:
+
+- `PYTHONPATH=src python -m py_compile src/swatplus_builder/calibration/real_engine.py`
+- `PYTHONPATH=src python -m pytest -q tests/test_calibration_real_engine.py tests/test_locked_benchmark.py tests/test_workflow_usgs_e2e.py tests/test_evidence_schema.py tests/test_output_dashboard.py`
+- `PYTHONPATH=src python -m ruff check src/swatplus_builder/calibration/real_engine.py tests/test_calibration_real_engine.py`
+- `git diff --check`
