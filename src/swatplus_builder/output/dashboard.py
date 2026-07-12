@@ -31,9 +31,11 @@ execution produces a dashboard automatically.
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -391,6 +393,10 @@ def _render_html(data: dict[str, Any]) -> str:
     # script element and becoming executable HTML.
     data_json = json.dumps(data, default=str, indent=None).replace("</", "<\\/")
     usgs_id = str(data.get("usgs_id", ""))
+    masthead_uri = _dashboard_masthead_data_uri()
+    masthead_css = (
+        f'.hero {{ background-image: url("{masthead_uri}"); }}' if masthead_uri else ""
+    )
     # HTML-escape the title text
     title_text = usgs_id.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
     return f"""<!DOCTYPE html>
@@ -398,12 +404,16 @@ def _render_html(data: dict[str, Any]) -> str:
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#10243a">
+<meta name="generator" content="swatplus-builder">
+<meta name="description" content="Auditable SWAT+ model evidence dashboard for USGS {title_text}">
 <title>SWAT+ Dashboard — USGS {title_text}</title>
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
 {_css()}
+{masthead_css}
 </style>
 </head>
 <body>
@@ -459,7 +469,10 @@ body {
 
 /* ── Hero Header ───────────────── */
 .hero {
-  background: #172236;
+  background-color: #10243a;
+  background-size: cover;
+  background-position: center center;
+  background-repeat: no-repeat;
   color: #f1f5f9;
   border-radius: var(--radius);
   padding: 32px 36px;
@@ -606,13 +619,18 @@ body {
 .artifact-name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .76rem; }
 
 /* ── Footer ────────────────────── */
-.footer { text-align: center; padding: 32px 0 16px; color: var(--text-muted); font-size: 0.78rem; }
+.footer { text-align: center; padding: 32px 18px 16px; color: var(--text-muted); font-size: 0.78rem; }
+.footer-main { font-weight: 650; color: #475569; }
+.footer-legal { max-width: 920px; margin: 5px auto 0; line-height: 1.55; }
+.footer a { color: #0f766e; text-decoration: none; font-weight: 700; }
+.footer a:hover { text-decoration: underline; }
 
 /* ── Plotly overrides ──────────── */
 .js-plotly-plot .plotly .main-svg { border-radius: 8px; }
 @media (max-width: 640px) {
   .container { width: 100%; min-width: 0; padding: 12px 0 28px; overflow-x: hidden; }
   .hero { border-radius: 0; padding: 24px 18px; }
+  .hero { background-position: 42% center; background-color: rgba(6, 20, 36, .72); background-blend-mode: multiply; }
   .hero-basin { font-size: 1.45rem; }
   .hero-usgs, .hero-date { overflow-wrap: anywhere; word-break: break-word; }
   .hero-top > div { min-width: 0; max-width: 100%; }
@@ -633,6 +651,15 @@ body {
   .metric-compare { grid-template-columns: 1fr repeat(3, minmax(72px, 1fr)); overflow-x: auto; }
   .timeline { grid-template-columns: 1fr; }
   .data-table { min-width: 620px; }
+}
+
+@media print {
+  body { background: #fff; }
+  .tabs, .chart-controls { display: none !important; }
+  .hero, .card { box-shadow: none; }
+  .hero { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .tab-panel.active { display: block; }
+  .footer { break-inside: avoid; }
 }
 """
 
@@ -996,7 +1023,12 @@ def _javascript() -> str:
   html += '</section>';
 
   // ── Footer ───────────────────────────────────────────────────────────
-  html += '<div class="footer">SWAT+ Builder Dashboard • Generated ' + esc(D.generated_at || '') + ' • Run: ' + esc(artifactName(D.run_dir || '')) + '</div>';
+  const generatedYear = String(D.generated_at || '').slice(0, 4);
+  const copyrightYears = generatedYear && generatedYear !== '2026' ? '2026–' + generatedYear : '2026';
+  html += '<footer class="footer">';
+  html += '<div class="footer-main">SWATPlus-Builder evidence dashboard • Generated ' + esc(D.generated_at || '') + ' • Run: ' + esc(artifactName(D.run_dir || '')) + '</div>';
+  html += '<div class="footer-legal">© ' + esc(copyrightYears) + ' Mohammad Galib. SWATPlus-Builder is open-source software released under the <a href="https://github.com/AI-Hydro/swatplus-builder/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>. SWAT+, third-party software, and referenced data products remain subject to their respective owners and terms. <a href="https://github.com/AI-Hydro/swatplus-builder" target="_blank" rel="noopener">Source</a> · <a href="https://ai-hydro.github.io/swatplus-builder/" target="_blank" rel="noopener">Documentation</a></div>';
+  html += '</footer>';
 
   root.innerHTML = html;
 
@@ -1596,6 +1628,18 @@ def _javascript() -> str:
 
 
 # ── Data helpers ──────────────────────────────────────────────────────────────
+
+
+@lru_cache(maxsize=1)
+def _dashboard_masthead_data_uri() -> str:
+    """Return the packaged dashboard masthead as a self-contained data URI."""
+    path = Path(__file__).resolve().parents[1] / "assets" / "dashboard-masthead.webp"
+    try:
+        encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    except OSError as exc:
+        log.warning("Dashboard masthead unavailable at %s: %s", path, exc)
+        return ""
+    return f"data:image/webp;base64,{encoded}"
 
 
 def _load_json(path: Path) -> dict[str, Any] | None:

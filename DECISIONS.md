@@ -1115,3 +1115,30 @@ Consequences:
   on mobile, and Leaflet reapplies retained basin bounds whenever its tab opens.
 - Missing quantitative composition evidence produces no composition claim
   instead of a fabricated distribution.
+
+## 2026-07-12 — Attribute The Software Without Claiming Upstream Rights
+
+Decision:
+
+- Use `© 2026 Mohammad Galib` for dashboard software attribution, matching the
+  repository `LICENSE` and `pyproject.toml` author metadata.
+- State that SWATPlus-Builder is released under the MIT License. Do not use
+  `all rights reserved` in the dashboard.
+- Explicitly separate project copyright from SWAT+, third-party software, and
+  referenced data products, which remain under their respective terms.
+
+Why:
+
+- A software product name is not itself the legal copyright holder; the
+  repository currently identifies Mohammad Galib.
+- MIT grants broad reuse rights subject to retaining its notice. An
+  `all rights reserved` footer would communicate a contradictory restriction.
+- Hydrologic runs combine builder code, SWAT+ execution, and external data.
+  Clear attribution must not imply ownership of those upstream components.
+
+Consequences:
+
+- Every self-contained dashboard carries accurate developer attribution and
+  direct links to the license, source, and documentation.
+- A packaged text-free masthead can be reused across runs without baking stale
+  gauge IDs, metrics, claim tiers, or scientific results into the image.

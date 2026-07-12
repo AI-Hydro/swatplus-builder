@@ -10426,3 +10426,32 @@ Verification:
 - `PYTHONPATH=src python -m pytest -q tests/test_output_dashboard.py tests/test_workflow_usgs_e2e.py tests/test_evidence_schema.py` (`100 passed`)
 - `PYTHONPATH=src python -m ruff check src/swatplus_builder/output/dashboard.py tests/test_output_dashboard.py`
 - `git diff --check`
+
+## 2026-07-12 — Dashboard Masthead, Attribution, And Final Polish
+
+- Generated a text-free 3:1 scientific watershed masthead and packaged an
+  optimized `1800 x 600` WebP at
+  `src/swatplus_builder/assets/dashboard-masthead.webp` (`171,322` bytes).
+  Every generated dashboard embeds the image as a data URI, preserving the
+  existing single-file/offline artifact contract.
+- Added dashboard description, generator, and theme metadata; responsive
+  masthead positioning; and print rules that remove interactive controls while
+  retaining the active scientific view.
+- Added a concise footer: `© 2026 Mohammad Galib`, MIT License, source and
+  documentation links, and an explicit statement that SWAT+, third-party
+  software, and referenced data products retain their respective ownership and
+  terms. `All rights reserved` was intentionally not used because it conflicts
+  with the permissions granted by the repository's MIT License.
+- Regenerated and visually inspected the retained `01547700` dashboard on
+  desktop and true 390 px mobile emulation. Mobile width remained exact
+  (`document.scrollWidth == window.innerWidth == 390`).
+- Built the `0.7.13` wheel in a temporary directory and verified that
+  `swatplus_builder/assets/dashboard-masthead.webp` is included. Temporary
+  wheel and browser-review artifacts were removed after verification.
+
+Verification:
+
+- `PYTHONPATH=src python -m pytest -q tests/test_output_dashboard.py`
+- `PYTHONPATH=src python -m ruff check src/swatplus_builder/output/dashboard.py tests/test_output_dashboard.py`
+- `python -m build --wheel --outdir /tmp/swatplus-builder-wheel-check`
+- `git diff --check`

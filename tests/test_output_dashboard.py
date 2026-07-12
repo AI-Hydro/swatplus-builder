@@ -7,6 +7,7 @@ import pytest
 
 from swatplus_builder.output.dashboard import (
     _collect_all_data,
+    _dashboard_masthead_data_uri,
     _render_html,
     build_dashboard,
 )
@@ -51,6 +52,19 @@ def test_dashboard_json_payload_cannot_close_script_element() -> None:
 
     assert "</script><script>alert(1)</script>" not in html
     assert "<\\/script><script>alert(1)<\\/script>" in html
+
+
+def test_dashboard_embeds_brand_masthead_and_accurate_license_attribution() -> None:
+    masthead = _dashboard_masthead_data_uri()
+    html = _render_html({"usgs_id": "01234567", "generated_at": "2026-07-12T00:00:00"})
+
+    assert masthead.startswith("data:image/webp;base64,")
+    assert masthead in html
+    assert "© ' + esc(copyrightYears) + ' Mohammad Galib" in html
+    assert "MIT License" in html
+    assert "respective owners and terms" in html
+    assert "all rights reserved" not in html.lower()
+    assert 'name="theme-color"' in html
 
 
 def test_dashboard_embeds_spatial_model_layers(tmp_path: Path) -> None:

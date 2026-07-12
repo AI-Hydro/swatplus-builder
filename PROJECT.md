@@ -40,6 +40,11 @@ Active hardening toward research-grade production pipeline. Last updated:
   extent when tabs reopen, and land-use composition uses observed NLCD pixel
   counts rather than class-presence counts. The regenerated artifact is
   `/Users/mgalib/swatplus_runs/calibration_resume_validate_20260710/01547700_2010_2019_fulloverlay/dashboard.html`.
+  A packaged, text-free watershed masthead is now embedded directly into every
+  self-contained dashboard. The footer identifies Mohammad Galib as the
+  software copyright holder, links the MIT License and project documentation,
+  and explicitly leaves SWAT+, third-party software, and source data under
+  their respective ownership and terms.
 
 - The current checkout after `0.7.13` now has a complete fresh full-overlay
   validation for `01547700` with bounded parallel sensitivity, four parallel
