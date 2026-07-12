@@ -10397,3 +10397,32 @@ Verification:
 - `PYTHONPATH=src python -m pytest -q tests/test_calibration_real_engine.py tests/test_locked_benchmark.py tests/test_workflow_usgs_e2e.py tests/test_evidence_schema.py tests/test_output_dashboard.py`
 - `PYTHONPATH=src python -m ruff check src/swatplus_builder/calibration/real_engine.py tests/test_calibration_real_engine.py`
 - `git diff --check`
+
+## 2026-07-12 — Modeller Dashboard And Hydrograph Visual QA
+
+- Reorganized the generated dashboard into Overview, Hydrology, Calibration,
+  Spatial, and Evidence views so benchmark, locked verification, withheld
+  validation, diagnostics, and claim authority are not mixed on one page.
+- Replaced the chaotic default daily hydrograph with a 30-day mean while
+  retaining explicit daily, linear/log, and 1-year/3-year/all controls. Moving
+  controls outside Plotly reduced the true 390 px mobile plot margin from
+  `174 px` to `54 px` and expanded usable plot width from `172 px` to `296 px`.
+- Added benchmark/verified/validation comparison, validation-period disclosure,
+  calibration timeline, governed parameter ranges and bound hits, flow-regime
+  ratios, calibrated water balance and BFI, model/spatial inventories, and
+  concise artifact metadata.
+- Fixed two visual/scientific QA failures found by rendering the real
+  `01547700` dashboard: Leaflet now restores basin bounds when the Spatial tab
+  is reopened, and land-use shares now come from
+  `landuse_present_details.pixel_count` instead of assigning equal weights to
+  a class-presence list.
+- Regenerated and inspected the authoritative retained dashboard at
+  `/Users/mgalib/swatplus_runs/calibration_resume_validate_20260710/01547700_2010_2019_fulloverlay/dashboard.html`
+  on desktop and true mobile emulation. All tested tabs had
+  `document.scrollWidth == window.innerWidth` at 390 px.
+
+Verification:
+
+- `PYTHONPATH=src python -m pytest -q tests/test_output_dashboard.py tests/test_workflow_usgs_e2e.py tests/test_evidence_schema.py` (`100 passed`)
+- `PYTHONPATH=src python -m ruff check src/swatplus_builder/output/dashboard.py tests/test_output_dashboard.py`
+- `git diff --check`

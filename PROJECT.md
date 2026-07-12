@@ -11,7 +11,7 @@ runtime gates, provenance, diagnostics, and machine-readable evidence.
 ## Status
 
 Active hardening toward research-grade production pipeline. Last updated:
-2026-07-11.
+2026-07-12.
 
 ## Where To Read Next
 
@@ -28,6 +28,18 @@ Active hardening toward research-grade production pipeline. Last updated:
 - Track lessons that generalized across basins: `docs/PIPELINE_LEARNING_LOG.md`.
 
 ## Current State
+
+- The modeller dashboard has been redesigned around five authority-separated
+  views: Overview, Hydrology, Calibration, Spatial, and Evidence. The retained
+  `01547700` dashboard now distinguishes benchmark, fresh locked verification,
+  and withheld validation metrics; includes calibration method, parameter
+  bounds, search history, physical diagnostics, model inventory, and blocked
+  claims; and remains responsive at a true 390 px mobile viewport. The
+  hydrograph defaults to a readable 30-day mean with explicit daily,
+  linear/log, and time-window controls. Spatial layers retain basin-scale map
+  extent when tabs reopen, and land-use composition uses observed NLCD pixel
+  counts rather than class-presence counts. The regenerated artifact is
+  `/Users/mgalib/swatplus_runs/calibration_resume_validate_20260710/01547700_2010_2019_fulloverlay/dashboard.html`.
 
 - The current checkout after `0.7.13` now has a complete fresh full-overlay
   validation for `01547700` with bounded parallel sensitivity, four parallel

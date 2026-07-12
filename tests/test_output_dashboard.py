@@ -155,6 +155,15 @@ def test_dashboard_collects_locked_calibration_artifacts(tmp_path: Path) -> None
                     "benchmark_metrics": {"nse": 0.1, "kge": 0.2, "pbias": 5.0},
                     "verification_metrics": {"nse": 0.3, "kge": 0.4, "pbias": 2.0},
                     "verification_delta_metrics": {"nse": 0.2, "kge": 0.2, "pbias": -3.0},
+                    "validation_metrics": {"nse": 0.25, "kge": 0.35, "pbias": 3.0},
+                    "validation_period": ["2013-01-01", "2014-12-31"],
+                    "validation_transfer_passed": True,
+                    "sensitivity_screen_activity_classes": {"CN2": "active"},
+                    "skill_diagnostics": {
+                        "skill_parameter_bound_hits": {
+                            "CN2": {"boundary": "upper", "value": 75.0}
+                        }
+                    },
                     "history_csv": str(history),
                     "best_solution_json": str(best),
                     "locked_calibrated_txtinout": str(locked_txt),
@@ -174,12 +183,23 @@ def test_dashboard_collects_locked_calibration_artifacts(tmp_path: Path) -> None
     assert data["calibration_progress"]["status"] == "complete"
     assert data["calibrated_alignment"]["sim"] == [1.2]
     assert data["calibration_verification_metrics"]["nse"] == 0.3
+    assert data["calibration_validation_metrics"]["nse"] == 0.25
+    assert data["calibration_validation_period"] == ["2013-01-01", "2014-12-31"]
+    assert data["calibration_parameter_details"][0]["activity"] == "active"
+    assert data["calibration_parameter_details"][0]["boundary"] == "upper"
     assert "Calibration Method and Evidence" in html
     assert "Calibration progress" in html
-    assert "Calibrated locked rerun" in html
+    assert "calibrated locked rerun" in html
     assert "Candidate/window metrics are provisional" in html
     assert "Metric authority" in html
     assert "Verified calibration metrics" in html
+    assert "Withhold and test" in html
+    assert "30-day mean" in html
+    assert "Daily" in html
+    assert "Log" in html
+    assert "Dashboard views" in html
+    assert "['hydrology','Hydrology']" in html
+    assert "overflow-x: auto" in html
 
 
 def test_dashboard_prefers_locked_benchmark_metrics_and_alignment(tmp_path: Path) -> None:

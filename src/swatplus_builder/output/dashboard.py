@@ -132,6 +132,7 @@ def _collect_all_data(run_dir: Path) -> dict[str, Any]:
     # Build seasonal (monthly) aggregation from alignment data
     if data.get("alignment"):
         data["seasonal"] = _build_seasonal(data["alignment"])
+        data["benchmark_flow_regime"] = _flow_regime_summary(data["alignment"])
 
     # ── physical_gates.json ──────────────────────────────────────────────
     phys = _load_json(run_dir / "physical_gates.json")
@@ -165,6 +166,7 @@ def _collect_all_data(run_dir: Path) -> dict[str, Any]:
         verification_metrics = provenance.get("verification_metrics")
         benchmark_metrics = provenance.get("benchmark_metrics")
         delta_metrics = provenance.get("verification_delta_metrics")
+        validation_metrics = provenance.get("validation_metrics")
         if isinstance(verification_metrics, dict):
             data["calibration_verification_metrics"] = _coerce_metrics(verification_metrics)
             data["calibration_final_nse"] = verification_metrics.get("nse")
@@ -183,6 +185,23 @@ def _collect_all_data(run_dir: Path) -> dict[str, Any]:
         else:
             data["calibration_delta_nse"] = provenance.get("delta_nse")
             data["calibration_delta_kge"] = provenance.get("delta_kge")
+        if isinstance(validation_metrics, dict):
+            data["calibration_validation_metrics"] = _coerce_metrics(validation_metrics)
+        validation_period = provenance.get("validation_period")
+        if isinstance(validation_period, (list, tuple)) and len(validation_period) == 2:
+            data["calibration_validation_period"] = list(validation_period)
+        data["calibration_validation_transfer_passed"] = provenance.get(
+            "validation_transfer_passed"
+        )
+        final_physical = provenance.get("final_physical_gates")
+        if isinstance(final_physical, dict):
+            data["calibration_final_physical_gates"] = final_physical
+            final_wb = final_physical.get("wb")
+            if isinstance(final_wb, dict):
+                data["calibrated_water_balance"] = _water_balance_payload(
+                    final_wb,
+                    source_file="locked verification physical gate",
+                )
 
     # ── parameter_screen.json ────────────────────────────────────────────
     ps = _load_json(run_dir / "parameter_screen.json")
@@ -211,6 +230,15 @@ def _collect_all_data(run_dir: Path) -> dict[str, Any]:
     if best_sol:
         data["best_solution"] = best_sol
         data["best_solution_path"] = str(best_solution_path)
+        parameters = best_sol.get("parameters")
+        if isinstance(parameters, dict):
+            data["calibration_parameter_details"] = _parameter_details(
+                parameters,
+                activity_classes=provenance.get("sensitivity_screen_activity_classes"),
+                bound_hits=(provenance.get("skill_diagnostics") or {}).get(
+                    "skill_parameter_bound_hits"
+                ),
+            )
 
     progress_path = _first_existing(
         [
@@ -234,6 +262,17 @@ def _collect_all_data(run_dir: Path) -> dict[str, Any]:
     if calibrated_alignment is not None:
         data["calibrated_alignment"] = _read_alignment(calibrated_alignment)
         data["calibrated_alignment_source"] = str(calibrated_alignment)
+        data["calibrated_seasonal"] = _build_seasonal(data["calibrated_alignment"])
+        data["calibrated_flow_regime"] = _flow_regime_summary(data["calibrated_alignment"])
+        try:
+            from .metrics import baseflow_index
+
+            data["calibrated_bfi"] = {
+                "obs": baseflow_index(data["calibrated_alignment"]["obs"]),
+                "sim": baseflow_index(data["calibrated_alignment"]["sim"]),
+            }
+        except Exception as exc:
+            log.debug("Could not compute calibrated dashboard BFI: %s", exc)
 
     hydrograph = provenance.get("hydrograph_comparison")
     if isinstance(hydrograph, dict):
@@ -241,6 +280,10 @@ def _collect_all_data(run_dir: Path) -> dict[str, Any]:
     skill = provenance.get("skill_diagnostics")
     if isinstance(skill, dict):
         data["calibration_skill_diagnostics"] = skill
+        skill_path = _path_from_value(skill.get("skill_diagnostics_json"))
+        skill_payload = _load_json(skill_path) if skill_path is not None else None
+        if skill_payload:
+            data["calibration_skill_diagnostics_detail"] = skill_payload
 
     # ── Water balance (reuse existing module) ────────────────────────────
     try:
@@ -396,7 +439,7 @@ def _css() -> str:
   --danger-bg: #fee2e2;
   --info: #7c3aed;
   --info-bg: #ede9fe;
-  --radius: 12px;
+  --radius: 8px;
   --shadow: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
   --shadow-lg: 0 4px 12px rgba(0,0,0,.10);
 }
@@ -407,14 +450,16 @@ body {
   background: var(--bg);
   color: var(--text);
   line-height: 1.6;
+  overflow-x: hidden;
 }
+#dashboard-root { width: 100%; min-width: 0; overflow-x: hidden; }
 
 /* ── Layout ─────────────────────── */
 .container { max-width: 1400px; margin: 0 auto; padding: 24px 20px 40px; }
 
 /* ── Hero Header ───────────────── */
 .hero {
-  background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #1a2a4a 100%);
+  background: #172236;
   color: #f1f5f9;
   border-radius: var(--radius);
   padding: 32px 36px;
@@ -450,6 +495,22 @@ body {
 .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
 @media (max-width: 1024px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } .grid-4 { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 640px) { .grid-4 { grid-template-columns: 1fr; } }
+.grid-2 > *, .grid-3 > *, .grid-4 > * { min-width: 0; }
+
+/* ── View tabs ─────────────────── */
+.tabs {
+  display: flex; gap: 4px; margin: 0 0 20px; padding: 4px;
+  background: #e8edf3; border: 1px solid var(--border); border-radius: 8px;
+  position: sticky; top: 8px; z-index: 800; overflow-x: auto;
+}
+.tab-button {
+  appearance: none; border: 0; background: transparent; color: #475569;
+  padding: 9px 15px; border-radius: 6px; font-weight: 700; font-size: .84rem;
+  white-space: nowrap; cursor: pointer;
+}
+.tab-button.active { background: #fff; color: #0f766e; box-shadow: var(--shadow); }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
 
 /* ── Cards ─────────────────────── */
 .card {
@@ -457,8 +518,9 @@ body {
   box-shadow: var(--shadow); padding: 24px;
   border: 1px solid var(--border);
 }
+.card, .chart-container, .map-container { min-width: 0; max-width: 100%; }
 .card-full { grid-column: 1 / -1; }
-.chart-container { min-height: 400px; }
+.chart-container { min-height: 360px; width: 100%; overflow: hidden; }
 .map-container { height: 620px; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
 .map-legend {
   background: rgba(255,255,255,.96); padding: 8px 10px; border-radius: 4px;
@@ -500,6 +562,7 @@ body {
 .gate-status { font-size: 0.75rem; color: var(--text-muted); }
 
 /* ── Tables ────────────────────── */
+.table-wrap { width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: 6px; }
 .data-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
 .data-table th {
   text-align: left; padding: 10px 12px; background: #f8fafc;
@@ -509,6 +572,9 @@ body {
 }
 .data-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
 .data-table tr:hover { background: #f8fafc; }
+.claims-table th:nth-child(1), .claims-table td:nth-child(1) { min-width: 220px; }
+.claims-table th:nth-child(2), .claims-table td:nth-child(2) { min-width: 120px; }
+.claims-table th:nth-child(3), .claims-table td:nth-child(3) { min-width: 420px; }
 
 /* ── Section headings ──────────── */
 .section-title {
@@ -517,16 +583,57 @@ body {
 }
 
 /* ── Key-value ─────────────────── */
-.kv-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
+.kv-row { display: grid; grid-template-columns: minmax(130px, .8fr) minmax(0, 1.2fr); gap: 16px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
 .kv-row:last-child { border-bottom: none; }
 .kv-key { color: var(--text-muted); }
-.kv-val { font-weight: 600; }
+.kv-val { font-weight: 600; min-width: 0; overflow-wrap: anywhere; text-align: right; }
+.authority-note { color: var(--text-muted); font-size: .78rem; margin: 5px 0 12px; }
+.chart-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; margin: 8px 0 6px; }
+.control-group { display: inline-flex; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; background: #fff; }
+.control-button { appearance: none; border: 0; border-right: 1px solid #cbd5e1; background: #fff; color: #475569; padding: 7px 10px; font-size: .76rem; font-weight: 700; cursor: pointer; }
+.control-button:last-child { border-right: 0; }
+.control-button.active { background: #e0f2f1; color: #0f766e; }
+.metric-compare { display: grid; grid-template-columns: 1.1fr repeat(3, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.metric-compare > div { background: #fff; padding: 10px 12px; font-size: .82rem; }
+.metric-compare .head { background: #f8fafc; color: var(--text-muted); font-weight: 700; text-transform: uppercase; font-size: .7rem; }
+.metric-compare .metric-name { font-weight: 700; }
+.timeline { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+.timeline-step { border-left: 4px solid #64748b; background: #f8fafc; padding: 10px 12px; border-radius: 4px; font-size: .8rem; }
+.timeline-step.calibration { border-color: #2563eb; }
+.timeline-step.validation { border-color: #059669; }
+.limitation-list { display: grid; gap: 8px; }
+.limitation-item { padding: 10px 12px; background: #fff7ed; border-left: 4px solid #d97706; border-radius: 4px; font-size: .82rem; }
+.artifact-name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .76rem; }
 
 /* ── Footer ────────────────────── */
 .footer { text-align: center; padding: 32px 0 16px; color: var(--text-muted); font-size: 0.78rem; }
 
 /* ── Plotly overrides ──────────── */
 .js-plotly-plot .plotly .main-svg { border-radius: 8px; }
+@media (max-width: 640px) {
+  .container { width: 100%; min-width: 0; padding: 12px 0 28px; overflow-x: hidden; }
+  .hero { border-radius: 0; padding: 24px 18px; }
+  .hero-basin { font-size: 1.45rem; }
+  .hero-usgs, .hero-date { overflow-wrap: anywhere; word-break: break-word; }
+  .hero-top > div { min-width: 0; max-width: 100%; }
+  .hero-top > div:last-child { align-items: flex-start !important; }
+  .hero-metrics { width: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 8px; }
+  .hero-metric { min-width: 0; }
+  .hero-metric .val { font-size: 1.65rem; }
+  .tabs { width: 100%; min-width: 0; top: 0; border-radius: 0; margin-bottom: 12px; }
+  .card { border-left: 0; border-right: 0; border-radius: 0; padding: 16px 12px; }
+  .tab-panel { width: 100%; min-width: 0; overflow-x: hidden; }
+  .grid-2, .grid-3, .grid-4 { gap: 12px; margin-bottom: 12px; }
+  .chart-container { min-height: 320px; }
+  .chart-controls { gap: 8px; }
+  .control-button { padding: 7px 9px; }
+  .map-container { height: 480px; }
+  .kv-row { grid-template-columns: 1fr; gap: 2px; }
+  .kv-val { text-align: left; }
+  .metric-compare { grid-template-columns: 1fr repeat(3, minmax(72px, 1fr)); overflow-x: auto; }
+  .timeline { grid-template-columns: 1fr; }
+  .data-table { min-width: 620px; }
+}
 """
 
 
@@ -577,6 +684,32 @@ def _javascript() -> str:
     return D.calibrated_alignment && D.calibrated_alignment.dates && D.calibrated_alignment.dates.length > 0
       && D.calibrated_alignment.sim && D.calibrated_alignment.sim.length > 0;
   }
+  function rollingMean(values, windowSize) {
+    const result = [];
+    let sum = 0;
+    const queue = [];
+    for (const raw of values || []) {
+      const value = Number(raw);
+      queue.push(Number.isFinite(value) ? value : 0);
+      sum += queue[queue.length - 1];
+      if (queue.length > windowSize) sum -= queue.shift();
+      result.push(sum / queue.length);
+    }
+    return result;
+  }
+  function finiteValue(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  }
+  function artifactName(value) {
+    if (!value) return '';
+    const parts = String(value).replace(/\\/g, '/').split('/').filter(Boolean);
+    return parts.length ? parts[parts.length - 1] : String(value);
+  }
+  function humanize(value) {
+    const text = String(value || '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+    return text ? text.charAt(0).toUpperCase() + text.slice(1) : '';
+  }
 
   // ── Build DOM ────────────────────────────────────────────────────────
   const root = $('#dashboard-root');
@@ -601,9 +734,11 @@ def _javascript() -> str:
   const kge = m.kge != null ? m.kge : (D.run_config && D.run_config.baseline_kge);
   const pbias = m.pbias != null ? m.pbias : (m.pbias_pct != null ? m.pbias_pct : null);
   const bfiSource = D.metrics || {};
-  const bfiSim = bfiSource.bfi_sim != null ? bfiSource.bfi_sim : (bfiSource.bfi != null ? bfiSource.bfi : null);
-  const bfiObs = bfiSource.bfi_obs != null ? bfiSource.bfi_obs : null;
-  const bfiLabelPrefix = finalMetrics ? 'Benchmark ' : '';
+  const calibratedBfi = D.calibrated_bfi || {};
+  const benchmarkBfiSim = bfiSource.bfi_sim != null ? bfiSource.bfi_sim : (bfiSource.bfi != null ? bfiSource.bfi : null);
+  const bfiObs = calibratedBfi.obs != null ? calibratedBfi.obs : (bfiSource.bfi_obs != null ? bfiSource.bfi_obs : null);
+  const bfiSim = calibratedBfi.sim != null ? calibratedBfi.sim : benchmarkBfiSim;
+  const bfiLabelPrefix = calibratedBfi.sim != null ? 'Verified ' : (finalMetrics ? 'Benchmark ' : '');
   const mc = metricColor(nse, kge, pbias);
 
   const gatesPassed = D.gates_passed || [];
@@ -650,7 +785,15 @@ def _javascript() -> str:
   html += '<div class="hero-usgs" style="margin-top:12px;">Metric authority: ' + esc(metricAuthorityLabel) + '</div>';
   html += '</div>';
 
-  // ── Gate Status Grid ─────────────────────────────────────────────────
+  // ── View navigation ──────────────────────────────────────────────────
+  html += '<nav class="tabs" aria-label="Dashboard views">';
+  for (const [key, label] of [['overview','Overview'],['hydrology','Hydrology'],['calibration','Calibration'],['spatial','Spatial'],['evidence','Evidence']]) {
+    html += '<button type="button" class="tab-button' + (key === 'overview' ? ' active' : '') + '" data-tab="' + key + '">' + label + '</button>';
+  }
+  html += '</nav>';
+
+  // ── Overview ─────────────────────────────────────────────────────────
+  html += '<section class="tab-panel active" data-panel="overview">';
   const gateDefs = [
     { key: 'contract_policy', label: 'Contract Policy', icon: '\uD83D\uDCCB' },
     { key: 'fresh_engine_output', label: 'Fresh Engine Output', icon: '\u26A1' },
@@ -681,177 +824,217 @@ def _javascript() -> str:
   }
   html += '</div>';
 
-  // ── Charts Section ────────────────────────────────────────────────────
+  html += '<div class="grid-2">';
+  html += '<div class="card"><div class="section-title">Performance authority</div>';
+  html += '<div class="authority-note">Benchmark, fresh locked verification, and withheld validation are kept separate.</div>';
+  html += _renderMetricComparison(D) + '</div>';
+  html += '<div class="card"><div class="section-title">Known limitations</div>';
+  html += '<div class="authority-note">Limitations and blocked claims remain visible even when the workflow passes.</div>';
+  html += _renderLimitations(D) + '</div>';
+  html += '</div>';
+
+  html += '<div class="grid-2">';
+  html += '<div class="card"><div class="section-title">Model inventory</div>' + _renderModelInventory(D) + '</div>';
+  html += '<div class="card"><div class="section-title">Run context</div>' + _renderMetadataCard(D) + '</div>';
+  html += '</div>';
+  html += '</section>';
+
+  // ── Hydrology ────────────────────────────────────────────────────────
+  html += '<section class="tab-panel" data-panel="hydrology">';
   html += '<div class="grid-2">';
 
-  // Hydrograph
   html += '<div class="card card-full">';
-  html += '<div class="section-title">\uD83D\uDCC8 Hydrograph</div>';
+  html += '<div class="section-title">Hydrograph explorer</div>';
+  html += '<div class="authority-note">Observed, locked benchmark, and calibrated locked rerun are kept separate. Default: 30-day mean for readability.</div>';
+  html += '<div class="chart-controls" aria-label="Hydrograph controls">';
+  html += '<div class="control-group"><button type="button" class="control-button active" data-hydro-mode="smooth">30-day mean</button><button type="button" class="control-button" data-hydro-mode="daily">Daily</button></div>';
+  html += '<div class="control-group"><button type="button" class="control-button active" data-hydro-scale="linear">Linear</button><button type="button" class="control-button" data-hydro-scale="log">Log</button></div>';
+  html += '<div class="control-group"><button type="button" class="control-button" data-hydro-period="1">1 yr</button><button type="button" class="control-button" data-hydro-period="3">3 yr</button><button type="button" class="control-button active" data-hydro-period="all">All</button></div>';
+  html += '</div>';
   html += hasAlignment()
     ? '<div id="chart-hydrograph" class="chart-container"></div>'
     : '<div class="no-data">No alignment data available — SWAT+ engine run required</div>';
   html += '</div>';
 
-  // FDC
   html += '<div class="card">';
-  html += '<div class="section-title">\uD83D\uDCCA Flow Duration Curve</div>';
+  html += '<div class="section-title">Flow-duration curve</div>';
   html += hasAlignment()
     ? '<div id="chart-fdc" class="chart-container"></div>'
     : '<div class="no-data">No alignment data available</div>';
   html += '</div>';
 
-  // Scatter
   html += '<div class="card">';
-  html += '<div class="section-title">\uD83C\uDFAF Observed vs Simulated</div>';
+  html += '<div class="section-title">Observed versus simulated</div>';
   html += hasAlignment()
     ? '<div id="chart-scatter" class="chart-container"></div>'
     : '<div class="no-data">No alignment data available</div>';
   html += '</div>';
-
   html += '</div>';
 
-  // ── BFI Comparison + Seasonal ────────────────────────────────────────
   html += '<div class="grid-2">';
-
-  // BFI comparison
   html += '<div class="card">';
-  html += '<div class="section-title">\uD83C\uDF0A Baseflow Index</div>';
+  html += '<div class="section-title">Baseflow index</div>';
   html += (bfiObs != null || bfiSim != null)
     ? '<div id="chart-bfi" class="chart-container" style="min-height:300px;"></div>'
     : '<div class="no-data">BFI not computed</div>';
   html += '</div>';
 
-  // Seasonal
   html += '<div class="card">';
-  html += '<div class="section-title">\uD83D\uDCC5 Seasonal Flow</div>';
+  html += '<div class="section-title">Seasonal flow</div>';
   html += (D.seasonal && D.seasonal.months && D.seasonal.months.length > 0)
     ? '<div id="chart-seasonal" class="chart-container"></div>'
     : '<div class="no-data">Insufficient data for seasonal aggregation</div>';
   html += '</div>';
-
   html += '</div>';
 
-  // ── Spatial inspector ────────────────────────────────────────────────
-  if (D.spatial_map && D.spatial_map.layers && D.spatial_map.layers.length > 0) {
-    html += '<div class="card" style="margin-bottom:20px;">';
-    html += '<div class="section-title">Basin and model spatial inspector</div>';
-    html += '<div style="color:var(--text-muted);font-size:.8rem;margin:4px 0 12px;">Toggle watershed, subbasins, stream network, outlet, HRUs, and available raster layers.</div>';
-    html += '<div id="model-map" class="map-container"></div>';
-    html += '</div>';
-  }
-
-  // ── Water Balance + Spatial ──────────────────────────────────────────
   html += '<div class="grid-2">';
-
-  // Water Balance
   html += '<div class="card">';
-  html += '<div class="section-title">\uD83D\uDCA7 Water Balance</div>';
+  html += '<div class="section-title">Benchmark water balance</div><div class="authority-note">Locked benchmark model.</div>';
   html += (D.water_balance && D.water_balance.precip)
-    ? '<div id="chart-waterbalance" class="chart-container"></div>'
+    ? '<div id="chart-waterbalance-baseline" class="chart-container"></div>'
     : '<div class="no-data">Water balance data not available</div>';
   html += '</div>';
-
-  // Spatial overview or Run Metadata
-  if (D.spatial_overview_base64) {
-    html += '<div class="card">';
-    html += '<div class="section-title">\uD83D\uDDFA\uFE0F Basin Spatial Overview</div>';
-    html += '<div style="text-align:center;overflow:hidden;border-radius:8px;">';
-    html += '<img src="data:image/png;base64,' + D.spatial_overview_base64 + '" style="max-width:100%;height:auto;" alt="Basin spatial overview">';
-    html += '</div></div>';
-  } else {
-    html += '<div class="card">';
-    html += '<div class="section-title">\uD83D\uDCCA Run Metadata</div>';
-    html += _renderMetadataCard(D);
-    html += '</div>';
-  }
+  html += '<div class="card">';
+  html += '<div class="section-title">Calibrated water balance</div><div class="authority-note">Fresh locked verification physical-gate output.</div>';
+  html += (D.calibrated_water_balance && D.calibrated_water_balance.precip)
+    ? '<div id="chart-waterbalance-calibrated" class="chart-container"></div>'
+    : '<div class="no-data">Calibrated water balance not available</div>';
   html += '</div>';
+  html += '</div>';
+  html += '<div class="card"><div class="section-title">Flow-regime summary</div>' + _renderFlowRegime(D) + '</div>';
+  html += '</section>';
 
-  // ── Calibration Section ──────────────────────────────────────────────
+  // ── Calibration ──────────────────────────────────────────────────────
+  html += '<section class="tab-panel" data-panel="calibration">';
   if (D.calibration && D.calibration.status !== 'not_attempted') {
-    html += '<div class="grid-2" style="margin-top:20px;">';
-
-    html += '<div class="card">';
-    html += '<div class="section-title">\uD83D\uDD27 Calibration Method and Evidence</div>';
+    html += '<div class="card" style="margin-bottom:20px;"><div class="section-title">Calibration performance</div>';
+    html += _renderMetricComparison(D) + _renderCalibrationTimeline(D) + '</div>';
+    html += '<div class="card" style="margin-bottom:20px;">';
+    html += '<div class="section-title">Calibration Method and Evidence</div>';
     html += '<div style="padding:12px 0;">';
     html += _renderCalibrationSummary(D);
     html += '</div></div>';
 
-    if (D.best_solution && D.best_solution.parameters) {
-      html += '<div class="card">';
-      html += '<div class="section-title">\uD83D\uDD27 Calibration Parameters</div>';
+    if (D.calibration_parameter_details && D.calibration_parameter_details.length > 0) {
+      html += '<div class="card" style="margin-bottom:20px;">';
+      html += '<div class="section-title">Calibrated parameters</div><div class="authority-note">Position is normalized within each package-owned parameter range; raw values remain in the table.</div>';
       html += '<div id="chart-params" class="chart-container"></div>';
+      html += _renderParameterTable(D.calibration_parameter_details);
       html += '</div>';
     }
 
     if (D.calibration_history && D.calibration_history.length > 0) {
       html += '<div class="card">';
-      html += '<div class="section-title">\uD83D\uDCC9 Calibration Convergence</div>';
+      html += '<div class="section-title">Calibration search history</div><div class="authority-note">Candidate history is diagnostic; final authority remains the independent locked rerun.</div>';
       html += '<div id="chart-convergence" class="chart-container"></div>';
       html += '</div>';
     }
-    html += '</div>';
+  } else {
+    html += '<div class="card"><div class="no-data">Calibration was not attempted for this run.</div></div>';
   }
+  html += '</section>';
 
-  // ── Land Use + Soil ──────────────────────────────────────────────────
+  // ── Spatial ──────────────────────────────────────────────────────────
+  html += '<section class="tab-panel" data-panel="spatial">';
+  if (D.spatial_map && D.spatial_map.layers && D.spatial_map.layers.length > 0) {
+    html += '<div class="card" style="margin-bottom:20px;">';
+    html += '<div class="section-title">Basin and model spatial inspector</div>';
+    html += '<div class="authority-note">Toggle watershed, subbasins, stream network, outlet, HRUs, and raster previews. Use source GIS artifacts for quantitative analysis.</div>';
+    html += '<div id="model-map" class="map-container"></div></div>';
+  }
+  html += '<div class="grid-2">';
+  if (D.spatial_overview_base64) {
+    html += '<div class="card"><div class="section-title">Basin spatial overview</div>';
+    html += '<div style="text-align:center;overflow:hidden;border-radius:6px;"><img src="data:image/png;base64,' + D.spatial_overview_base64 + '" style="max-width:100%;height:auto;" alt="Basin spatial overview"></div></div>';
+  }
+  html += '<div class="card"><div class="section-title">Spatial inventory</div>' + _renderSpatialInventory(D) + '</div>';
+  html += '</div>';
   if (D.landuse_fidelity || D.soil_report) {
     html += '<div class="grid-2">';
     if (D.landuse_fidelity) {
       html += '<div class="card">';
-      html += '<div class="section-title">\uD83C\uDF33 Land Use Composition</div>';
+      html += '<div class="section-title">Land-use composition</div>';
       html += '<div id="chart-landuse" class="chart-container"></div>';
       html += '</div>';
     }
     if (D.soil_report) {
       html += '<div class="card">';
-      html += '<div class="section-title">\uD83C\uDF31 Soil Sources</div>';
+      html += '<div class="section-title">Soil sources</div>';
       html += _renderSoilSummary(D.soil_report);
       html += '</div>';
     }
     html += '</div>';
   }
+  html += '</section>';
 
-  // ── Claims Tables ────────────────────────────────────────────────────
+  // ── Evidence ─────────────────────────────────────────────────────────
+  html += '<section class="tab-panel" data-panel="evidence">';
   if ((D.allowed_claims && D.allowed_claims.length > 0) || (D.blocked_claims && D.blocked_claims.length > 0)) {
-    html += '<div class="grid-2">';
+    if (D.blocked_claims && D.blocked_claims.length > 0) {
+      html += '<div class="card" style="margin-bottom:20px;"><div class="section-title" style="color:var(--danger);">Blocked claims</div><div class="table-wrap">';
+      html += '<table class="data-table claims-table"><thead><tr><th>Claim</th><th>Tier</th><th>Reason</th></tr></thead><tbody>';
+      for (const c of D.blocked_claims) {
+        html += '<tr><td title="' + esc(c.claim || '') + '">' + esc(humanize(c.claim || '')) + '</td><td>' + esc(humanize(c.tier || '')) + '</td><td style="font-size:0.78rem;color:var(--danger);">' + esc(c.reason || '') + '</td></tr>';
+      }
+      html += '</tbody></table></div></div>';
+    }
 
     if (D.allowed_claims && D.allowed_claims.length > 0) {
-      html += '<div class="card">';
-      html += '<div class="section-title" style="color:var(--success);">\u2705 Allowed Claims</div>';
-      html += '<table class="data-table"><thead><tr><th>Claim</th><th>Tier</th><th>Basis</th></tr></thead><tbody>';
+      html += '<div class="card"><div class="section-title" style="color:var(--success);">Allowed claims</div><div class="table-wrap">';
+      html += '<table class="data-table claims-table"><thead><tr><th>Claim</th><th>Tier</th><th>Basis</th></tr></thead><tbody>';
       for (const c of D.allowed_claims) {
-        html += '<tr><td>' + esc(c.claim || '') + '</td><td>' + esc(c.tier || '') + '</td><td style="font-size:0.78rem;color:var(--text-muted);">' + esc(c.basis || '') + '</td></tr>';
+        html += '<tr><td title="' + esc(c.claim || '') + '">' + esc(humanize(c.claim || '')) + '</td><td>' + esc(humanize(c.tier || '')) + '</td><td style="font-size:0.78rem;color:var(--text-muted);">' + esc(c.basis || '') + '</td></tr>';
       }
-      html += '</tbody></table></div>';
+      html += '</tbody></table></div></div>';
     }
-
-    if (D.blocked_claims && D.blocked_claims.length > 0) {
-      html += '<div class="card">';
-      html += '<div class="section-title" style="color:var(--danger);">\u274C Blocked Claims</div>';
-      html += '<table class="data-table"><thead><tr><th>Claim</th><th>Tier</th><th>Reason</th></tr></thead><tbody>';
-      for (const c of D.blocked_claims) {
-        html += '<tr><td>' + esc(c.claim || '') + '</td><td>' + esc(c.tier || '') + '</td><td style="font-size:0.78rem;color:var(--danger);">' + esc(c.reason || '') + '</td></tr>';
-      }
-      html += '</tbody></table></div>';
-    }
-
-    html += '</div>';
   }
 
-  // ── Run Details ──────────────────────────────────────────────────────
   html += '<div class="card" style="margin-top:20px;">';
-  html += '<div class="section-title">\uD83D\uDCCB Run Details</div>';
+  html += '<div class="section-title">Run and artifact details</div>';
   html += _renderRunDetails(D);
   html += '</div>';
+  html += '</section>';
 
   // ── Footer ───────────────────────────────────────────────────────────
-  html += '<div class="footer">SWAT+ Builder Dashboard • Generated ' + esc(D.generated_at || '') + ' • Run directory: ' + esc(D.run_dir || '') + '</div>';
+  html += '<div class="footer">SWAT+ Builder Dashboard • Generated ' + esc(D.generated_at || '') + ' • Run: ' + esc(artifactName(D.run_dir || '')) + '</div>';
 
   root.innerHTML = html;
+
+  let modelMap = null;
+  let modelMapBounds = null;
+  for (const button of document.querySelectorAll('.tab-button')) {
+    button.addEventListener('click', () => {
+      const key = button.dataset.tab;
+      if (window.history && key) window.history.replaceState(null, '', '#' + key);
+      for (const item of document.querySelectorAll('.tab-button')) item.classList.toggle('active', item === button);
+      for (const panel of document.querySelectorAll('.tab-panel')) panel.classList.toggle('active', panel.dataset.panel === key);
+      button.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+      window.setTimeout(() => {
+        if (key === 'spatial' && modelMap) {
+          modelMap.invalidateSize();
+          if (modelMapBounds && modelMapBounds.isValid()) modelMap.fitBounds(modelMapBounds.pad(0.05));
+        }
+        if (window.Plotly) {
+          for (const plot of document.querySelectorAll('.js-plotly-plot')) Plotly.Plots.resize(plot);
+        }
+      }, 40);
+    });
+  }
+  const requestedTab = String(window.location.hash || '').replace('#', '');
+  const requestedButton = requestedTab
+    ? document.querySelector('.tab-button[data-tab="' + requestedTab + '"]')
+    : null;
+  if (requestedButton) requestedButton.click();
+  window.addEventListener('hashchange', () => {
+    const key = String(window.location.hash || '').replace('#', '');
+    const button = key ? document.querySelector('.tab-button[data-tab="' + key + '"]') : null;
+    if (button && !button.classList.contains('active')) button.click();
+  });
 
   // ── Plotly Charts ────────────────────────────────────────────────────
 
   if (D.spatial_map && D.spatial_map.layers && D.spatial_map.layers.length > 0 && window.L) {
-    const modelMap = L.map('model-map', { preferCanvas: true });
+    modelMap = L.map('model-map', { preferCanvas: true });
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap contributors'
@@ -901,30 +1084,67 @@ def _javascript() -> str:
       return div;
     };
     north.addTo(modelMap);
+    modelMapBounds = combinedBounds;
     if (combinedBounds && combinedBounds.isValid()) modelMap.fitBounds(combinedBounds.pad(0.05));
     else modelMap.setView([39.5, -98.35], 4);
   }
 
   if (hasAlignment()) {
     // Hydrograph
-    const hydroTraces = [
-      { x: D.alignment.dates, y: D.alignment.obs, type: 'scatter', mode: 'lines',
-        name: 'Observed', line: { color: '#1e40af', width: 1.8 } },
-      { x: D.alignment.dates, y: D.alignment.sim, type: 'scatter', mode: 'lines',
-        name: 'Simulated', line: { color: '#dc2626', width: 1.4 } }
+    const hydroDates = D.alignment.dates;
+    const hydroDaily = [D.alignment.obs, D.alignment.sim];
+    const hydroNames = ['Observed', 'Benchmark'];
+    const hydroStyles = [
+      { color: '#1e40af', width: 2.0 },
+      { color: '#94a3b8', width: 1.4, dash: 'dot' }
     ];
     if (hasCalibratedAlignment()) {
-      hydroTraces.push({ x: D.calibrated_alignment.dates, y: D.calibrated_alignment.sim, type: 'scatter', mode: 'lines',
-        name: 'Calibrated locked rerun', line: { color: '#059669', width: 1.6 } });
+      hydroDaily.push(D.calibrated_alignment.sim);
+      hydroNames.push('Calibrated');
+      hydroStyles.push({ color: '#059669', width: 2.0 });
     }
+    const hydroSmooth = hydroDaily.map(values => rollingMean(values, 30));
+    const hydroTraces = hydroNames.map((name, index) => ({
+      x: hydroDates, y: hydroSmooth[index], type: 'scatter', mode: 'lines',
+      name: name, line: hydroStyles[index],
+      hovertemplate: '%{x}<br>%{y:.3f} m³/s<extra>' + name + '</extra>'
+    }));
     Plotly.newPlot('chart-hydrograph', hydroTraces, {
-      margin: { t: 10, r: 20, b: 40, l: 50 },
-      xaxis: { title: '', rangeslider: { visible: true }, type: 'date' },
-      yaxis: { title: 'Discharge (m\u00B3/s)', type: 'log' },
-      legend: { orientation: 'h', y: 1.15 },
+      margin: { t: 44, r: 16, b: 44, l: 54 },
+      xaxis: { title: '', type: 'date' },
+      yaxis: { title: 'Discharge (m\u00B3/s)', rangemode: 'tozero' },
+      legend: { orientation: 'h', x: 0, y: 1.15 },
       hovermode: 'x unified',
       paper_bgcolor: '#fff', plot_bgcolor: '#fafbfc'
-    }, { responsive: true, displayModeBar: true, modeBarButtonsToRemove: ['lasso2d', 'select2d'] });
+    }, { responsive: true, displayModeBar: false });
+    const hydroPlot = document.getElementById('chart-hydrograph');
+    for (const button of document.querySelectorAll('[data-hydro-mode]')) {
+      button.addEventListener('click', () => {
+        const values = button.dataset.hydroMode === 'daily' ? hydroDaily : hydroSmooth;
+        Plotly.restyle(hydroPlot, { y: values });
+        for (const item of document.querySelectorAll('[data-hydro-mode]')) item.classList.toggle('active', item === button);
+      });
+    }
+    for (const button of document.querySelectorAll('[data-hydro-scale]')) {
+      button.addEventListener('click', () => {
+        const isLog = button.dataset.hydroScale === 'log';
+        Plotly.relayout(hydroPlot, { 'yaxis.type': isLog ? 'log' : 'linear', 'yaxis.rangemode': isLog ? null : 'tozero' });
+        for (const item of document.querySelectorAll('[data-hydro-scale]')) item.classList.toggle('active', item === button);
+      });
+    }
+    for (const button of document.querySelectorAll('[data-hydro-period]')) {
+      button.addEventListener('click', () => {
+        const period = button.dataset.hydroPeriod;
+        if (period === 'all') Plotly.relayout(hydroPlot, { 'xaxis.autorange': true });
+        else {
+          const end = new Date(hydroDates[hydroDates.length - 1]);
+          const start = new Date(end);
+          start.setFullYear(end.getFullYear() - Number(period));
+          Plotly.relayout(hydroPlot, { 'xaxis.range': [start.toISOString(), end.toISOString()] });
+        }
+        for (const item of document.querySelectorAll('[data-hydro-period]')) item.classList.toggle('active', item === button);
+      });
+    }
 
     // FDC
     const obsSorted = [...D.alignment.obs].sort((a,b) => b-a);
@@ -934,8 +1154,8 @@ def _javascript() -> str:
     const fdcTraces = [
       { x: exceedObs, y: obsSorted, type: 'scatter', mode: 'lines', name: 'Observed',
         line: { color: '#1e40af', width: 1.8 } },
-      { x: exceedSim, y: simSorted, type: 'scatter', mode: 'lines', name: 'Simulated',
-        line: { color: '#dc2626', width: 1.4 } }
+      { x: exceedSim, y: simSorted, type: 'scatter', mode: 'lines', name: 'Benchmark',
+        line: { color: '#94a3b8', width: 1.4, dash: 'dot' } }
     ];
     if (hasCalibratedAlignment()) {
       const calSorted = [...D.calibrated_alignment.sim].sort((a,b) => b-a);
@@ -946,7 +1166,7 @@ def _javascript() -> str:
     Plotly.newPlot('chart-fdc', fdcTraces, {
       margin: { t: 10, r: 20, b: 40, l: 50 },
       xaxis: { title: 'Exceedance Probability (%)' },
-      yaxis: { title: 'Discharge (m\u00B3/s)', type: 'log' },
+      yaxis: { title: 'Discharge (m\u00B3/s)', type: 'log', tickformat: '~g', automargin: true },
       legend: { orientation: 'h', y: 1.15 },
       paper_bgcolor: '#fff', plot_bgcolor: '#fafbfc'
     }, { responsive: true, displayModeBar: true, modeBarButtonsToRemove: ['lasso2d', 'select2d'] });
@@ -959,13 +1179,13 @@ def _javascript() -> str:
     ) * 1.05;
     const scatterTraces = [
       { x: D.alignment.obs, y: D.alignment.sim, type: 'scatter', mode: 'markers',
-        marker: { color: '#2563eb', opacity: 0.35, size: 5 }, name: 'Daily flow' },
+        marker: { color: '#94a3b8', opacity: 0.28, size: 4 }, name: 'Benchmark daily flow' },
       { x: [0, maxVal], y: [0, maxVal], type: 'scatter', mode: 'lines',
         line: { dash: 'dash', color: '#1a2332', width: 1.5 }, name: '1:1 line' }
     ];
     if (hasCalibratedAlignment()) {
       scatterTraces.splice(1, 0, { x: D.calibrated_alignment.obs, y: D.calibrated_alignment.sim, type: 'scatter', mode: 'markers',
-        marker: { color: '#059669', opacity: 0.28, size: 5 }, name: 'Calibrated daily flow' });
+        marker: { color: '#059669', opacity: 0.34, size: 5 }, name: 'Calibrated daily flow' });
     }
     Plotly.newPlot('chart-scatter', scatterTraces, {
       margin: { t: 10, r: 20, b: 40, l: 50 },
@@ -980,38 +1200,42 @@ def _javascript() -> str:
       const bfiBars = [];
       const bfiLabels = [];
       if (bfiObs != null) { bfiBars.push(bfiObs); bfiLabels.push('Observed'); }
-      if (bfiSim != null) { bfiBars.push(bfiSim); bfiLabels.push('Simulated'); }
+      if (benchmarkBfiSim != null) { bfiBars.push(benchmarkBfiSim); bfiLabels.push('Benchmark'); }
+      if (calibratedBfi.sim != null) { bfiBars.push(calibratedBfi.sim); bfiLabels.push('Calibrated'); }
       Plotly.newPlot('chart-bfi', [
         { x: bfiLabels, y: bfiBars, type: 'bar',
-          marker: { color: bfiLabels.map(l => l === 'Observed' ? '#1e40af' : '#dc2626') },
+          marker: { color: bfiLabels.map(l => l === 'Observed' ? '#1e40af' : (l === 'Calibrated' ? '#059669' : '#94a3b8')) },
           text: bfiBars.map(v => v.toFixed(3)), textposition: 'outside' }
       ], {
         margin: { t: 10, r: 20, b: 40, l: 50 },
-        yaxis: { title: 'Baseflow Index', range: [0, Math.max(bfiObs||0, bfiSim||0, 0.1) * 1.3] },
+        yaxis: { title: 'Baseflow Index', range: [0, Math.max(...bfiBars, 0.1) * 1.25] },
         paper_bgcolor: '#fff', plot_bgcolor: '#fafbfc'
       }, { responsive: true, displayModeBar: false });
     }
 
     // Seasonal
     if (D.seasonal && D.seasonal.months && D.seasonal.months.length > 0) {
-      Plotly.newPlot('chart-seasonal', [
-        { x: D.seasonal.months, y: D.seasonal.sim_total, type: 'bar',
-          name: 'Simulated', marker: { color: '#dc2626', opacity: 0.7 } },
-        { x: D.seasonal.months, y: D.seasonal.obs_total, type: 'bar',
-          name: 'Observed', marker: { color: '#1e40af', opacity: 0.7 } }
-      ], {
+      const seasonalTraces = [
+        { x: D.seasonal.months, y: D.seasonal.obs_mean, type: 'bar',
+          name: 'Observed', marker: { color: '#1e40af', opacity: 0.8 } },
+        { x: D.seasonal.months, y: D.seasonal.sim_mean, type: 'scatter', mode: 'lines+markers',
+          name: 'Benchmark', line: { color: '#94a3b8', dash: 'dot', width: 2 } }
+      ];
+      if (D.calibrated_seasonal && D.calibrated_seasonal.sim_mean) {
+        seasonalTraces.push({ x: D.calibrated_seasonal.months, y: D.calibrated_seasonal.sim_mean,
+          type: 'scatter', mode: 'lines+markers', name: 'Calibrated', line: { color: '#059669', width: 2.4 } });
+      }
+      Plotly.newPlot('chart-seasonal', seasonalTraces, {
         margin: { t: 10, r: 20, b: 40, l: 50 },
-        barmode: 'group',
-        xaxis: { title: '' }, yaxis: { title: 'Total Monthly Flow (m\u00B3/s)' },
+        xaxis: { title: '' }, yaxis: { title: 'Mean daily discharge (m\u00B3/s)', rangemode: 'tozero' },
         legend: { orientation: 'h', y: 1.15 },
         paper_bgcolor: '#fff', plot_bgcolor: '#fafbfc'
       }, { responsive: true, displayModeBar: true });
     }
   }
 
-  // Water Balance
-  if (D.water_balance && D.water_balance.precip) {
-    const wb = D.water_balance;
+  function plotWaterBalance(elementId, wb) {
+    if (!wb || !wb.precip || !document.getElementById(elementId)) return;
     const total = wb.precip || 1;
     const etPct = (wb.et || 0) / total * 100;
     const wyPct = (wb.wateryld || 0) / total * 100;
@@ -1039,7 +1263,7 @@ def _javascript() -> str:
       values.push(100);
       colors.push('#cbd5e1');
     }
-    Plotly.newPlot('chart-waterbalance', [
+    Plotly.newPlot(elementId, [
       { labels: labels, values: values, type: 'pie', hole: 0.45,
         marker: { colors: colors },
         textinfo: 'label+percent', textposition: 'outside',
@@ -1050,56 +1274,188 @@ def _javascript() -> str:
       paper_bgcolor: '#fff'
     }, { responsive: true, displayModeBar: false });
   }
+  plotWaterBalance('chart-waterbalance-baseline', D.water_balance);
+  plotWaterBalance('chart-waterbalance-calibrated', D.calibrated_water_balance);
 
   // ── Calibration convergence ──────────────────────────────────────────
   if (D.calibration_history && D.calibration_history.length > 0) {
     const hist = D.calibration_history;
-    const iterNse = hist.filter(h => (h.nse || h.metric_nse) != null);
-    if (iterNse.length > 0) {
+    const points = hist.map((h, i) => ({
+      x: h.eval_idx != null ? h.eval_idx : (h.iteration != null ? h.iteration : i),
+      nse: finiteValue(h.nse != null ? h.nse : h.metric_nse),
+      kge: finiteValue(h.kge != null ? h.kge : h.metric_kge)
+    })).filter(point => point.nse != null || point.kge != null);
+    if (points.length > 0) {
+      let bestNse = -Infinity;
+      let bestKge = -Infinity;
+      const runningNse = points.map(point => point.nse == null ? (bestNse === -Infinity ? null : bestNse) : (bestNse = Math.max(bestNse, point.nse)));
+      const runningKge = points.map(point => point.kge == null ? (bestKge === -Infinity ? null : bestKge) : (bestKge = Math.max(bestKge, point.kge)));
       Plotly.newPlot('chart-convergence', [
-        { x: iterNse.map((h, i) => h.eval_idx != null ? h.eval_idx : (h.iteration != null ? h.iteration : i)),
-          y: iterNse.map(h => h.nse || h.metric_nse),
-          type: 'scatter', mode: 'lines+markers',
-          marker: { size: 5 }, line: { width: 1.5 }, name: 'NSE' }
+        { x: points.map(p => p.x), y: points.map(p => p.nse), type: 'scatter', mode: 'markers',
+          marker: { size: 6, color: '#94a3b8', opacity: .55 }, name: 'Candidate NSE' },
+        { x: points.map(p => p.x), y: runningNse, type: 'scatter', mode: 'lines',
+          line: { width: 2.4, color: '#059669' }, name: 'Best NSE observed' },
+        { x: points.map(p => p.x), y: runningKge, type: 'scatter', mode: 'lines', yaxis: 'y2',
+          line: { width: 2.0, color: '#2563eb', dash: 'dot' }, name: 'Best KGE observed' }
       ], {
         margin: { t: 10, r: 20, b: 40, l: 50 },
-        xaxis: { title: 'Iteration' }, yaxis: { title: 'NSE' },
+        xaxis: { title: 'Evaluation' }, yaxis: { title: 'NSE' },
+        yaxis2: { title: 'KGE', overlaying: 'y', side: 'right', showgrid: false },
+        legend: { orientation: 'h', y: 1.14 },
         paper_bgcolor: '#fff', plot_bgcolor: '#fafbfc'
-      }, { responsive: true, displayModeBar: true });
+      }, { responsive: true, displayModeBar: false });
     }
   }
 
   // ── Parameter comparison ─────────────────────────────────────────────
-  if (D.best_solution && D.best_solution.parameters) {
-    const params = D.best_solution.parameters;
-    const names = Object.keys(params).sort();
+  if (D.calibration_parameter_details && D.calibration_parameter_details.length > 0) {
+    const details = D.calibration_parameter_details;
+    const names = details.map(row => row.name);
     Plotly.newPlot('chart-params', [
-      { x: names, y: names.map(n => params[n]), type: 'bar',
-        marker: { color: '#2563eb' }, name: 'Calibrated' }
+      { y: names, x: details.map(row => row.normalized == null ? 0 : row.normalized * 100), type: 'bar', orientation: 'h',
+        marker: { color: details.map(row => row.boundary ? '#d97706' : '#0f766e') },
+        text: details.map(row => row.boundary ? row.boundary + ' bound' : ''), textposition: 'auto', name: 'Range position' }
     ], {
-      margin: { t: 10, r: 20, b: 60, l: 50 },
-      xaxis: { title: '', tickangle: -45 }, yaxis: { title: 'Value' },
+      margin: { t: 10, r: 24, b: 44, l: 90 },
+      xaxis: { title: 'Position within governed range (%)', range: [0, 100] }, yaxis: { title: '', automargin: true },
       paper_bgcolor: '#fff', plot_bgcolor: '#fafbfc'
-    }, { responsive: true, displayModeBar: true });
+    }, { responsive: true, displayModeBar: false });
   }
 
   // ── Land Use ─────────────────────────────────────────────────────────
   if (D.landuse_fidelity) {
-    const lu = D.landuse_fidelity;
-    const classes = lu.landuse_classes_present || lu.landuse_distribution || [];
-    if (classes && classes.length > 0) {
-      const names = classes.map(c => (typeof c === 'string' ? c : (c.name || c.label || c.landuse || '')));
-      const areas = classes.map(c => (typeof c === 'object' ? (c.area_km2 || c.area_pct || c.fraction) : 1));
+    const details = (D.landuse_fidelity.landuse_present_details || [])
+      .filter(row => finiteValue(row.pixel_count) != null)
+      .sort((a, b) => Number(b.pixel_count) - Number(a.pixel_count));
+    if (details.length > 0) {
+      const retained = details.slice(0, 9);
+      const remainder = details.slice(9).reduce((total, row) => total + Number(row.pixel_count), 0);
+      if (remainder > 0) retained.push({ nlcd_class: 'Other retained classes', swatplus_landuse: 'other', pixel_count: remainder });
+      const total = details.reduce((sum, row) => sum + Number(row.pixel_count), 0) || 1;
+      const names = retained.map(row => (row.nlcd_class || 'Unknown') + ' (' + (row.swatplus_landuse || 'n/a') + ')').reverse();
+      const values = retained.map(row => Number(row.pixel_count) / total * 100).reverse();
       Plotly.newPlot('chart-landuse', [
-        { labels: names, values: areas, type: 'pie', hole: 0.4,
-          textinfo: 'label+percent', textposition: 'outside' }
+        { y: names, x: values, type: 'bar', orientation: 'h', marker: { color: '#2f6f62' },
+          text: values.map(value => value.toFixed(1) + '%'), textposition: 'outside', cliponaxis: false }
       ], {
-        margin: { t: 10, r: 10, b: 10, l: 10 }, paper_bgcolor: '#fff'
+        margin: { t: 10, r: 48, b: 40, l: 190 },
+        xaxis: { title: 'Basin raster share (%)', rangemode: 'tozero' }, yaxis: { automargin: true },
+        paper_bgcolor: '#fff', plot_bgcolor: '#fafbfc'
       }, { responsive: true, displayModeBar: false });
     }
   }
 
   // ── Helper render functions ──────────────────────────────────────────
+  function _renderMetricComparison(D) {
+    const benchmark = D.calibration_benchmark_metrics || D.metrics || {};
+    const verified = D.calibration_verification_metrics || {};
+    const validation = D.calibration_validation_metrics || {};
+    const rows = [
+      ['NSE', 'nse', 3, ''],
+      ['KGE', 'kge', 3, ''],
+      ['PBIAS', 'pbias', 1, '%']
+    ];
+    let h = '<div class="metric-compare">';
+    h += '<div class="head">Metric</div><div class="head">Benchmark</div><div class="head">Verified</div><div class="head">Validation</div>';
+    for (const [label, key, decimals, suffix] of rows) {
+      h += '<div class="metric-name">' + label + '</div>';
+      for (const source of [benchmark, verified, validation]) {
+        h += '<div>' + fmtNum(source[key], decimals) + (source[key] == null ? '' : suffix) + '</div>';
+      }
+    }
+    h += '</div>';
+    const period = D.calibration_validation_period || [];
+    if (validation.nse != null) {
+      h += '<div class="authority-note" style="margin-top:8px;">Validation: ' + esc(period.join(' to ') || 'withheld period') +
+        (D.calibration_validation_transfer_passed == null ? '' : ' • transfer ' + (D.calibration_validation_transfer_passed ? 'passed' : 'did not pass')) + '</div>';
+    }
+    return h;
+  }
+
+  function _renderLimitations(D) {
+    const items = [];
+    for (const claim of (D.blocked_claims || [])) {
+      items.push('<strong>' + esc(humanize(claim.claim || 'Blocked claim')) + ':</strong> ' + esc(claim.reason || 'No reason recorded'));
+    }
+    const diagnostics = D.calibration_skill_diagnostics_detail || {};
+    for (const diagnostic of (diagnostics.diagnostics || [])) {
+      const message = diagnostic.summary || diagnostic.message || diagnostic.diagnosis;
+      if (message) items.push('<strong>Calibration diagnostic:</strong> ' + esc(message));
+    }
+    if (D.delineation && D.delineation.passed === false) {
+      items.push('<strong>Spatial fidelity:</strong> delineation validation did not pass.');
+    }
+    if (!items.length) return '<div class="no-data" style="min-height:120px;">No retained limitations were reported.</div>';
+    return '<div class="limitation-list">' + items.map(item => '<div class="limitation-item">' + item + '</div>').join('') + '</div>';
+  }
+
+  function _renderModelInventory(D) {
+    const layers = (D.spatial_map && D.spatial_map.layers) || [];
+    const count = kind => {
+      const layer = layers.find(item => item.kind === kind);
+      return layer && layer.feature_count != null ? Number(layer.feature_count).toLocaleString() : null;
+    };
+    const weather = (D.metadata && D.metadata.weather_coverage_flags) || {};
+    const rows = [
+      ['Delineated area', D.delineation && D.delineation.delineated_area_km2 != null ? fmtNum(D.delineation.delineated_area_km2, 1) + ' km²' : null],
+      ['Subbasins', count('subbasins')],
+      ['Channels', count('channels')],
+      ['HRUs', count('hrus')],
+      ['Weather source', D.metadata && D.metadata.weather_source],
+      ['Weather stations', weather.n_weather_stations],
+      ['Soil authority', (D.soil_report && (D.soil_report.soil_overlay_source || D.soil_report.hru_soil_overlay_source)) || (D.metadata && D.metadata.soil_provenance_mode)],
+      ['Boundary source', D.metadata && D.metadata.boundary_provenance && D.metadata.boundary_provenance.source]
+    ];
+    return rows.filter(row => row[1] != null && row[1] !== '').map(row => '<div class="kv-row"><span class="kv-key">' + esc(row[0]) + '</span><span class="kv-val">' + esc(String(row[1])) + '</span></div>').join('');
+  }
+
+  function _renderCalibrationTimeline(D) {
+    const benchmark = D.calibration_benchmark_metrics || D.metrics || {};
+    const verified = D.calibration_verification_metrics || {};
+    const validation = D.calibration_validation_metrics || {};
+    let h = '<div class="timeline">';
+    h += '<div class="timeline-step"><strong>1. Lock benchmark</strong><br>NSE ' + fmtNum(benchmark.nse) + ', KGE ' + fmtNum(benchmark.kge) + '</div>';
+    h += '<div class="timeline-step calibration"><strong>2. Search and verify</strong><br>Fresh locked rerun: NSE ' + fmtNum(verified.nse) + ', KGE ' + fmtNum(verified.kge) + '</div>';
+    h += '<div class="timeline-step validation"><strong>3. Withhold and test</strong><br>NSE ' + fmtNum(validation.nse) + ', KGE ' + fmtNum(validation.kge) + '</div>';
+    return h + '</div>';
+  }
+
+  function _renderParameterTable(details) {
+    let h = '<div class="table-wrap"><table class="data-table"><thead><tr><th>Parameter</th><th>Value</th><th>Governed range</th><th>Activity</th><th>Meaning</th></tr></thead><tbody>';
+    for (const row of details) {
+      const range = row.minimum == null ? 'not registered' : fmtNum(row.minimum, 3) + ' to ' + fmtNum(row.maximum, 3) + (row.units ? ' ' + esc(row.units) : '');
+      const activity = esc(row.activity || 'not reported') + (row.boundary ? ' • ' + esc(row.boundary) + ' bound' : '');
+      h += '<tr><td class="artifact-name">' + esc(row.name) + '</td><td>' + fmtNum(row.value, 4) + '</td><td>' + range + '</td><td>' + activity + '</td><td>' + esc(row.description || '') + '</td></tr>';
+    }
+    return h + '</tbody></table></div>';
+  }
+
+  function _renderFlowRegime(D) {
+    const benchmark = D.benchmark_flow_regime || {};
+    const calibrated = D.calibrated_flow_regime || {};
+    const rows = [
+      ['Total volume ratio', 'volume_ratio'],
+      ['High-flow ratio (Q90)', 'high_flow_ratio_q90'],
+      ['Low-flow ratio (Q10)', 'low_flow_ratio_q10'],
+      ['Maximum-flow ratio', 'peak_ratio']
+    ];
+    let h = '<div class="table-wrap"><table class="data-table"><thead><tr><th>Diagnostic</th><th>Benchmark</th><th>Calibrated</th><th>Reference</th></tr></thead><tbody>';
+    for (const [label, key] of rows) {
+      h += '<tr><td>' + label + '</td><td>' + fmtNum(benchmark[key], 3) + '</td><td>' + fmtNum(calibrated[key], 3) + '</td><td>1.000</td></tr>';
+    }
+    return h + '</tbody></table></div><div class="authority-note" style="margin-top:8px;">Ratios describe behavior; they are diagnostics, not pass/fail gates.</div>';
+  }
+
+  function _renderSpatialInventory(D) {
+    const layers = (D.spatial_map && D.spatial_map.layers) || [];
+    if (!layers.length) return '<div class="no-data" style="min-height:120px;">No spatial previews available.</div>';
+    let h = '<div class="table-wrap"><table class="data-table"><thead><tr><th>Layer</th><th>Features</th><th>Artifact</th></tr></thead><tbody>';
+    for (const layer of layers) {
+      h += '<tr><td>' + esc(layer.label || layer.kind || '') + '</td><td>' + (layer.feature_count == null ? 'raster' : Number(layer.feature_count).toLocaleString()) + '</td><td class="artifact-name">' + esc(artifactName(layer.source)) + '</td></tr>';
+    }
+    return h + '</tbody></table></div>';
+  }
+
   function _renderCalibrationSummary(D) {
     const p = D.calibration.provenance || {};
     const bench = D.calibration_benchmark_metrics || {};
@@ -1107,17 +1463,17 @@ def _javascript() -> str:
     const delta = D.calibration_delta_metrics || {};
     const window = D.calibration_screening_window || (D.best_solution && D.best_solution.screening_window) || null;
     let h = '';
-    h += '<div class="kv-row"><span class="kv-key">Status</span><span class="kv-val">' + esc(D.calibration_status || 'unknown') + '</span></div>';
-    if (D.calibration_strategy || D.calibration_method) h += '<div class="kv-row"><span class="kv-key">Strategy</span><span class="kv-val">' + esc(D.calibration_strategy || D.calibration_method) + '</span></div>';
-    if (D.calibration_claim_status) h += '<div class="kv-row"><span class="kv-key">Claim status</span><span class="kv-val">' + esc(D.calibration_claim_status) + '</span></div>';
-    if (D.calibration_final_authority) h += '<div class="kv-row"><span class="kv-key">Final authority</span><span class="kv-val">' + esc(D.calibration_final_authority) + '</span></div>';
+    h += '<div class="kv-row"><span class="kv-key">Status</span><span class="kv-val">' + esc(humanize(D.calibration_status || 'unknown')) + '</span></div>';
+    if (D.calibration_strategy || D.calibration_method) h += '<div class="kv-row"><span class="kv-key">Strategy</span><span class="kv-val">' + esc(humanize(D.calibration_strategy || D.calibration_method)) + '</span></div>';
+    if (D.calibration_claim_status) h += '<div class="kv-row"><span class="kv-key">Claim status</span><span class="kv-val">' + esc(humanize(D.calibration_claim_status)) + '</span></div>';
+    if (D.calibration_final_authority) h += '<div class="kv-row"><span class="kv-key">Final authority</span><span class="kv-val artifact-name">' + esc(artifactName(D.calibration_final_authority)) + '</span></div>';
     if (D.calibration_progress) {
       const prog = D.calibration_progress;
       const done = prog.completed_evaluations != null ? prog.completed_evaluations : '';
       const budget = prog.total_budget != null ? prog.total_budget : '';
       h += '<div class="kv-row"><span class="kv-key">Calibration progress</span><span class="kv-val">' + esc((prog.status || 'unknown') + (prog.phase ? ' / ' + prog.phase : '') + (budget !== '' ? ' / ' + done + ' of ' + budget + ' evaluations' : '')) + '</span></div>';
       if (prog.updated_at_utc) h += '<div class="kv-row"><span class="kv-key">Progress updated</span><span class="kv-val">' + esc(prog.updated_at_utc) + '</span></div>';
-      if (D.calibration_progress_path) h += '<div class="kv-row"><span class="kv-key">Progress JSON</span><span class="kv-val">' + esc(D.calibration_progress_path) + '</span></div>';
+      if (D.calibration_progress_path) h += '<div class="kv-row"><span class="kv-key">Progress artifact</span><span class="kv-val artifact-name">' + esc(artifactName(D.calibration_progress_path)) + '</span></div>';
     }
     if (D.temporary_candidate_metrics_allowed_as_final === false) h += '<div class="notice" style="margin-top:12px;margin-bottom:12px;">Candidate/window metrics are provisional. Final claims require locked verification.</div>';
     if (window) {
@@ -1127,17 +1483,17 @@ def _javascript() -> str:
     if (bench.nse != null || verify.nse != null) h += '<div class="kv-row"><span class="kv-key">NSE benchmark → verified</span><span class="kv-val">' + fmtNum(bench.nse) + ' → ' + fmtNum(verify.nse) + ' (' + fmtNum(delta.nse) + ')</span></div>';
     if (bench.kge != null || verify.kge != null) h += '<div class="kv-row"><span class="kv-key">KGE benchmark → verified</span><span class="kv-val">' + fmtNum(bench.kge) + ' → ' + fmtNum(verify.kge) + ' (' + fmtNum(delta.kge) + ')</span></div>';
     if (bench.pbias != null || verify.pbias != null) h += '<div class="kv-row"><span class="kv-key">PBIAS benchmark → verified</span><span class="kv-val">' + fmtNum(bench.pbias, 1) + '% → ' + fmtNum(verify.pbias, 1) + '%</span></div>';
-    if (D.best_solution && D.best_solution.selection_policy) h += '<div class="kv-row"><span class="kv-key">Selection policy</span><span class="kv-val">' + esc(D.best_solution.selection_policy) + '</span></div>';
-    if (D.calibration_history_csv) h += '<div class="kv-row"><span class="kv-key">History CSV</span><span class="kv-val">' + esc(D.calibration_history_csv) + '</span></div>';
-    if (D.best_solution_path) h += '<div class="kv-row"><span class="kv-key">Best solution</span><span class="kv-val">' + esc(D.best_solution_path) + '</span></div>';
+    if (D.best_solution && D.best_solution.selection_policy) h += '<div class="kv-row"><span class="kv-key">Selection policy</span><span class="kv-val">' + esc(humanize(D.best_solution.selection_policy)) + '</span></div>';
+    if (D.calibration_history_csv) h += '<div class="kv-row"><span class="kv-key">History artifact</span><span class="kv-val artifact-name">' + esc(artifactName(D.calibration_history_csv)) + '</span></div>';
+    if (D.best_solution_path) h += '<div class="kv-row"><span class="kv-key">Best-solution artifact</span><span class="kv-val artifact-name">' + esc(artifactName(D.best_solution_path)) + '</span></div>';
     const protocol = D.calibration_protocol || (D.best_solution && D.best_solution.calibration_protocol) || [];
     if (protocol && protocol.length > 0) {
       h += '<div style="margin-top:14px;font-size:.8rem;color:var(--text-muted);font-weight:700;">Phases</div>';
-      h += '<table class="data-table"><tbody>';
+      h += '<div class="table-wrap"><table class="data-table"><tbody>';
       for (const row of protocol) {
-        h += '<tr><td>' + esc(row.phase || '') + '</td><td>' + esc((row.parameters || []).join(', ')) + '</td><td>' + esc(row.objective || '') + '</td></tr>';
+        h += '<tr><td>' + esc(humanize(row.phase || '')) + '</td><td>' + esc((row.parameters || []).join(', ')) + '</td><td>' + esc(humanize(row.objective || '')) + '</td></tr>';
       }
-      h += '</tbody></table>';
+      h += '</tbody></table></div>';
     }
     return h;
   }
@@ -1193,7 +1549,7 @@ def _javascript() -> str:
   function _renderRunDetails(D) {
     let h = '';
     const details = [
-      ['Run Directory', D.run_dir],
+      ['Run', artifactName(D.run_dir)],
       ['Generated At', D.generated_at],
       ['Execution Status', D.execution_status || 'unknown'],
       ['Scientific Status', D.governance_evaluated ? D.status : 'NOT EVALUATED'],
@@ -1205,8 +1561,12 @@ def _javascript() -> str:
       details.push(['NSE', fmtNum(D.metrics.nse)]);
       details.push(['KGE', fmtNum(D.metrics.kge)]);
       details.push(['PBIAS', fmtNum(D.metrics.pbias, 1) + '%']);
-      if (D.metrics.bfi_sim != null) details.push(['BFI (sim)', fmtNum(D.metrics.bfi_sim)]);
-      if (D.metrics.bfi_obs != null) details.push(['BFI (obs)', fmtNum(D.metrics.bfi_obs)]);
+      if (D.metrics.bfi_sim != null) details.push(['Benchmark BFI (sim)', fmtNum(D.metrics.bfi_sim)]);
+      if (D.metrics.bfi_obs != null) details.push(['Benchmark BFI (obs)', fmtNum(D.metrics.bfi_obs)]);
+    }
+    if (D.calibrated_bfi) {
+      if (D.calibrated_bfi.sim != null) details.push(['Verified BFI (sim)', fmtNum(D.calibrated_bfi.sim)]);
+      if (D.calibrated_bfi.obs != null) details.push(['Verified BFI (obs)', fmtNum(D.calibrated_bfi.obs)]);
     }
     if (D.calibration) {
       details.push(['Calibration Status', D.calibration_status]);
@@ -1216,7 +1576,13 @@ def _javascript() -> str:
       details.push(['Delineated Area', fmtNum(D.delineation.delineated_area_km2, 2) + ' km\u00B2']);
     }
     if (D.water_balance) {
-      details.push(['Source File', D.water_balance.source_file || '']);
+      details.push(['Benchmark water-balance artifact', artifactName(D.water_balance.source_file || '')]);
+    }
+    if (D.metadata) {
+      details.push(['Builder Git SHA', D.metadata.builder_git_sha || '']);
+      details.push(['SWAT+ engine', artifactName(D.metadata.engine_version || '')]);
+      details.push(['Weather source', D.metadata.weather_source || '']);
+      details.push(['Selected outlet GIS ID', D.metadata.selected_outlet_gis_id]);
     }
     details.push(['Dashboard generated', D.generated_at]);
     for (const [k, v] of details) {
@@ -1252,6 +1618,122 @@ def _coerce_metrics(metrics: dict) -> dict[str, Any]:
         except (TypeError, ValueError):
             out[k] = v
     return out
+
+
+def _water_balance_payload(
+    values: dict[str, Any],
+    *,
+    source_file: str,
+) -> dict[str, Any]:
+    """Return the compact water-balance fields used by the dashboard."""
+    payload = {
+        key: _optional_number(values.get(key))
+        for key in ("precip", "et", "surq_gen", "latq", "perc", "wateryld")
+    }
+    precip = payload.get("precip")
+    et = payload.get("et") or 0.0
+    wateryld = payload.get("wateryld") or 0.0
+    payload["residual"] = precip - et - wateryld if precip is not None else None
+    payload["source_file"] = source_file
+    return payload
+
+
+def _parameter_details(
+    parameters: dict[str, Any],
+    *,
+    activity_classes: Any = None,
+    bound_hits: Any = None,
+) -> list[dict[str, Any]]:
+    """Enrich calibrated values with package-owned bounds and meaning."""
+    from ..params import get_parameter
+
+    activities = activity_classes if isinstance(activity_classes, dict) else {}
+    hits = bound_hits if isinstance(bound_hits, dict) else {}
+    rows: list[dict[str, Any]] = []
+    for name, raw_value in sorted(parameters.items()):
+        value = _optional_number(raw_value)
+        if value is None:
+            continue
+        try:
+            spec = get_parameter(name)
+            low, high = (float(spec.range[0]), float(spec.range[1]))
+            normalized = (value - low) / (high - low) if high > low else 0.5
+            rows.append(
+                {
+                    "name": name,
+                    "value": value,
+                    "default": float(spec.default),
+                    "minimum": low,
+                    "maximum": high,
+                    "normalized": max(0.0, min(1.0, normalized)),
+                    "units": spec.units,
+                    "scope": spec.scope.value,
+                    "description": spec.description,
+                    "activity": activities.get(name, "not reported"),
+                    "boundary": (
+                        hits.get(name, {}).get("boundary")
+                        if isinstance(hits.get(name), dict)
+                        else None
+                    ),
+                }
+            )
+        except KeyError:
+            rows.append(
+                {
+                    "name": name,
+                    "value": value,
+                    "normalized": None,
+                    "activity": activities.get(name, "not reported"),
+                }
+            )
+    return rows
+
+
+def _flow_regime_summary(alignment: dict[str, Any]) -> dict[str, float] | None:
+    """Summarize volume, high flow, low flow, and peak response."""
+    obs = [_optional_number(value) for value in alignment.get("obs", [])]
+    sim = [_optional_number(value) for value in alignment.get("sim", [])]
+    pairs = [
+        (float(observed), float(simulated))
+        for observed, simulated in zip(obs, sim, strict=False)
+        if observed is not None and simulated is not None
+    ]
+    if not pairs:
+        return None
+    observed = [pair[0] for pair in pairs]
+    simulated = [pair[1] for pair in pairs]
+    obs_sum = sum(observed)
+    obs_q90 = _percentile(observed, 0.90)
+    obs_q10 = _percentile(observed, 0.10)
+    obs_peak = max(observed)
+    return {
+        "n_days": float(len(pairs)),
+        "volume_ratio": sum(simulated) / obs_sum if obs_sum else float("nan"),
+        "high_flow_ratio_q90": _percentile(simulated, 0.90) / obs_q90 if obs_q90 else float("nan"),
+        "low_flow_ratio_q10": _percentile(simulated, 0.10) / obs_q10 if obs_q10 else float("nan"),
+        "peak_ratio": max(simulated) / obs_peak if obs_peak else float("nan"),
+    }
+
+
+def _percentile(values: list[float], probability: float) -> float:
+    ordered = sorted(values)
+    if not ordered:
+        return float("nan")
+    position = max(0.0, min(1.0, probability)) * (len(ordered) - 1)
+    lower = int(position)
+    upper = min(lower + 1, len(ordered) - 1)
+    fraction = position - lower
+    return ordered[lower] * (1.0 - fraction) + ordered[upper] * fraction
+
+
+def _optional_number(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    import math
+
+    return number if math.isfinite(number) else None
 
 
 def _read_alignment(path: Path):

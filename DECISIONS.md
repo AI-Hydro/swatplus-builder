@@ -1086,3 +1086,32 @@ Consequences:
   traces fail context matching and are recomputed rather than silently reused.
 - The measured gain is modest on wall time but substantial for temporary disk
   pressure and stale-output isolation.
+
+## 2026-07-12 — Separate Dashboard Views By Evidence Authority
+
+Decision:
+
+- Present benchmark, locked calibration verification, and withheld validation
+  as distinct evidence authorities in the generated modeller dashboard.
+- Default long-record hydrographs to a 30-day mean, with explicit controls for
+  daily data, logarithmic scale, and shorter time windows.
+- Derive land-use composition only from quantitative pixel/area evidence; a
+  class-presence list must never be rendered as equal fractional composition.
+
+Why:
+
+- Mixing result authorities makes a polished dashboard scientifically
+  ambiguous even when each source artifact is individually correct.
+- Ten years of daily lines obscure timing and seasonal response at first view;
+  smoothing is a display choice, not a replacement of the retained daily data.
+- Equal shares inferred from class presence are numerically false and can
+  mislead a modeller about dominant watershed land cover.
+
+Consequences:
+
+- Dashboard tabs expose concise modeller-facing summaries while Evidence keeps
+  the exact claim IDs, artifact bases, and refusal reasons available for audit.
+- The responsive layout and external chart controls preserve usable plot width
+  on mobile, and Leaflet reapplies retained basin bounds whenever its tab opens.
+- Missing quantitative composition evidence produces no composition claim
+  instead of a fabricated distribution.
