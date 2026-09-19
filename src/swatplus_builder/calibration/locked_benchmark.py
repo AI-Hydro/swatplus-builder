@@ -1228,6 +1228,8 @@ def screen_parameters_against_lock(
     warnings: list[str] = []
 
     progress_path = screen_dir / "sensitivity_screen_progress.json"
+    completed_bounds = 0
+    total_bounds = 0
 
     def _write_progress(*, status: str, current_parameter: str | None = None) -> None:
         progress = {
@@ -1238,6 +1240,8 @@ def screen_parameters_against_lock(
             "current_parameter": current_parameter,
             "completed_parameters": len(rows),
             "total_parameters": len(parameters),
+            "completed_bounds": completed_bounds,
+            "total_bounds": total_bounds,
             "baseline_parameters": baseline_parameters,
             "baseline_metrics": baseline_metrics,
             "parameters": rows,
@@ -1273,13 +1277,18 @@ def screen_parameters_against_lock(
         for name in parameters
         for bound, value in parameter_bounds[name]
     ]
+    total_bounds = len(tasks)
     if workers == 1 or len(tasks) <= 1:
         for name, bound, value in tasks:
+            _write_progress(status="running", current_parameter=f"{name}:{bound}")
             try:
                 _name, _bound, _value, metrics = _evaluate_bound(name, bound, value)
                 bound_results_by_parameter[_name].append((_bound, _value, metrics))
             except Exception as exc:  # noqa: BLE001
                 bound_errors[name] = str(exc)
+            finally:
+                completed_bounds += 1
+                _write_progress(status="running", current_parameter=f"{name}:{bound}")
     else:
         with ThreadPoolExecutor(max_workers=min(workers, len(tasks))) as executor:
             futures = {
@@ -1288,11 +1297,15 @@ def screen_parameters_against_lock(
             }
             for future in as_completed(futures):
                 name, _bound, _value = futures[future]
+                _write_progress(status="running", current_parameter=f"{name}:{_bound}")
                 try:
                     result_name, bound, value, metrics = future.result()
                     bound_results_by_parameter[result_name].append((bound, value, metrics))
                 except Exception as exc:  # noqa: BLE001
                     bound_errors[name] = str(exc)
+                finally:
+                    completed_bounds += 1
+                    _write_progress(status="running", current_parameter=f"{name}:{_bound}")
 
     baseline_score = _score_candidate(
         baseline_metrics,
@@ -2497,43 +2510,10 @@ def _sha256_file(path: Path) -> str | None:
     return digest.hexdigest()
 
 
-_DYNAMIC_OUTPUT_PREFIXES = (
-    "basin_",
-    "channel_",
-    "chandeg_",
-    "hru_",
-    "hyd_",
-    "lsunit_",
-    "mgt_",
-    "ru_",
-    "soil_nut_",
-    "aqu_",
-    "outflow_",
-    "flow_duration",
-)
-
-
 def _input_configuration_fingerprint(txtinout_dir: Path | str) -> tuple[str, int]:
-    """Hash static TxtInOut configuration while excluding engine output tables."""
+    from ..evidence.integrity import input_configuration_fingerprint
 
-    txt = Path(txtinout_dir).expanduser().resolve()
-    digest = hashlib.sha256()
-    files: list[Path] = []
-    for path in txt.rglob("*"):
-        if not path.is_file():
-            continue
-        name = path.name.lower()
-        if name.startswith(_DYNAMIC_OUTPUT_PREFIXES) and name.endswith((".txt", ".csv")):
-            continue
-        files.append(path)
-    for path in sorted(files, key=lambda item: item.relative_to(txt).as_posix()):
-        digest.update(path.relative_to(txt).as_posix().encode("utf-8"))
-        digest.update(b"\0")
-        with path.open("rb") as handle:
-            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-                digest.update(chunk)
-        digest.update(b"\0")
-    return digest.hexdigest(), len(files)
+    return input_configuration_fingerprint(txtinout_dir)
 
 
 def _assert_benchmark_integrity(
@@ -2555,6 +2535,13 @@ def _assert_benchmark_integrity(
         return
 
     benchmark_dir = Path(lock.benchmark_dir).expanduser().resolve()
+    from ..evidence.integrity import verify_benchmark_artifacts
+
+    try:
+        verify_benchmark_artifacts(benchmark_dir / "benchmark_lock.json")
+    except (OSError, ValueError, TypeError) as exc:
+        raise SwatBuilderInputError("Benchmark lock integrity check failed; relock before calibration.",
+                                    reason=str(exc)) from exc
     expected = {
         "alignment.csv": lock.alignment_sha256,
         "metrics.json": lock.metrics_sha256,

@@ -12,7 +12,9 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
+import uuid
 from datetime import date
 from pathlib import Path
 from typing import Literal
@@ -313,9 +315,11 @@ def create_mcp_server() -> FastMCP:
         if req.out_dir is not None:
             out_dir = Path(req.out_dir).expanduser().resolve()
         else:
-            stamp = time.strftime("%Y%m%d_%H%M%S")
+            stamp = time.strftime("%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex
             out_dir = (Path.cwd() / "swatplus_runs" / "workflow" / f"usgs_{usgs_id}_{stamp}").resolve()
         out_dir.mkdir(parents=True, exist_ok=True)
+        if any(out_dir.iterdir()):
+            raise FileExistsError(f"Workflow requires a new empty output directory: {out_dir}")
 
         argv = [
             sys.executable,
@@ -346,25 +350,46 @@ def create_mcp_server() -> FastMCP:
         ]
 
         log_path = out_dir / "workflow_mcp.log"
-        with log_path.open("wb") as log_file:
-            proc = subprocess.Popen(
-                argv,
-                stdout=log_file,
-                stderr=subprocess.STDOUT,
-                cwd=str(out_dir),
-                start_new_session=True,
-            )
-
+        launch_id = uuid.uuid4().hex
         launch_state = {
-            "pid": proc.pid,
-            "argv": argv,
+            "pid": None, "argv": argv, "launch_id": launch_id,
             "log_path": str(log_path),
             "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "usgs_id": usgs_id,
         }
-        (out_dir / _LAUNCH_STATE_FILENAME).write_text(
-            json.dumps(launch_state, indent=2) + "\n", encoding="utf-8"
-        )
+        state_path = out_dir / _LAUNCH_STATE_FILENAME
+        # Exclusive creation is the run ownership lock. Never truncate a prior
+        # run's logs or permit a second writer, even after that run completes.
+        with state_path.open("x", encoding="utf-8") as state_file:
+            json.dump(launch_state, state_file)
+        try:
+            with log_path.open("xb") as log_file:
+                proc = subprocess.Popen(
+                    [sys.executable, "-m", "swatplus_builder.mcp.worker", str(out_dir)],
+                    stdout=log_file, stderr=subprocess.STDOUT,
+                    stdin=subprocess.DEVNULL, cwd=str(out_dir), start_new_session=True,
+                )
+            launch_state["pid"] = proc.pid
+            temporary = out_dir / ".workflow_launch.tmp"
+            temporary.write_text(json.dumps(launch_state) + "\n", encoding="utf-8")
+            temporary.replace(state_path)
+        except Exception as exc:
+            from .worker import write_result
+
+            write_result(out_dir, {"launch_id": launch_id, "returncode": -1, "error": str(exc)})
+            raise
+
+        def reap() -> None:
+            # The supervisor persists the CLI result even if the MCP server
+            # exits; this thread reaps the supervisor while we remain alive.
+            rc = proc.wait()
+            if not (out_dir / "workflow_result.json").exists():
+                from .worker import write_result
+
+                write_result(out_dir, {"launch_id": launch_id, "returncode": rc,
+                                       "error": "Supervisor exited without a workflow result"})
+
+        threading.Thread(target=reap, daemon=True).start()
 
         equivalent_cli = "swat workflow run " + " ".join(argv[4:])
         return RunWorkflowResponse(
@@ -405,32 +430,35 @@ def create_mcp_server() -> FastMCP:
             )
 
         launch = json.loads(state_path.read_text(encoding="utf-8"))
-        pid = int(launch.get("pid", -1))
+        pid = int(launch.get("pid") or -1)
         log_path = Path(launch.get("log_path", out_dir / "workflow_mcp.log"))
+        result_path = out_dir / "workflow_result.json"
+        result = json.loads(result_path.read_text(encoding="utf-8")) if result_path.exists() else None
         log_text = log_path.read_text(encoding="utf-8", errors="replace") if log_path.exists() else ""
         tail_lines = log_text.splitlines()[-max(1, req.log_tail_lines):]
         log_tail = "\n".join(tail_lines) if tail_lines else None
 
-        if pid > 0 and _pid_alive(pid):
+        if result is not None and result.get("launch_id") != launch.get("launch_id"):
+            return WorkflowStatusResponse(status="failed", detail="Workflow result identity mismatch.")
+        payload = _parse_final_json(log_text)
+        # Durable supervisor result is authoritative, including after restart.
+        # Legacy launches can finish from their final payload despite zombie PIDs.
+        if result is not None or (not launch.get("launch_id") and payload is not None):
+            success = bool(payload and payload.get("success") is True)
+            success = success and (result is None or (result.get("returncode") == 0 and not result.get("error")))
             return WorkflowStatusResponse(
-                status="running",
-                detail=f"Workflow (pid {pid}) is still running. Poll again in ~60s.",
+                status="completed" if success else "failed",
+                detail="Workflow finished. Read the evidence bundle before reporting claims.",
+                success=success,
+                run_id=(payload or {}).get("run_id"),
+                evidence_summary_path=(payload or {}).get("evidence_summary_path"),
+                artifact_dir=(payload or {}).get("artifact_dir"),
+                blocker_class=(payload or {}).get("blocker_class"),
                 log_tail=log_tail,
             )
-
-        payload = _parse_final_json(log_text)
-        if payload is not None:
+        if pid > 0 and _pid_alive(pid):
             return WorkflowStatusResponse(
-                status="completed",
-                detail=(
-                    "Workflow finished. Summarize only from the evidence bundle at "
-                    "evidence_summary_path — never from log text."
-                ),
-                success=bool(payload.get("success")),
-                run_id=payload.get("run_id"),
-                evidence_summary_path=payload.get("evidence_summary_path"),
-                artifact_dir=payload.get("artifact_dir"),
-                blocker_class=payload.get("blocker_class"),
+                status="running", detail=f"Workflow (pid {pid}) is running; poll again in ~60s.",
                 log_tail=log_tail,
             )
 

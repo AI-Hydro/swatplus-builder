@@ -1,0 +1,16 @@
+{
+  "recorded_on": "2026-09-16",
+  "provenance": "SHA-256 of bytes fetched from official upstream HTTPS URLs; these are repository review pins, not upstream signatures.",
+  "swatplus": {
+    "url": "https://github.com/swat-model/swatplus/releases/download/61.0.2/swatplus-61.0.2-ifx-lin_x86_64-Rel.zip",
+    "archive_sha256": "7a826e965f5b49d36de34b773b0393f9125835c114087292d9909af069c2f053",
+    "member": "swatplus-61.0.2-ifx-lin_x86_64-Rel",
+    "binary_sha256": "b2308ce78294e7af90960d392535b0f9d6c43e14deefce82252a55c79a9e63f9"
+  },
+  "whitebox": {
+    "url": "https://www.whiteboxgeo.com/WBT_Linux/WhiteboxTools_linux_amd64.zip",
+    "archive_sha256": "370493b569aaf84977fde95921f96d4a39c1820a2d36d907da9d53772295f440",
+    "member": "WhiteboxTools_linux_amd64/WBT/whitebox_tools",
+    "binary_sha256": "96bb47a9d1f0fe8a3cb46df524242c990eab9bc2ae1930e540e09328331172e4"
+  }
+}

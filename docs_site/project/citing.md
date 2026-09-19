@@ -2,8 +2,6 @@
 
 ## How to cite swatplus-builder
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20650908.svg)](https://doi.org/10.5281/zenodo.20650908)
-
 When you report a result produced with swatplus-builder, cite the software
 **and** the run's provenance hash, so the claim is traceable to the exact run.
 
@@ -15,18 +13,21 @@ When you report a result produced with swatplus-builder, cite the software
   title        = {{swatplus-builder: Claim-governed SWAT+ hydrologic
                    modeling from a USGS gauge ID}},
   year         = {2026},
-  publisher    = {Zenodo},
-  version      = {0.7.13},
-  doi          = {10.5281/zenodo.20650908},
-  url          = {https://doi.org/10.5281/zenodo.20650908}
+  publisher    = {GitHub},
+  version      = {0.7.14},
+  url          = {https://github.com/AI-Hydro/swatplus-builder}
 }
 ```
 
 ### Plain text
 
 > Galib, M. & Merwade, V. (2026). *swatplus-builder: Claim-governed SWAT+
-> hydrologic modeling from a USGS gauge ID* (v0.7.13). Zenodo.
-> https://doi.org/10.5281/zenodo.20650908
+> hydrologic modeling from a USGS gauge ID* (v0.7.14). GitHub.
+> https://github.com/AI-Hydro/swatplus-builder
+
+!!! warning "Archival identifier pending"
+    The older Zenodo record does not identify version 0.7.14. Add the new
+    code-and-evidence DOI here only after the archive is deposited and verified.
 
 !!! tip "Report the gate context, not just the number"
     Following the project's own discipline: when you cite a metric, also cite

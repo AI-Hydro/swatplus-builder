@@ -3,7 +3,6 @@
 [![PyPI](https://img.shields.io/pypi/v/swatplus-builder)](https://pypi.org/project/swatplus-builder/)
 [![Python](https://img.shields.io/pypi/pyversions/swatplus-builder)](https://pypi.org/project/swatplus-builder/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/AI-Hydro/swatplus-builder/blob/main/LICENSE)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20650908.svg)](https://doi.org/10.5281/zenodo.20650908)
 
 <p align="center">
   <img src="assets/images/swatplus-builder-readme-thumbnail.png" alt="swatplus-builder: Claim-governed SWAT+ workflows with auditable evidence" width="100%">
@@ -74,9 +73,9 @@ clean rerun, and writes the evidence bundle. Start with the
 | Know what the system claims today | [Project status](project/status.md) |
 
 !!! warning "This is research software — read the status page"
-    Under its current strict gates, swatplus-builder grants **no basin a
-    research-grade claim** across the 11-basin test suite, and it does not relax
-    those gates to manufacture passes. That is the system working as intended:
-    its value is an *auditable* workflow that makes both successes and
+    The dated 2026-07-02 objective-suite snapshot promoted **0 of 11 complete
+    workflows** to the package-defined `research_grade` tier; a later focused
+    positive case is reported separately and does not revise that snapshot.
+    The value is an *auditable* workflow that makes both successes and
     limitations inspectable — not a claim that automated SWAT+ calibration is a
     solved problem. See [Project status](project/status.md).

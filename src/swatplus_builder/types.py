@@ -429,6 +429,7 @@ class WeatherBundle(BaseModel):
     stations: list[StationSeries] = Field(..., min_length=1)
     start: str
     n_days: int = Field(..., ge=1)
+    provenance: dict[str, Any] = Field(default_factory=dict)
 
 
 HydGroup = Literal["A", "B", "C", "D"]

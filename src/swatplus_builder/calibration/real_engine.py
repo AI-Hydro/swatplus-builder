@@ -236,6 +236,7 @@ def make_real_objective(
 
 _TIMED_OUTPUT_RE = re.compile(r"_(?:day|mon|yr|aa)\.(?:txt|csv)$", re.IGNORECASE)
 _EXACT_DYNAMIC_OUTPUTS = {
+    "engine_run_receipt.json",
     "basin_carbon_all.txt",
     "basin_totc.txt",
     "diagnostics.out",

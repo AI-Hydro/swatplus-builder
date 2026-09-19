@@ -43,6 +43,7 @@ def apply_subsurface_prior_correction(
     txtinout_dir: Path | str,
     *,
     obs_series: pd.Series | None,
+    conditioning_period: tuple[str, str] | None = None,
 ) -> dict[str, Any]:
     """Apply a conservative runoff-deficit prior correction if evidence requires it.
 
@@ -56,7 +57,7 @@ def apply_subsurface_prior_correction(
     report_path = run / "reports" / "subsurface_prior_correction.json"
     report_path.parent.mkdir(parents=True, exist_ok=True)
 
-    wb = _parse_basin_wb_aa(txt)
+    wb = _parse_conditioning_water_balance(txt, conditioning_period)
     payload: dict[str, Any] = {
         "status": "not_applied",
         "profile": PROFILE_NAME,
@@ -71,6 +72,7 @@ def apply_subsurface_prior_correction(
             "max_et_to_precip_for_prior": MAX_ET_TO_PRECIP_FOR_PRIOR,
             "min_perc_to_precip_for_prior": MIN_PERC_TO_PRECIP_FOR_PRIOR,
         },
+        "conditioning_period": list(conditioning_period) if conditioning_period else None,
         "guardrails": [
             "no_gate_weakening",
             "editor_defaults_retained_as_prior",
@@ -85,7 +87,12 @@ def apply_subsurface_prior_correction(
         payload["reason"] = "basin_wb_aa_missing_precip_or_wateryld"
         return _write_report(report_path, payload)
 
-    observed = _observed_runoff_context(run, obs_series, precip)
+    observed = _observed_runoff_context(
+        run,
+        obs_series,
+        precip,
+        conditioning_period=conditioning_period,
+    )
     payload["observed_runoff"] = observed
     observed_qp = _as_float(observed.get("observed_runoff_to_precip"))
     modeled_qp = wateryld / precip
@@ -157,7 +164,13 @@ def finalize_subsurface_prior_correction(
     run = Path(run_dir)
     txt = Path(txtinout_dir)
     report_path = Path(str(payload.get("report_path") or run / "reports" / "subsurface_prior_correction.json"))
-    wb_after = _parse_basin_wb_aa(txt)
+    raw_period = payload.get("conditioning_period")
+    conditioning_period = (
+        (str(raw_period[0]), str(raw_period[1]))
+        if isinstance(raw_period, list) and len(raw_period) == 2
+        else None
+    )
+    wb_after = _parse_conditioning_water_balance(txt, conditioning_period)
     payload = dict(payload)
     payload["water_balance_after"] = _water_balance_summary(wb_after)
     before = _as_float(payload.get("modeled_wateryld_to_precip_before"))
@@ -182,13 +195,28 @@ def _observed_runoff_context(
     run_dir: Path,
     obs_series: pd.Series | None,
     precip_mm: float,
+    *,
+    conditioning_period: tuple[str, str] | None = None,
 ) -> dict[str, Any]:
     area = _delineated_area_km2(run_dir)
     if area is None:
         return {"available": False, "reason": "delineated_area_km2_missing"}
     if obs_series is None or obs_series.empty:
         return {"available": False, "reason": "observed_series_missing", "area_km2": area}
-    obs = pd.to_numeric(obs_series, errors="coerce").dropna()
+    obs = obs_series
+    if conditioning_period is not None:
+        if not isinstance(obs.index, pd.DatetimeIndex):
+            return {
+                "available": False,
+                "reason": "observed_series_requires_datetime_index_for_conditioning_period",
+                "area_km2": area,
+            }
+        start = pd.Timestamp(conditioning_period[0]).normalize()
+        end = pd.Timestamp(conditioning_period[1]).normalize()
+        if start > end:
+            return {"available": False, "reason": "invalid_conditioning_period", "area_km2": area}
+        obs = obs.loc[(obs.index.normalize() >= start) & (obs.index.normalize() <= end)]
+    obs = pd.to_numeric(obs, errors="coerce").dropna()
     if obs.empty:
         return {"available": False, "reason": "observed_series_empty", "area_km2": area}
     total_m3 = float(obs.sum()) * SECONDS_PER_DAY
@@ -199,9 +227,66 @@ def _observed_runoff_context(
         "available": True,
         "area_km2": area,
         "n_days": int(len(obs)),
+        "period_start": (
+            str(pd.Timestamp(obs.index.min()).date())
+            if isinstance(obs.index, pd.DatetimeIndex)
+            else None
+        ),
+        "period_end": (
+            str(pd.Timestamp(obs.index.max()).date())
+            if isinstance(obs.index, pd.DatetimeIndex)
+            else None
+        ),
         "observed_runoff_depth_mm": annual_depth,
         "observed_runoff_to_precip": annual_depth / precip_mm if precip_mm > 0 else None,
     }
+
+
+def _parse_conditioning_water_balance(
+    txtinout_dir: Path,
+    conditioning_period: tuple[str, str] | None,
+) -> dict[str, float]:
+    """Return water-balance means from only the observation-conditioning years."""
+
+    if conditioning_period is None:
+        return _parse_basin_wb_aa(txtinout_dir)
+    path = txtinout_dir / "basin_wb_yr.txt"
+    if not path.is_file():
+        return {}
+    lines = [line for line in path.read_text(encoding="utf-8", errors="replace").splitlines() if line.strip()]
+    if len(lines) < 4:
+        return {}
+    header = lines[1].split()
+    try:
+        year_index = header.index("yr")
+    except ValueError:
+        return {}
+    start_year = pd.Timestamp(conditioning_period[0]).year
+    end_year = pd.Timestamp(conditioning_period[1]).year
+    rows: list[dict[str, float]] = []
+    for line in lines[3:]:
+        fields = line.split()
+        if year_index >= len(fields):
+            continue
+        try:
+            year = int(float(fields[year_index]))
+        except ValueError:
+            continue
+        if not (start_year <= year <= end_year):
+            continue
+        row: dict[str, float] = {}
+        for index, column in enumerate(header):
+            if index >= len(fields):
+                break
+            try:
+                row[column] = float(fields[index])
+            except ValueError:
+                continue
+        rows.append(row)
+    if not rows:
+        return {}
+    keys = set.intersection(*(set(row) for row in rows))
+    return {key: sum(row[key] for row in rows) / len(rows) for key in keys}
 
 
 def _delineated_area_km2(run_dir: Path) -> float | None:

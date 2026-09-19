@@ -48,6 +48,7 @@ class OutletMetadata(BaseModel):
 class ArtifactMetadata(BaseModel):
     """Artifact `metadata.json` model (provenance, non-hash inputs)."""
 
+    execution_status: Literal["success", "failed"] | None = None
     run_id: str | None = Field(default=None, description="Content hash / run identifier.")
     timestamp_utc: str = Field(..., description="UTC ISO-8601 timestamp.")
     engine_version: str | None = Field(default=None)
@@ -101,7 +102,7 @@ class ArtifactProvenance(BaseModel):
 class ArtifactRecord(BaseModel):
     """In-memory representation of one artifact record."""
 
-    content_hash: str = Field(..., min_length=8)
+    content_hash: str = Field(..., pattern=r"^[0-9a-f]{64}$")
     config: RunConfig
     metadata: ArtifactMetadata
     metrics: ArtifactMetrics | None = Field(default=None)
@@ -111,7 +112,7 @@ class ArtifactRecord(BaseModel):
 class ArtifactSummary(BaseModel):
     """Lightweight listing payload used by `ArtifactStore.query()`."""
 
-    content_hash: str = Field(..., min_length=8)
+    content_hash: str = Field(..., pattern=r"^[0-9a-f]{64}$")
     basin_id: str = Field(..., min_length=1)
     simulation_start: date = Field(...)
     simulation_end: date = Field(...)

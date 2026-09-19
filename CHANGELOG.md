@@ -2,9 +2,53 @@
 
 All notable changes to swatplus-builder are documented here.
 
-## [Unreleased]
+## [0.7.14] — 2026-09-19
+
+### Scientific validity and evidence integrity
+
+- Observation-conditioned subsurface preparation now uses only the declared
+  calibration interval, including year-matched model water-balance diagnostics;
+  nominal validation observations and validation-year diagnostics cannot alter
+  the prepared parameters.
+- GridMET forcing now requires the exact requested daily calendar, finite raw
+  values, physical ranges, valid minimum/maximum ordering, and a provider client
+  with bounded connection-timeout support. Permitted missing-day repairs are
+  serialized by station, cell, date, variable and method; imputed forcing blocks
+  the research-grade weather-fidelity claim.
+- Calibration improvement is recomputed from designated baseline and locked
+  verification metrics. Timing exceptions require a typed, checksummed
+  supporting diagnostic artifact.
+- Engine execution receipts bind output hashes to the exact input configuration,
+  executable digest, thread count and timeout policy. Post-run input mutation
+  invalidates freshness evidence.
+
+### Security and reliability
+- Claim gates reject NaN/infinity and verify benchmark hashes, model input
+  identity, outlet provenance, and fresh-output execution receipts. Both solver
+  entry points clear stale receipt-covered outputs; failed clean runs leave no
+  valid receipt.
+- MCP workflows use unique, exclusively owned empty directories and a detached
+  supervisor that persists exit status and reaps children. Reusing an output
+  directory now fails before logs can be truncated.
+- Artifact IDs must be lowercase SHA-256 digests. Records are staged, checksummed,
+  and published atomically; published IDs are immutable and cannot be overwritten.
+  Historical records without manifests are not reused by the store. Preserve
+  them as historical evidence and use a fresh artifact root for new work.
+- Validation caches only explicit successful executions under a new cache
+  namespace; failed executions are retried rather than counted as cached success.
+- Release uploads depend on the same offline installed-wheel contract tests used
+  by CI. Linux SWAT+/WhiteboxTools executables and binary caches are checked
+  against repository-pinned SHA-256 digests before execution.
+- The optional MCP dependency is constrained to `<2` because this package uses
+  the v1 FastMCP API.
 
 ### Improved
+- Emit per-station GridMET progress events through canonical workflow runs and
+  bound provider retry behavior with validated timeout/attempt settings.
+- Reuse GridMET forcing for stations that resolve to the same native provider
+  cell, reducing network/cache work while preserving SWAT+ station metadata.
+- Record weather station coordinates and provider-client versions in run
+  metadata, and expose bound-level calibration sensitivity progress.
 - Independent locked sensitivity-bound evaluations now run through a bounded
   worker pool (`--sensitivity-workers`, default `4`) while each SWAT+ worker
   remains single-threaded. Candidate search, locked verification, and withheld

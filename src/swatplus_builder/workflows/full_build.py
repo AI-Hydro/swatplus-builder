@@ -11,10 +11,12 @@ from __future__ import annotations
 import importlib.util
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -74,6 +76,7 @@ def build_full_model(
     hru_mode: str = "dominant_only",
     min_hru_fraction: float = 0.0,
     config: FullBuildConfig | None = None,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> FullModelBuildResult:
     """Build and initially execute a full SWAT+ model for one USGS basin.
 
@@ -120,6 +123,7 @@ def build_full_model(
             sim_end=cfg.end_date,
             warmup_years=cfg.warmup_years,
             build_config=cfg,
+            progress_callback=progress_callback,
         )
     except Exception as exc:
         blocker = _classify_build_error(exc)

@@ -13,9 +13,11 @@ from swatplus_builder.governance import (
     research_metric_gate,
     soil_fidelity_gate,
     tier_rank,
+    weather_fidelity_gate,
 )
 from swatplus_builder.governance.gates import sensitivity_gate
 from swatplus_builder.governance.tiers import higher_tier
+from tests.evidence_helpers import seal_benchmark, seal_engine, seal_outlet
 
 # ---------------------------------------------------------------------------
 # Tier hierarchy
@@ -75,17 +77,59 @@ def test_research_metric_gate_fails_high_pbias() -> None:
     assert "PBIAS" in result["reason"]
 
 
-def test_research_metric_gate_negative_nse_with_documented_timing_passes() -> None:
+def test_research_metric_gate_negative_nse_with_documented_timing_passes(tmp_path: Path) -> None:
+    evidence = tmp_path / "skill_diagnostics.json"
+    evidence.write_text('{"diagnostic_flags":[{"symptom":"peak timing lag"}]}')
+    import hashlib
+
     result = research_metric_gate({
         "metrics": {"kge": 0.50, "nse": -0.10, "pbias": 10.0},
-        "timing_limitation_documented": True,
+        "timing_limitation_exception": {
+            "authorized": True,
+            "scope": "negative_nse_with_kge",
+            "basis": "Peak timing lag is retained in skill diagnostics.",
+            "supporting_artifact": str(evidence),
+            "supporting_artifact_sha256": hashlib.sha256(evidence.read_bytes()).hexdigest(),
+        },
     })
     assert result["passed"] is True
+
+
+def test_research_metric_gate_rejects_truthy_string_timing_declaration() -> None:
+    result = research_metric_gate({
+        "metrics": {"kge": 0.50, "nse": -0.10, "pbias": 10.0},
+        "timing_limitation_documented": "false",
+        "timing_limitation_basis": "unsupported text",
+    })
+    assert result["passed"] is False
 
 
 def test_research_metric_gate_missing_metrics_fails() -> None:
     result = research_metric_gate({})
     assert result["passed"] is False
+
+
+def test_weather_fidelity_gate_requires_validated_unmodified_forcing() -> None:
+    assert weather_fidelity_gate(
+        {
+            "weather_coverage_flags": {
+                "calendar_validated": True,
+                "raw_values_validated": True,
+                "imputation_count": 0,
+            }
+        }
+    )["passed"]
+    result = weather_fidelity_gate(
+        {
+            "weather_coverage_flags": {
+                "calendar_validated": True,
+                "raw_values_validated": True,
+                "imputation_count": 2,
+            }
+        }
+    )
+    assert result["passed"] is False
+    assert "imputed" in result["reason"]
 
 
 # ---------------------------------------------------------------------------
@@ -193,6 +237,7 @@ def test_fresh_engine_gate_passes_with_artifact(tmp_path: Path) -> None:
     sim.write_text("data")
     result = fresh_engine_gate({
         "fresh_engine_run": True,
+        **seal_engine(tmp_path),
         "txtinout_dir": str(tmp_path),
     })
     assert result["passed"] is True
@@ -220,7 +265,7 @@ def test_fresh_engine_gate_fails_nonzero_returncode(tmp_path: Path) -> None:
 
 def test_benchmark_lock_gate_passes_with_file(tmp_path: Path) -> None:
     lock = tmp_path / "lock.json"
-    lock.write_text("{}")
+    seal_benchmark(lock)
     result = benchmark_lock_gate({"benchmark_lock_path": str(lock)})
     assert result["passed"] is True
 
@@ -241,8 +286,9 @@ def test_benchmark_lock_gate_fails_missing_file(tmp_path: Path) -> None:
 
 def test_outlet_provenance_gate_passes(tmp_path: Path) -> None:
     prov = tmp_path / "outlet_provenance.json"
-    prov.write_text("{}")
+    fields = seal_outlet(prov, 42)
     result = outlet_provenance_gate({
+        **fields,
         "outlet_provenance_path": str(prov),
         "selected_outlet_gis_id": 42,
     })
@@ -268,6 +314,9 @@ def test_outlet_provenance_gate_fails_no_gis_id(tmp_path: Path) -> None:
 def test_calibration_improvement_gate_passes_on_delta_kge() -> None:
     result = calibration_improvement_gate({
         "calibration_success": True,
+        "baseline_metrics": {"nse": 0.2, "kge": 0.3},
+        "calibrated_metrics": {"nse": 0.19, "kge": 0.35},
+        "calibration_provenance": {"verification_improvement_basis": "kge"},
         "calibration_delta_metrics": {"kge": 0.05, "nse": -0.01},
     })
     assert result["passed"] is True
@@ -276,9 +325,23 @@ def test_calibration_improvement_gate_passes_on_delta_kge() -> None:
 def test_calibration_improvement_gate_passes_on_basis() -> None:
     result = calibration_improvement_gate({
         "calibration_success": True,
-        "calibration_provenance": {"verification_improvement_basis": "kge_improved"},
+        "baseline_metrics": {"nse": 0.2, "kge": 0.3},
+        "calibrated_metrics": {"nse": 0.2, "kge": 0.35},
+        "calibration_provenance": {"verification_improvement_basis": "kge"},
     })
     assert result["passed"] is True
+
+
+def test_calibration_improvement_gate_rejects_unsupported_or_contradictory_basis() -> None:
+    result = calibration_improvement_gate({
+        "calibration_success": True,
+        "baseline_metrics": {"nse": 0.5, "kge": 0.6},
+        "calibrated_metrics": {"nse": 0.4, "kge": 0.5},
+        "calibration_provenance": {"verification_improvement_basis": "unsupported"},
+        "calibration_delta_metrics": {"nse": -0.1, "kge": -0.1},
+    })
+    assert result["passed"] is False
+    assert "recomputed basis" in result["reason"]
 
 
 def test_calibration_improvement_gate_fails_no_calibration() -> None:

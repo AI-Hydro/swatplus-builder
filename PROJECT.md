@@ -11,12 +11,14 @@ runtime gates, provenance, diagnostics, and machine-readable evidence.
 ## Status
 
 Active hardening toward research-grade production pipeline. Last updated:
-2026-07-12.
+2026-09-19.
 
 ## Where To Read Next
 
 - Continue work: `ROADMAP.md` and latest `PROGRESS.md` entry.
 - Understand current blockers: `docs/PIPELINE_RESEARCH_GRADE_AUDIT.md`.
+- Review security, reliability, and enhancement findings:
+  `docs/SECURITY_RELIABILITY_REVIEW_2026-09-16.md`.
 - Understand agent-governed principles:
   `docs/AGENT_GOVERNED_RESEARCH_SOFTWARE_GUIDE.md`.
 - Understand workflow contracts: `docs/SCIENTIFIC_AGENT_WORKFLOW_CONTRACT.md`.
@@ -26,8 +28,70 @@ Active hardening toward research-grade production pipeline. Last updated:
   `docs/CALIBRATION_PARAMETER_REGISTRY.md`.
 - Operate as an executor agent: `docs/AGENT_WORKFLOW.md`.
 - Track lessons that generalized across basins: `docs/PIPELINE_LEARNING_LOG.md`.
+- Manage local run storage: `docs/RUN_ARTIFACT_RETENTION.md`.
 
 ## Current State
+
+- **Preprint readiness, 2026-09-19:** do not release the manuscript unchanged.
+  `docs/PREPRINT_READINESS_REVIEW_2026-09-19.md` records a confirmed scientific
+  gap: full-period observed discharge influences pre-calibration subsurface
+  correction, including nominally withheld years. Both July cases consulted
+  those years; the positive case applied the correction. Existing scores remain
+  historical measurements, but strict independent-validation wording is not
+  supported. Additional isolated probes found weather date/NaN acceptance,
+  declaration-based gate acceptance, and incomplete execution/input binding.
+  The eight manuscript challenges still pass; 119 focused tests pass with one
+  live-weather skip. All 16 hash-bearing manifest entries still match locally.
+  Next: fix these boundaries and freeze/re-evaluate the focused pair, or narrow
+  the preprint to a disclosed retrospective software-mechanism demonstration.
+  The review sharpens contributions, adds SWATdoctR as missing close prior art,
+  and specifies the minimum release evidence. This assessment supersedes older
+  readiness implications below; no application code or retained runs changed.
+
+- The 2026-09-16 review at checkout `00592c4` identified nine security,
+  reliability, and evidence-validation findings, with isolated reproductions
+  for seven and 233 existing focused tests passing. The highest-priority gaps
+  are non-finite claim metrics, failed validation cache reuse, MCP child/run
+  lifecycle, and release regression coverage. Findings and enhancement scope
+  are in `docs/SECURITY_RELIABILITY_REVIEW_2026-09-16.md`. All nine now have
+  implementation changes and regression coverage in this working tree, including
+  immutable checksummed artifacts, supervised MCP jobs, shared evidence checks,
+  installed-wheel release gates, and pinned CI binaries. A clean install also
+  exposed MCP 2 incompatibility; the existing FastMCP API is now constrained to
+  MCP 1. The clean Python 3.13 installed-wheel suite passes 360 tests (two
+  vendored-fixture skips, one live-engine deselection); lint and diff checks pass.
+  Historical unsealed records remain preserved but are not automatically
+  trusted. Live scientific revalidation and release remain pending; the next
+  step is a fresh positive/negative basin validation before publication.
+
+- The thesis and Environmental Modelling & Software publication drafts now use
+  a frozen, machine-auditable evidence boundary under `Research_article/`.
+  The dated 2026-07-02 objective-suite snapshot, the 2026-07-10 USGS `01547700`
+  positive case, and the 2026-07-10 USGS `03349000` negative control remain
+  separate experiments. Five numbered manuscript figures, a separate graphical
+  abstract, and seven single-purpose thesis plots have passed 300-dpi raster
+  review. All are deterministic vectors; empirical figures are scripted from
+  retained artifacts. Chapter 7 keeps numerical summaries in native editable
+  LaTeX tables and the operator/package/claim mechanism in native TikZ.
+  `Research_article/reproducibility_manifest.json` records local evidence
+  checksums and the run-specific Builder commits while explicitly leaving the
+  historical engine checksum and public archival identifier unresolved. PyPI
+  serves version 0.7.13 and the public MCP tool page reports 13 tools; one
+  project-status page retains stale 11-tool language, while a checksummed
+  evidence archive remains the substantive submission blocker. An
+  independent final review passed after correcting the negative-control
+  verification status, widening the claim ledger to cover outlet and
+  claim-level suite counts, and bounding comparisons to the closest current
+  SWAT/SWAT+ workflow and calibration tools.
+
+- Local run retention was audited on 2026-07-13. Superseded ignored run trees
+  and earlier validation groups totaling 25.58 GiB were preserved as exact,
+  checksummed `tar.zst` archives under
+  `/Users/mgalib/swatplus_run_archives/20260713/`; the verified archives occupy
+  2.30 GiB. The current positive/negative validation pair, objective-report
+  source runs, hardening evidence, `01031500` recovery evidence, and modeller
+  dashboard remain extracted. The retention and restoration contract is
+  documented in `docs/RUN_ARTIFACT_RETENTION.md`.
 
 - The modeller dashboard has been redesigned around five authority-separated
   views: Overview, Hydrology, Calibration, Spatial, and Evidence. The retained

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import sys
 import types
 from pathlib import Path
@@ -201,11 +200,13 @@ def test_build_full_model_passes_config_via_build_config_argument(monkeypatch, t
     from swatplus_builder.workflows.full_build import FullBuildConfig
 
     seen_config: object = None
+    seen_callback: object = None
 
     def fake_load_builder():
         def main(outdir, **kwargs):
-            nonlocal seen_config
+            nonlocal seen_callback, seen_config
             seen_config = kwargs.get("build_config")
+            seen_callback = kwargs.get("progress_callback")
             txt = Path(outdir) / "project" / "Scenarios" / "Default" / "TxtInOut"
             txt.mkdir(parents=True)
             (txt / "file.cio").write_text("file.cio\n", encoding="utf-8")
@@ -214,17 +215,22 @@ def test_build_full_model_passes_config_via_build_config_argument(monkeypatch, t
 
     monkeypatch.setattr(full_build, "_load_example_builder", fake_load_builder)
 
+    def progress_callback(event):
+        pass
+
     result = full_build.build_full_model(
         usgs_id="01654000",
         outdir=tmp_path,
         start_date="2010-01-01",
         end_date="2010-01-10",
         warmup_years=3,
+        progress_callback=progress_callback,
     )
 
     assert result.success is True
     assert isinstance(seen_config, FullBuildConfig)
     assert seen_config.usgs_id == "01654000"
+    assert seen_callback is progress_callback
 
 
 def test_build_full_model_passes_diagnostic_fallbacks_in_config(monkeypatch, tmp_path: Path) -> None:

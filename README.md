@@ -4,7 +4,6 @@
 [![Python](https://img.shields.io/pypi/pyversions/swatplus-builder)](https://pypi.org/project/swatplus-builder/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-ai--hydro.github.io-blue)](https://ai-hydro.github.io/swatplus-builder/)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20650908.svg)](https://doi.org/10.5281/zenodo.20650908)
 
 <p align="center">
   <img src="assets/images/swatplus-builder-readme-thumbnail.png" alt="swatplus-builder: Claim-governed SWAT+ workflows with auditable evidence" width="100%">
@@ -66,7 +65,7 @@ agent — decides what may be claimed.
 
 ## Status
 
-**Alpha, v0.7.13** — sealed locked-benchmark calibration, withheld-period claim governance, calibrated dashboard evidence, and 13-tool agent (MCP) surface.
+**Alpha, v0.7.14** — validation-isolated preparation, input-bound execution receipts, fail-closed weather validation, calibrated dashboard evidence, and a 13-tool agent (MCP) surface.
 
 - [x] Pure-Python GIS (WhiteboxTools, rasterio, geopandas)
 - [x] Automated SWAT+ project generation
@@ -402,12 +401,14 @@ If you use swatplus-builder in your research, please cite:
   title        = {{swatplus-builder: Claim-governed SWAT+ hydrologic
                    modeling from a USGS gauge ID}},
   year         = {2026},
-  publisher    = {Zenodo},
-  version      = {0.7.13},
-  doi          = {10.5281/zenodo.20650908},
-  url          = {https://doi.org/10.5281/zenodo.20650908}
+  publisher    = {GitHub},
+  version      = {0.7.14},
+  url          = {https://github.com/AI-Hydro/swatplus-builder}
 }
 ```
+
+An archival DOI for the 0.7.14 code-and-evidence release is pending. Do not use
+the older version-specific Zenodo DOI to identify this release.
 
 When reporting a specific result, also cite the run's provenance hash from
 `evidence_summary.json` — a metric without its run provenance is not

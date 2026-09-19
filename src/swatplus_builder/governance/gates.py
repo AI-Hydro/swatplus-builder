@@ -7,70 +7,136 @@ remains domain-agnostic).
 """
 from __future__ import annotations
 
+import math
+import re
 from pathlib import Path
 from typing import Any
 
+from ..evidence.integrity import (
+    input_configuration_fingerprint,
+    read_object,
+    verify_benchmark_artifacts,
+    verify_digest,
+)
+
 
 def _as_float(value: Any) -> float | None:
-    if isinstance(value, (int, float)):
-        return float(value)
-    try:
-        if value is not None:
-            return float(value)
-    except Exception:
+    if value is None or isinstance(value, bool):
         return None
-    return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if math.isfinite(number) else None
 
 
 def fresh_engine_gate(values: dict[str, Any]) -> dict[str, Any]:
     if values.get("fresh_engine_run") is not True:
         return {"passed": False, "reason": "fresh_engine_run is not true"}
-    rc = values.get("engine_returncode")
-    if rc is not None:
-        try:
-            if int(rc) != 0:
-                return {"passed": False, "reason": f"engine_returncode={rc}"}
-        except Exception:
-            return {"passed": False, "reason": f"engine_returncode is not numeric: {rc}"}
-    txt = values.get("txtinout_dir")
-    if not txt or not Path(str(txt)).is_dir():
+    if type(values.get("engine_returncode")) is not int or values["engine_returncode"] != 0:
+        return {"passed": False, "reason": "successful engine_returncode missing"}
+    txt = values.get("fresh_txtinout_dir") or values.get("txtinout_dir")
+    if not txt:
         return {"passed": False, "reason": "txtinout_dir missing for fresh output verification"}
-    txt_path = Path(str(txt))
-    sim_source = values.get("sim_source_file")
-    candidates: list[Path]
-    if sim_source:
-        source_path = Path(str(sim_source))
-        candidates = [source_path if source_path.is_absolute() else txt_path / source_path]
-    else:
-        candidates = [
-            txt_path / "basin_sd_cha_day.txt",
-            txt_path / "channel_sd_day.txt",
-            txt_path / "channel_day.txt",
-        ]
-    for candidate in candidates:
-        if candidate.is_file() and candidate.stat().st_size > 0:
-            return {"passed": True, "reason": f"fresh simulation output artifact exists: {candidate}"}
-    return {"passed": False, "reason": "fresh simulation output artifact missing"}
+    try:
+        root = Path(str(txt)).resolve()
+        receipt = read_object(root / "engine_run_receipt.json")
+        if (not values.get("engine_run_id") or receipt.get("run_id") != values["engine_run_id"]
+                or type(receipt.get("returncode")) is not int or receipt["returncode"] != 0):
+            raise ValueError("Engine run identity or completion mismatch")
+        if receipt.get("schema_version") != "2.0":
+            raise ValueError("Unsupported or legacy engine execution receipt")
+        expected_input_sha = receipt.get("input_configuration_sha256")
+        expected_input_count = receipt.get("input_configuration_file_count")
+        actual_input_sha, actual_input_count = input_configuration_fingerprint(root)
+        if actual_input_sha != expected_input_sha or actual_input_count != expected_input_count:
+            raise ValueError("Engine inputs differ from the configuration sealed at execution")
+        engine = receipt.get("engine")
+        if not isinstance(engine, dict):
+            raise ValueError("Engine identity missing from execution receipt")
+        engine_path = engine.get("path")
+        if not isinstance(engine_path, str) or not Path(engine_path).is_absolute():
+            raise ValueError("Engine path missing from execution receipt")
+        engine_sha = engine.get("sha256")
+        if not isinstance(engine_sha, str) or not re.fullmatch(r"[0-9a-f]{64}", engine_sha):
+            raise ValueError("Engine digest missing from execution receipt")
+        executable = Path(engine_path)
+        if executable.is_file():
+            verify_digest(executable, engine_sha)
+        execution = receipt.get("execution")
+        if (
+            not isinstance(execution, dict)
+            or type(execution.get("threads")) is not int
+            or execution["threads"] < 1
+            or type(execution.get("timeout_enforced")) is not bool
+            or (
+                execution["timeout_enforced"]
+                and (
+                    not isinstance(execution.get("timeout_s"), (int, float))
+                    or isinstance(execution.get("timeout_s"), bool)
+                    or not math.isfinite(float(execution["timeout_s"]))
+                    or float(execution["timeout_s"]) <= 0
+                )
+            )
+            or (not execution["timeout_enforced"] and execution.get("timeout_s") is not None)
+        ):
+            raise ValueError("Execution settings missing from engine receipt")
+        files = receipt.get("files", {})
+        verify_digest(root / "simulation.out", files.get("simulation.out"))
+        if "Execution successfully completed" not in (root / "simulation.out").read_text():
+            raise ValueError("Engine completion marker missing")
+        source = values.get("sim_source_file")
+        names = [str(source)] if source else ["basin_sd_cha_day.txt", "channel_sd_day.txt", "channel_day.txt"]
+        for name in names:
+            path = root / name
+            if not path.resolve().is_relative_to(root):
+                raise ValueError("Simulation source escapes execution directory")
+            if name in files:
+                if not path.is_file():
+                    raise ValueError("fresh simulation output artifact missing")
+                verify_digest(path, files[name])
+                if path.stat().st_size > 0:
+                    return {"passed": True, "reason": "simulation output matches verified engine run"}
+        raise ValueError("Fresh simulation output artifact missing from execution receipt")
+    except (OSError, ValueError, TypeError, AttributeError) as exc:
+        return {"passed": False, "reason": str(exc)}
 
 
 def benchmark_lock_gate(values: dict[str, Any]) -> dict[str, Any]:
     path = values.get("benchmark_lock_path")
     if not path:
         return {"passed": False, "reason": "benchmark_lock_path missing"}
-    lock = Path(str(path))
-    if not lock.is_file():
-        return {"passed": False, "reason": f"benchmark lock artifact missing: {lock}"}
-    return {"passed": True, "reason": f"benchmark lock artifact exists: {lock}"}
+    if not Path(str(path)).is_file():
+        return {"passed": False, "reason": "benchmark lock artifact missing"}
+    try:
+        lock = verify_benchmark_artifacts(Path(str(path)))
+        if values.get("txtinout_dir"):
+            actual, _ = input_configuration_fingerprint(str(values["txtinout_dir"]))
+            if actual != lock["input_configuration_sha256"]:
+                raise ValueError("Benchmark input configuration has changed")
+        selected = values.get("selected_outlet_gis_id", values.get("outlet_gis_id"))
+        if selected is not None and selected != lock["outlet_gis_id"]:
+            raise ValueError("Benchmark outlet differs from workflow outlet")
+        return {"passed": True, "reason": "benchmark artifact hashes and outlet verified"}
+    except (OSError, ValueError, TypeError) as exc:
+        return {"passed": False, "reason": str(exc)}
 
 
 def outlet_provenance_gate(values: dict[str, Any]) -> dict[str, Any]:
-    path = values.get("outlet_provenance_path")
-    if not path or not Path(str(path)).is_file():
-        return {"passed": False, "reason": "outlet_provenance.json missing"}
     selected = values.get("selected_outlet_gis_id") or values.get("outlet_gis_id")
     if selected is None:
         return {"passed": False, "reason": "selected outlet GIS id missing from workflow evidence"}
-    return {"passed": True, "reason": f"selected_outlet_gis_id={selected}"}
+    try:
+        path = Path(str(values.get("outlet_provenance_path") or ""))
+        verify_digest(path, values.get("outlet_provenance_sha256"))
+        provenance = read_object(path)
+        if type(selected) is not int or selected <= 0 or provenance.get("selected_outlet_gis_id") != selected:
+            raise ValueError("Selected outlet differs from provenance")
+        if not values.get("workflow_run_id") or provenance.get("run_id") != values["workflow_run_id"]:
+            raise ValueError("Outlet provenance run identity mismatch")
+        return {"passed": True, "reason": f"selected_outlet_gis_id={selected}; run identity and hash verified"}
+    except (OSError, ValueError, TypeError) as exc:
+        return {"passed": False, "reason": str(exc)}
 
 
 def research_metric_gate(values: dict[str, Any]) -> dict[str, Any]:
@@ -84,12 +150,33 @@ def research_metric_gate(values: dict[str, Any]) -> dict[str, Any]:
     failures: list[str] = []
     if kge is None or kge < 0.40:
         failures.append(f"KGE {kge if kge is not None else 'missing'} < 0.40")
+    if kge is not None and kge > 1.0:
+        failures.append("KGE exceeds 1")
     if nse is None:
         failures.append("NSE missing")
+    elif nse > 1.0:
+        failures.append("NSE exceeds 1")
     elif nse < 0.0:
-        timing_documented = bool(values.get("timing_limitation_documented")) or bool(
-            values.get("timing_limitation_basis")
-        )
+        exception = values.get("timing_limitation_exception")
+        timing_documented = False
+        if isinstance(exception, dict):
+            basis = exception.get("basis")
+            evidence_path = exception.get("supporting_artifact")
+            try:
+                if (
+                    exception.get("authorized") is True
+                    and exception.get("scope") == "negative_nse_with_kge"
+                    and isinstance(basis, str)
+                    and bool(basis.strip())
+                    and evidence_path
+                ):
+                    verify_digest(
+                        Path(str(evidence_path)),
+                        exception.get("supporting_artifact_sha256"),
+                    )
+                    timing_documented = True
+            except (OSError, ValueError, TypeError):
+                timing_documented = False
         if not (kge is not None and kge >= 0.40 and timing_documented):
             failures.append(f"NSE {nse:.3f} < 0.00 without documented timing limitation")
     if pbias is None:
@@ -103,19 +190,35 @@ def research_metric_gate(values: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def weather_fidelity_gate(values: dict[str, Any]) -> dict[str, Any]:
+    flags = values.get("weather_coverage_flags")
+    if not isinstance(flags, dict):
+        return {"passed": False, "reason": "weather validation provenance missing"}
+    if flags.get("calendar_validated") is not True:
+        return {"passed": False, "reason": "weather calendar was not explicitly validated"}
+    if flags.get("raw_values_validated") is not True:
+        return {"passed": False, "reason": "weather raw values were not explicitly validated"}
+    count = flags.get("imputation_count")
+    if type(count) is not int or count < 0:
+        return {"passed": False, "reason": "weather imputation count missing or invalid"}
+    if count:
+        return {
+            "passed": False,
+            "reason": f"weather forcing contains {count} declared imputed station-days",
+        }
+    return {"passed": True, "reason": "weather calendar and raw values validated; no imputation"}
+
+
 def soil_fidelity_gate(values: dict[str, Any]) -> dict[str, Any]:
     soil_mode = str(values.get("soil_mode") or "")
     provenance = str(values.get("soil_provenance_mode") or "")
     authoritative_provenance = {"gnatsgo_raster"}
     fallback_value = values.get("pct_fallback_soils")
-    try:
-        fallback = float(fallback_value)
-    except (TypeError, ValueError):
-        fallback = None
+    fallback = _as_float(fallback_value)
     if (
         soil_mode == "high_fidelity"
         and fallback is not None
-        and fallback <= 0.0
+        and fallback == 0.0
         and provenance in authoritative_provenance
     ):
         reason = "soil_mode=high_fidelity"
@@ -143,24 +246,18 @@ def landuse_fidelity_gate(values: dict[str, Any]) -> dict[str, Any]:
         return {"passed": False, "reason": f"landuse_fidelity status={status or 'missing'}"}
 
     hru_mode = str(block.get("hru_mode") or "")
-    try:
-        retention = float(block.get("landuse_class_retention_fraction"))
-    except (TypeError, ValueError):
-        retention = None
-    try:
-        area_retention = float(block.get("landuse_area_retention_fraction"))
-    except (TypeError, ValueError):
-        area_retention = None
-    try:
-        missing_area = float(block.get("landuse_missing_area_fraction"))
-    except (TypeError, ValueError):
-        missing_area = None
-    try:
-        mismatch = abs(float(block.get("landuse_vintage_mismatch_years")))
-    except (TypeError, ValueError):
-        mismatch = None
+    retention = _as_float(block.get("landuse_class_retention_fraction"))
+    area_retention = _as_float(block.get("landuse_area_retention_fraction"))
+    missing_area = _as_float(block.get("landuse_missing_area_fraction"))
+    mismatch = _as_float(block.get("landuse_vintage_mismatch_years"))
+    mismatch = abs(mismatch) if mismatch is not None else None
 
     failures: list[str] = []
+    for name, number in (("landuse_class_retention_fraction", retention),
+                         ("landuse_area_retention_fraction", area_retention),
+                         ("landuse_missing_area_fraction", missing_area)):
+        if block.get(name) is not None and (number is None or not 0.0 <= number <= 1.0):
+            failures.append(f"{name} must be a finite fraction in [0, 1]")
     if hru_mode != "full_overlay":
         failures.append(f"hru_mode={hru_mode or 'missing'}")
     if retention is None:
@@ -205,23 +302,53 @@ def calibration_improvement_gate(values: dict[str, Any]) -> dict[str, Any]:
     provenance = values.get("calibration_provenance")
     if not isinstance(provenance, dict):
         provenance = {}
-    basis = str(provenance.get("verification_improvement_basis") or "").strip().lower()
-    if basis and basis != "none":
-        return {"passed": True, "reason": f"verification_improvement_basis={basis}"}
-
-    delta = values.get("calibration_delta_metrics")
-    if not isinstance(delta, dict):
-        delta = {}
-    delta_nse = _as_float(delta.get("nse"))
-    delta_kge = _as_float(delta.get("kge"))
-    improved = any(v is not None and v > 0.0 for v in (delta_nse, delta_kge))
-    if improved:
-        parts = []
-        if delta_nse is not None:
-            parts.append(f"delta_nse={delta_nse:+.6f}")
-        if delta_kge is not None:
-            parts.append(f"delta_kge={delta_kge:+.6f}")
-        return {"passed": True, "reason": ", ".join(parts)}
+    baseline = values.get("baseline_metrics")
+    verified = values.get("calibrated_metrics")
+    if not isinstance(baseline, dict) or not isinstance(verified, dict):
+        return {"passed": False, "reason": "designated baseline or verification metrics missing"}
+    baseline_nse = _as_float(baseline.get("nse"))
+    baseline_kge = _as_float(baseline.get("kge"))
+    verified_nse = _as_float(verified.get("nse"))
+    verified_kge = _as_float(verified.get("kge"))
+    if None in (baseline_nse, baseline_kge, verified_nse, verified_kge):
+        return {"passed": False, "reason": "designated improvement metrics are missing or non-finite"}
+    delta_nse = verified_nse - baseline_nse
+    delta_kge = verified_kge - baseline_kge
+    nse_improved = delta_nse > 0.0
+    kge_improved = delta_kge > 0.0
+    computed_basis = (
+        "nse_and_kge"
+        if nse_improved and kge_improved
+        else "nse"
+        if nse_improved
+        else "kge"
+        if kge_improved
+        else "none"
+    )
+    declared_raw = provenance.get("verification_improvement_basis")
+    declared_basis = str(declared_raw).strip().lower() if declared_raw is not None else computed_basis
+    if declared_basis != computed_basis:
+        return {
+            "passed": False,
+            "reason": (
+                f"declared verification_improvement_basis={declared_basis} "
+                f"does not match recomputed basis={computed_basis}"
+            ),
+        }
+    reported_delta = values.get("calibration_delta_metrics")
+    if isinstance(reported_delta, dict):
+        for key, computed in (("nse", delta_nse), ("kge", delta_kge)):
+            reported = _as_float(reported_delta.get(key))
+            if reported is None or not math.isclose(reported, computed, rel_tol=1e-9, abs_tol=1e-9):
+                return {"passed": False, "reason": f"reported delta_{key} contradicts designated metrics"}
+    if computed_basis != "none":
+        return {
+            "passed": True,
+            "reason": (
+                f"verification_improvement_basis={computed_basis}; "
+                f"delta_nse={delta_nse:+.6f}, delta_kge={delta_kge:+.6f}"
+            ),
+        }
 
     return {
         "passed": False,

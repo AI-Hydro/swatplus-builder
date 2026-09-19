@@ -42,6 +42,7 @@ from swatplus_builder.workflows.usgs_e2e import (
     _virtual_all_terminal_scope_gate,
     run_usgs_workflow,
 )
+from tests.evidence_helpers import seal_benchmark, seal_engine, seal_outlet
 
 
 def _core_sensitivity_classes() -> dict[str, str]:
@@ -74,6 +75,11 @@ def _core_sensitivity_values(**overrides) -> dict[str, object]:
         "sensitivity_screen_activity_classes": _core_sensitivity_classes(),
         "calibration_provenance": {"blocked_parameters": ["GW_DELAY"]},
         "landuse_fidelity": _passing_landuse_fidelity(),
+        "weather_coverage_flags": {
+            "calendar_validated": True,
+            "raw_values_validated": True,
+            "imputation_count": 0,
+        },
     }
     values.update(overrides)
     return values
@@ -98,6 +104,8 @@ def _write_basin_wb(txt: Path, *, precip: float = 1000.0, et: float = 300.0, per
         encoding="utf-8",
     )
 
+    seal_engine(txt)
+
 
 def test_terminal_scope_blocker_is_explicit_blocked_claim() -> None:
     _allowed, blocked = _claim_lists(
@@ -108,6 +116,8 @@ def test_terminal_scope_blocker_is_explicit_blocked_claim() -> None:
         policy_notes=[],
         values={
             "fresh_engine_run": True,
+            "engine_run_id": "fixture-engine",
+            "engine_returncode": 0,
             "benchmark_lock_path": "benchmark/benchmark_lock.json",
             "outlet_provenance_path": "outlet_provenance.json",
             "selected_outlet_gis_id": 7,
@@ -350,9 +360,7 @@ def test_terminal_hydrograph_scope_class_promotes_to_workflow_values() -> None:
 
 def _touch_benchmark_lock(run_dir: Path) -> str:
     lock = run_dir / "benchmark" / "benchmark_lock.json"
-    lock.parent.mkdir(parents=True, exist_ok=True)
-    lock.write_text("{}\n", encoding="utf-8")
-    return str(lock)
+    return seal_benchmark(lock)
 
 
 def _passed_routing_gate(*args, **kwargs) -> dict:
@@ -536,6 +544,47 @@ def test_contract_policy_blocks_research_without_acceptance(tmp_path: Path):
     assert data["blocked_claims"]
 
 
+def test_pipeline_weather_progress_is_persisted(monkeypatch, tmp_path: Path) -> None:
+    def fake_run_pipeline(**kwargs):
+        callback = kwargs["progress_callback"]
+        callback(
+            {
+                "status": "station_completed",
+                "provider": "gridmet",
+                "station": "s41100n77500w",
+                "station_index": 1,
+                "stations_total": 2,
+                "elapsed_seconds": 4.2,
+            }
+        )
+        return {
+            "status": "BLOCKED",
+            "blocker_class": "fixture_complete",
+        }
+
+    monkeypatch.setattr(
+        "swatplus_builder.workflows.usgs_e2e.run_pipeline", fake_run_pipeline
+    )
+    req = RunUSGSWorkflowRequest(
+        usgs_id="01654000",
+        out_dir=tmp_path / "run_progress",
+        claim_tier="diagnostic",
+    )
+
+    result = run_usgs_workflow(req)
+    events = [
+        json.loads(line)
+        for line in Path(result.artifact_dir, "events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+
+    weather_event = next(event for event in events if event["stage"] == "weather_gridmet")
+    assert weather_event["status"] == "station_completed"
+    assert weather_event["station_index"] == 1
+    assert weather_event["stations_total"] == 2
+
+
 def test_virtual_outlet_workflow_requires_authority(monkeypatch, tmp_path: Path) -> None:
     def fail_run_pipeline(**kwargs):
         raise AssertionError("pipeline should not run without virtual outlet authority")
@@ -600,6 +649,8 @@ def test_workflow_can_relock_virtual_all_terminal_benchmark(
             "txtinout_dir": str(txt),
             "observed_csv": str(obs_csv),
             "fresh_engine_run": True,
+            "engine_run_id": "fixture-engine",
+            "engine_returncode": 0,
             "sim_source_file": "channel_sd_day.txt",
             "benchmark_lock_path": str(run_dir / "benchmark" / "benchmark_lock.json"),
             "metrics": {"nse": -1.0, "kge": -1.0, "pbias": 99.0},
@@ -679,6 +730,8 @@ def test_virtual_scope_gate_overrides_selected_scope_volume_diagnostic_blocker(
             "txtinout_dir": str(txt),
             "observed_csv": str(obs_csv),
             "fresh_engine_run": True,
+            "engine_run_id": "fixture-engine",
+            "engine_returncode": 0,
             "sim_source_file": "channel_sd_day.txt",
             "benchmark_lock_path": str(run_dir / "benchmark" / "benchmark_lock.json"),
             "metrics": {"nse": -1.0, "kge": -1.0, "pbias": 99.0},
@@ -762,13 +815,16 @@ def test_virtual_scope_pass_can_support_research_tier_despite_selected_scope_blo
     txt = tmp_path / "TxtInOut"
     txt.mkdir()
     (txt / "channel_sd_day.txt").write_text("nonempty\n", encoding="utf-8")
-    lock = tmp_path / "benchmark_lock.json"
-    lock.write_text("{}\n", encoding="utf-8")
+    lock = tmp_path / "benchmark" / "benchmark_lock.json"
+    seal_engine(txt)
+    seal_benchmark(lock, outlet=1, txt=txt)
     outlet = tmp_path / "outlet_provenance.json"
-    outlet.write_text("{}\n", encoding="utf-8")
+    outlet_fields = seal_outlet(outlet, 1)
+    engine_fields = seal_engine(txt)
     values = _core_sensitivity_values(
         fresh_engine_run=True,
-        engine_returncode=0,
+        **engine_fields,
+        **outlet_fields,
         txtinout_dir=str(txt),
         sim_source_file="channel_sd_day.txt",
         benchmark_lock_path=str(lock),
@@ -783,6 +839,8 @@ def test_virtual_scope_pass_can_support_research_tier_despite_selected_scope_blo
         metrics={"nse": 0.44, "kge": 0.63, "pbias": 6.3},
         calibration_success=True,
         calibration_locked_verification_succeeded=True,
+        baseline_metrics={"nse": 0.24, "kge": 0.23, "pbias": 10.0},
+        calibrated_metrics={"nse": 0.44, "kge": 0.63, "pbias": 6.3},
         calibration_delta_metrics={"nse": 0.20, "kge": 0.40},
         soil_mode="high_fidelity",
         soil_provenance_mode="gnatsgo_raster",
@@ -816,13 +874,16 @@ def _research_grade_single_channel_values(tmp_path: Path, **overrides) -> dict[s
     txt = tmp_path / "TxtInOut"
     txt.mkdir()
     (txt / "channel_sd_day.txt").write_text("nonempty\n", encoding="utf-8")
-    lock = tmp_path / "benchmark_lock.json"
-    lock.write_text("{}\n", encoding="utf-8")
+    lock = tmp_path / "benchmark" / "benchmark_lock.json"
+    seal_engine(txt)
+    seal_benchmark(lock, outlet=1, txt=txt)
     outlet = tmp_path / "outlet_provenance.json"
-    outlet.write_text("{}\n", encoding="utf-8")
+    outlet_fields = seal_outlet(outlet, 1)
+    engine_fields = seal_engine(txt)
     values = _core_sensitivity_values(
         fresh_engine_run=True,
-        engine_returncode=0,
+        **engine_fields,
+        **outlet_fields,
         txtinout_dir=str(txt),
         sim_source_file="channel_sd_day.txt",
         benchmark_lock_path=str(lock),
@@ -832,6 +893,8 @@ def _research_grade_single_channel_values(tmp_path: Path, **overrides) -> dict[s
         metrics={"nse": 0.62, "kge": 0.71, "pbias": 4.2},
         calibration_success=True,
         calibration_locked_verification_succeeded=True,
+        baseline_metrics={"nse": 0.32, "kge": 0.26, "pbias": 10.0},
+        calibrated_metrics={"nse": 0.62, "kge": 0.71, "pbias": 4.2},
         calibration_delta_metrics={"nse": 0.30, "kge": 0.45},
         soil_mode="high_fidelity",
         soil_provenance_mode="gnatsgo_raster",
@@ -919,6 +982,8 @@ def test_contract_policy_allows_research_with_window_and_acceptance(monkeypatch,
             "usgs_id": kwargs["usgs_id"],
             "txtinout_dir": str(txt),
             "fresh_engine_run": True,
+            "engine_run_id": "fixture-engine",
+            "engine_returncode": 0,
             "metrics": {"nse": 0.30, "kge": 0.45},
         }
 
@@ -1059,11 +1124,18 @@ def test_effective_claim_tier_reaches_research_only_with_complete_evidence(monke
             "usgs_id": kwargs["usgs_id"],
             "txtinout_dir": str(txt),
             "fresh_engine_run": True,
+            "engine_run_id": "fixture-engine",
+            "engine_returncode": 0,
             "benchmark_lock_path": _touch_benchmark_lock(tmp_path / "run_research"),
             "selected_outlet_gis_id": 7,
             "soil_mode": "high_fidelity",
             "soil_provenance_mode": "gnatsgo_raster",
-            "pct_fallback_soils": 0.0,
+                "pct_fallback_soils": 0.0,
+                "weather_coverage_flags": {
+                    "calendar_validated": True,
+                    "raw_values_validated": True,
+                    "imputation_count": 0,
+                },
             "metrics": {"nse": 0.10, "kge": 0.41, "pbias": 25.0},
             "sensitivity_screen_basis": "basin_specific",
             "sensitivity_screen_activity_classes": _core_sensitivity_classes(),
@@ -1095,7 +1167,7 @@ def test_effective_claim_tier_reaches_research_only_with_complete_evidence(monke
                 "blocked_parameters": ["GW_DELAY"],
                 "final_physical_gates": {"status": "passed"},
                 "verification_metrics": {"nse": 0.30, "kge": 0.45, "pbias": 5.0},
-                "verification_delta_metrics": {"nse": 0.20, "kge": 0.25, "pbias": -20.0},
+                "verification_delta_metrics": {"nse": 0.20, "kge": 0.04, "pbias": -20.0},
                 "hydrograph_comparison": {
                     "status": "written",
                     "hydrograph_plot": str(hydrograph_plot),
@@ -1191,6 +1263,8 @@ def test_effective_claim_tier_blocks_research_for_partial_terminal_scope(monkeyp
             "usgs_id": kwargs["usgs_id"],
             "txtinout_dir": str(txt),
             "fresh_engine_run": True,
+            "engine_run_id": "fixture-engine",
+            "engine_returncode": 0,
             "benchmark_lock_path": _touch_benchmark_lock(tmp_path / "run_partial_scope"),
             "selected_outlet_gis_id": 7,
             "soil_mode": "high_fidelity",
@@ -1210,7 +1284,7 @@ def test_effective_claim_tier_blocks_research_for_partial_terminal_scope(monkeyp
                 "final_physical_gates": {"status": "passed"},
                 "final_routing_flow_gates": _partial_scope_passed_routing_gate(),
                 "verification_metrics": {"nse": 0.30, "kge": 0.45, "pbias": 5.0},
-                "verification_delta_metrics": {"nse": 0.20, "kge": 0.25, "pbias": -20.0},
+                "verification_delta_metrics": {"nse": 0.20, "kge": 0.04, "pbias": -20.0},
             },
         )
 
@@ -1249,6 +1323,8 @@ def test_workflow_evidence_promotes_terminal_hydrograph_scope_class(monkeypatch,
             "usgs_id": kwargs["usgs_id"],
             "txtinout_dir": str(txt),
             "fresh_engine_run": True,
+            "engine_run_id": "fixture-engine",
+            "engine_returncode": 0,
             "benchmark_lock_path": _touch_benchmark_lock(run_dir),
             "selected_outlet_gis_id": 7,
             "metrics": {"nse": 0.10, "kge": 0.42, "pbias": 82.0},
@@ -1373,6 +1449,8 @@ def test_degraded_soil_provenance_blocks_research_effective_tier(monkeypatch, tm
             "usgs_id": kwargs["usgs_id"],
             "txtinout_dir": str(txt),
             "fresh_engine_run": True,
+            "engine_run_id": "fixture-engine",
+            "engine_returncode": 0,
             "benchmark_lock_path": _touch_benchmark_lock(tmp_path / "run_degraded_soil"),
             "selected_outlet_gis_id": 7,
             "metrics": {"nse": 0.10, "kge": 0.41, "pbias": 25.0},
@@ -1380,7 +1458,12 @@ def test_degraded_soil_provenance_blocks_research_effective_tier(monkeypatch, tm
             "sensitivity_screen_activity_classes": {"CN2": "active"},
             "soil_mode": "fallback",
             "soil_provenance_mode": "diagnostic_partial_gnatsgo_constant",
-            "pct_fallback_soils": 1.0,
+                "pct_fallback_soils": 1.0,
+                "weather_coverage_flags": {
+                    "calendar_validated": True,
+                    "raw_values_validated": True,
+                    "imputation_count": 0,
+                },
         }
 
     def fake_calibration(*args, **kwargs):
@@ -1390,7 +1473,7 @@ def test_degraded_soil_provenance_blocks_research_effective_tier(monkeypatch, tm
             provenance={
                 "final_physical_gates": {"status": "passed"},
                 "verification_metrics": {"nse": 0.30, "kge": 0.45, "pbias": 5.0},
-                "verification_delta_metrics": {"nse": 0.20, "kge": 0.25, "pbias": -20.0},
+                "verification_delta_metrics": {"nse": 0.20, "kge": 0.04, "pbias": -20.0},
             },
         )
 
@@ -1431,6 +1514,8 @@ def test_verified_locked_calibration_can_be_diagnostic_when_claim_gates_fail(mon
             "usgs_id": kwargs["usgs_id"],
             "txtinout_dir": str(txt),
             "fresh_engine_run": True,
+            "engine_run_id": "fixture-engine",
+            "engine_returncode": 0,
             "benchmark_lock_path": _touch_benchmark_lock(tmp_path / "run_verified_diagnostic"),
             "selected_outlet_gis_id": 7,
             "metrics": {"nse": 0.05, "kge": 0.10, "pbias": -55.0},
@@ -1523,6 +1608,8 @@ def test_research_claim_blocks_without_selected_outlet_provenance(monkeypatch, t
             "usgs_id": kwargs["usgs_id"],
             "txtinout_dir": str(txt),
             "fresh_engine_run": True,
+            "engine_run_id": "fixture-engine",
+            "engine_returncode": 0,
             "benchmark_lock_path": _touch_benchmark_lock(tmp_path / "run_no_outlet"),
             "metrics": {"nse": 0.30, "kge": 0.45, "pbias": 5.0},
             "sensitivity_screen_basis": "basin_specific",
@@ -1535,7 +1622,7 @@ def test_research_claim_blocks_without_selected_outlet_provenance(monkeypatch, t
             phases=[PhaseRun(stage=1, phase="volume", status="done", message="ok", script="locked")],
             provenance={
                 "final_physical_gates": {"status": "passed"},
-                "verification_metrics": {"nse": 0.45, "kge": 0.50, "pbias": 5.0},
+                    "verification_metrics": {"nse": 0.30, "kge": 0.44, "pbias": 5.0},
                 "verification_delta_metrics": {"nse": 0.15, "kge": 0.05, "pbias": 0.0},
                 "verification_improvement_basis": "nse_and_kge",
             },
@@ -1576,6 +1663,8 @@ def test_research_claim_blocks_without_benchmark_lock_artifact(monkeypatch, tmp_
             "usgs_id": kwargs["usgs_id"],
             "txtinout_dir": str(txt),
             "fresh_engine_run": True,
+            "engine_run_id": "fixture-engine",
+            "engine_returncode": 0,
             "benchmark_lock_path": str(tmp_path / "run_no_lock" / "benchmark" / "benchmark_lock.json"),
             "selected_outlet_gis_id": 7,
             "metrics": {"nse": 0.30, "kge": 0.45, "pbias": 5.0},
@@ -1589,7 +1678,7 @@ def test_research_claim_blocks_without_benchmark_lock_artifact(monkeypatch, tmp_
             phases=[PhaseRun(stage=1, phase="volume", status="done", message="ok", script="locked")],
             provenance={
                 "final_physical_gates": {"status": "passed"},
-                "verification_metrics": {"nse": 0.45, "kge": 0.50, "pbias": 5.0},
+                "verification_metrics": {"nse": 0.30, "kge": 0.44, "pbias": 5.0},
                 "verification_delta_metrics": {"nse": 0.15, "kge": 0.05, "pbias": 0.0},
                 "verification_improvement_basis": "nse_and_kge",
             },
@@ -1631,6 +1720,7 @@ def test_research_claim_blocks_without_fresh_output_artifact(monkeypatch, tmp_pa
             "usgs_id": kwargs["usgs_id"],
             "txtinout_dir": str(txt),
             "fresh_engine_run": True,
+            "engine_run_id": "fixture-engine",
             "engine_returncode": 0,
             "benchmark_lock_path": _touch_benchmark_lock(tmp_path / "run_no_fresh_output"),
             "selected_outlet_gis_id": 7,
@@ -1686,6 +1776,8 @@ def test_research_claim_blocks_without_locked_calibration_improvement(monkeypatc
             "usgs_id": kwargs["usgs_id"],
             "txtinout_dir": str(txt),
             "fresh_engine_run": True,
+            "engine_run_id": "fixture-engine",
+            "engine_returncode": 0,
             "benchmark_lock_path": _touch_benchmark_lock(tmp_path / "run_no_improvement"),
             "selected_outlet_gis_id": 7,
             "metrics": {"nse": 0.30, "kge": 0.45, "pbias": 5.0},
@@ -1699,7 +1791,7 @@ def test_research_claim_blocks_without_locked_calibration_improvement(monkeypatc
             phases=[PhaseRun(stage=1, phase="volume", status="done", message="ok", script="locked")],
             provenance={
                 "final_physical_gates": {"status": "passed"},
-                "verification_metrics": {"nse": 0.45, "kge": 0.50, "pbias": 5.0},
+                "verification_metrics": {"nse": 0.30, "kge": 0.44, "pbias": 5.0},
                 "verification_delta_metrics": {"nse": 0.0, "kge": -0.01, "pbias": 0.0},
                 "verification_improvement_basis": "none",
             },
@@ -1740,6 +1832,8 @@ def test_research_claim_blocks_without_basin_specific_sensitivity(monkeypatch, t
             "usgs_id": kwargs["usgs_id"],
             "txtinout_dir": str(txt),
             "fresh_engine_run": True,
+            "engine_run_id": "fixture-engine",
+            "engine_returncode": 0,
             "benchmark_lock_path": _touch_benchmark_lock(tmp_path / "run_no_sens"),
             "selected_outlet_gis_id": 7,
             "metrics": {"nse": 0.30, "kge": 0.45, "pbias": 5.0},
@@ -1786,11 +1880,18 @@ def test_research_metric_gate_requires_timing_documentation_for_negative_nse(mon
             "usgs_id": kwargs["usgs_id"],
             "txtinout_dir": str(txt),
             "fresh_engine_run": True,
+            "engine_run_id": "fixture-engine",
+            "engine_returncode": 0,
             "benchmark_lock_path": _touch_benchmark_lock(tmp_path / "run_negative_nse"),
             "selected_outlet_gis_id": 7,
             "soil_mode": "high_fidelity",
             "soil_provenance_mode": "gnatsgo_raster",
-            "pct_fallback_soils": 0.0,
+                "pct_fallback_soils": 0.0,
+                "weather_coverage_flags": {
+                    "calendar_validated": True,
+                    "raw_values_validated": True,
+                    "imputation_count": 0,
+                },
             "metrics": {"nse": 0.10, "kge": 0.41, "pbias": 25.0},
             "sensitivity_screen_basis": "basin_specific",
             "sensitivity_screen_activity_classes": _core_sensitivity_classes(),
@@ -1836,8 +1937,19 @@ def test_research_metric_gate_requires_timing_documentation_for_negative_nse(mon
 
     def fake_calibration_with_timing_doc(*args, **kwargs):
         result = fake_calibration(*args, **kwargs)
+        import hashlib
+
+        evidence = tmp_path / "timing_skill_diagnostics.json"
+        evidence.write_text('{"diagnostic_flags":[{"symptom":"peak timing lag"}]}')
         result.provenance["timing_limitation_documented"] = True
         result.provenance["timing_limitation_basis"] = "KGE passes while NSE is depressed by documented timing limitation."
+        result.provenance["timing_limitation_exception"] = {
+            "authorized": True,
+            "scope": "negative_nse_with_kge",
+            "basis": result.provenance["timing_limitation_basis"],
+            "supporting_artifact": str(evidence.resolve()),
+            "supporting_artifact_sha256": hashlib.sha256(evidence.read_bytes()).hexdigest(),
+        }
         return result
 
     monkeypatch.setattr("swatplus_builder.workflows.usgs_e2e.run_diagnostic_calibration", fake_calibration_with_timing_doc)
@@ -1953,6 +2065,8 @@ def test_volume_bias_gate_allows_diagnostic_calibration_attempt_but_blocks_claim
             "usgs_id": kwargs["usgs_id"],
             "txtinout_dir": str(txt),
             "fresh_engine_run": True,
+            "engine_run_id": "fixture-engine",
+            "engine_returncode": 0,
             "benchmark_lock_path": str(tmp_path / "run4" / "benchmark" / "benchmark_lock.json"),
             "metrics": {"nse": 0.30, "kge": 0.45, "pbias": 80.0},
         }
@@ -2175,6 +2289,8 @@ def test_zero_surface_runoff_gate_blocks_calibration_and_claims(monkeypatch, tmp
             "usgs_id": kwargs["usgs_id"],
             "txtinout_dir": str(txt),
             "fresh_engine_run": True,
+            "engine_run_id": "fixture-engine",
+            "engine_returncode": 0,
             "benchmark_lock_path": str(tmp_path / "run_zero_surq" / "benchmark" / "benchmark_lock.json"),
             "metrics": {"nse": 0.45, "kge": 0.50, "pbias": 5.0},
             "sensitivity_screen_basis": "basin_specific",
@@ -2218,6 +2334,8 @@ def test_routing_flow_gate_failure_blocks_calibration_and_research_claim(monkeyp
             "usgs_id": kwargs["usgs_id"],
             "txtinout_dir": str(txt),
             "fresh_engine_run": True,
+            "engine_run_id": "fixture-engine",
+            "engine_returncode": 0,
             "benchmark_lock_path": str(tmp_path / "run_routing_block" / "benchmark" / "benchmark_lock.json"),
             "metrics": {"nse": 0.30, "kge": 0.45, "pbias": 5.0},
             "sensitivity_screen_basis": "basin_specific",
@@ -2278,6 +2396,8 @@ def test_routing_flow_warning_blocks_research_claim_without_blocking_calibration
             "usgs_id": kwargs["usgs_id"],
             "txtinout_dir": str(txt),
             "fresh_engine_run": True,
+            "engine_run_id": "fixture-engine",
+            "engine_returncode": 0,
             "benchmark_lock_path": _touch_benchmark_lock(tmp_path / "run_routing_warning"),
             "selected_outlet_gis_id": 7,
             "metrics": {"nse": 0.30, "kge": 0.45, "pbias": 5.0},
@@ -2347,6 +2467,8 @@ def test_workflow_writes_mass_balance_diagnostics_for_mass_imbalance(monkeypatch
             "usgs_id": kwargs["usgs_id"],
             "txtinout_dir": str(txt),
             "fresh_engine_run": True,
+            "engine_run_id": "fixture-engine",
+            "engine_returncode": 0,
             "benchmark_lock_path": _touch_benchmark_lock(tmp_path / "run_mass_imbalance"),
             "selected_outlet_gis_id": 7,
             "metrics": {"nse": 0.20, "kge": 0.45, "pbias": -10.0},

@@ -1145,3 +1145,182 @@ Consequences:
 - Dashboard titles must explain that the artifact is SWAT+ model evidence and
   use the station name only when a retained run artifact provides it. The USGS
   gauge ID remains visible as the stable machine-facing identifier.
+
+## 2026-07-13 - Archive Superseded Runs Without Weakening Evidence
+
+Decision:
+
+- Keep current dashboards, release-validation pairs, objective-report source
+  runs, and active diagnostics extracted.
+- Move superseded complete run trees to exact `tar.zst` archives only after
+  archive entry counts match the source, `zstd -t` passes, and a SHA-256
+  sidecar is written and verified.
+- Treat browser QA files, release-smoke environments, abandoned objectives,
+  and package-manager caches as disposable scratch rather than evidence.
+
+Why:
+
+- The checkout and external run roots accumulated more than 50 GiB of local
+  artifacts, leaving less than 5 GiB free and threatening future engine runs.
+- Deleting selected large files from a run can silently break lock validation,
+  provenance pointers, or exact restoration. Whole-tree archival preserves the
+  evidence boundary while recovering most of the space.
+- Shared model and runtime caches may serve other projects and cannot be
+  classified as stale from this repository alone.
+
+Consequences:
+
+- Historical paths may require explicit archive restoration before inspection;
+  `docs/RUN_ARTIFACT_RETENTION.md` records the live boundary and commands.
+- The 2026-07-13 archival batch reduced 25.58 GiB of source trees to 2.30 GiB
+  of verified archives. No tracked source file or live authoritative run was
+  removed.
+- Future cleanup must preserve the same verification sequence and must not
+  call an old evidence tree a cache merely because it is no longer active.
+
+## 2026-07-16 - Separate Conceptual Illustration From Empirical Evidence
+
+Decision:
+
+- Permit AI-assisted imagery only for architecture and claim-governance
+  concepts that contain no basin metrics, thresholds, or empirical outcomes.
+- Require every result figure to be generated deterministically from the frozen
+  claims ledger and linked local artifacts.
+- Keep the 2026-07-02 objective-suite snapshot separate from both 2026-07-10
+  focused cases in prose, captions, figures, and any future archive.
+- Place figure titles, interpretation, limitations, and sources in manuscript
+  or thesis captions rather than embedding them in the artwork.
+
+Why:
+
+- Image generation can communicate a system mechanism clearly, but it is not a
+  defensible authority for numerical or evidentiary content.
+- The suite and focused cases answer different questions under different dates
+  and scopes. Combining them would rewrite a dated result and create a false
+  performance narrative.
+- External captions keep the artwork reusable and let the publication carry
+  the auditable scientific qualification.
+
+Consequences:
+
+- Every generated conceptual label must be manually verified against the code
+  and method before acceptance.
+- Every empirical figure must pass build, rasterize, inspect, critique, and
+  refine loops and retain artifact pointers in the figure manifest.
+- The package-defined `research_grade` tier must always be described as an
+  internal policy result, never as universal publication certification.
+
+## 2026-07-16 - Keep Publication Evidence Native and Separately Addressable
+
+Decision:
+
+- Use deterministic vector construction for all numbered manuscript figures
+  and the graphical abstract in the frozen submission set.
+- Replace the thesis evaluation composite with separate, single-purpose plots
+  and native LaTeX tables; retain the authority mechanism as native TikZ.
+- Keep map/plot artwork free of embedded titles, captions, source notes,
+  numerical result cards, and policy interpretation.
+- Treat the current PyPI/version mismatch as a release blocker, not as evidence
+  that the evaluated checkout is already publicly reconstructable.
+
+Why:
+
+- Separate plots let each hydrologic diagnostic be cited, resized, and reviewed
+  independently, while native tables remain editable and preserve exact values.
+- Deterministic artwork removes ambiguity about generated text and makes every
+  plotted value traceable to the frozen ledger or run artifact.
+- Public PyPI currently serves 0.4.0 while the evaluated checkout declares
+  0.7.13; silently equating them would violate the evidence-freeze policy.
+
+Consequences:
+
+- The accepted thesis derivative set is `T3` through `T9`; the former combined
+  evaluation overview is retired.
+- A matching tag, wheel, documentation build, environment record, checksummed
+  evidence archive, and archival identifier are required before submission.
+
+## 2026-07-16 - Supersede The Public Release Mismatch Finding
+
+Decision:
+
+- Treat PyPI version 0.7.13 and the 13-tool public MCP page as synchronized
+  release evidence.
+- Retain one documentation correction: the public project-status page still
+  says 11 tools.
+- Keep archival reproducibility separate from version synchronization.
+
+Why:
+
+- A fresh public audit on 2026-07-16 showed PyPI 0.7.13, a PyPI description
+  reporting 13 tools, and a public MCP tool-surface page reporting 13 tools.
+- Matching version identifiers do not identify the dirty manuscript checkout,
+  recover the historical run engine checksum, or publish the frozen evidence.
+
+Consequences:
+
+- The earlier same-day 0.4.0 mismatch finding is superseded.
+- The remaining submission blockers are the stale status-page text and a
+  checksummed, licensed, citable evidence archive with environment and engine
+  identity.
+
+## 2026-09-16 — Preserve Evidence Through Immutable Publication and Explicit Run Identity
+
+The security/reliability review demonstrated stale optional artifact payloads,
+failed cache entries reported as successes, and unreaped MCP children reported as
+running. User authorization covers fixing all nine findings.
+
+- Publish artifact records from a staging directory with a SHA-256 payload
+  manifest; do not overwrite published IDs. Historical unsealed records remain
+  preserved but cannot silently become trusted cache entries.
+- Version the validation cache identity and cache only explicit successful
+  execution outcomes. Failed executions remain report failures and retry.
+- Use exclusive empty MCP run directories and a detached supervisor with an
+  atomic launch-bound exit record. Keep model evidence separate from process
+  status; exit success alone does not authorize a scientific claim.
+- Share benchmark/input integrity checks with claim gates and tie outlet/output
+  verification to workflow/engine run identities. Execution receipts are dynamic
+  outputs and are excluded from static model seals and candidate input staging.
+- Require offline wheel contract tests before upload and verify CI executable
+  bytes against checked-in pins. Pins are reviewed download identities, not
+  claims of upstream cryptographic signatures.
+
+Consequences: existing artifact IDs cannot be rewritten; old unsealed records
+require a fresh artifact root/run for new trusted results. No scientific metric
+thresholds are relaxed and no historical research result is reclassified here.
+
+## 2026-09-19 — Temporal validation isolation begins before calibration search
+
+Decision:
+
+- Observation-conditioned model preparation uses only observations inside the
+  declared calibration interval and model diagnostics computed over the same
+  years. Excluding validation years only from the optimizer is insufficient: an
+  upstream parameter adjustment can transmit validation information into the
+  fitted model.
+- Weather forcing for the evaluation period may be used to execute the model,
+  but target observations and adaptive decisions based on model responses remain
+  isolated until evaluation.
+- Future adaptive preprocessing must carry an explicit conditioning period and a
+  regression test showing that validation-only changes cannot alter prepared
+  inputs or model selection.
+
+Why: the July and September workflows used full-period discharge to decide a
+subsurface parameter correction before calibration. A holdout-only perturbation
+changed that decision, invalidating a strict independent-validation
+interpretation even though the optimizer itself excluded the holdout.
+
+## 2026-09-19 — Research weather claims require validated unmodified forcing
+
+Decision:
+
+- GridMET responses must match the exact requested daily calendar and contain
+  finite, physically ordered raw values.
+- Bounded gap repair remains available for operational continuity, but every
+  affected station-day, variable and method is recorded, and any imputation
+  blocks the package-defined research-grade weather-fidelity claim.
+- Provider clients that cannot accept the configured connection timeout fail
+  before acquisition rather than falling back to an unbounded request.
+
+Why: shifted dates and NaN values previously passed shape validation and could
+be relabelled or converted into plausible forcing. Silent repair is incompatible
+with a high-tier scientific claim.

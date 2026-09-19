@@ -107,7 +107,8 @@ def run_validation(
 
     Caching:
     - Computes content hash per basin config.
-    - If run already exists in artifact store, skips execution.
+    - Reuses only sealed artifacts with an explicit successful execution status.
+    - Failed executions are reported, not published as reusable artifacts.
     """
     artifacts = Path(artifacts_root).expanduser().resolve()
     runs_root_path = Path(runs_root).expanduser().resolve()
@@ -126,15 +127,15 @@ def run_validation(
             simulation_start=spec.simulation_start,
             simulation_end=spec.simulation_end,
             parameters={},
-            options=dict(spec.options),
+            options={**spec.options, "validation_cache_schema": 2},
         )
         content_hash = compute_content_hash(
             cfg, engine_version=engine_version, builder_git_sha=git_sha
         )
         run_dir = runs_root_path / spec.resolved_basin_id
 
-        if store.exists(content_hash):
-            rec = store.read(content_hash)
+        rec = store.read(content_hash) if store.exists(content_hash) else None
+        if rec is not None and rec.metadata.execution_status == "success":
             nse = rec.metrics.nse if rec.metrics else None
             expected_nse = (
                 float(spec.expected_nse_min)
@@ -161,6 +162,8 @@ def run_validation(
         try:
             run_dir.mkdir(parents=True, exist_ok=True)
             exec_res = exec_fn(spec, run_dir)
+            if exec_res.status != "success":
+                raise RuntimeError(f"Validation executor returned {exec_res.status!r}")
             md = ArtifactMetadata.model_validate(
                 {
                     "run_id": content_hash,
@@ -168,6 +171,7 @@ def run_validation(
                     "builder_version": __version__,
                     "git_sha": git_sha,
                     **exec_res.metadata,
+                    "execution_status": "success",
                 }
             )
             metrics = (

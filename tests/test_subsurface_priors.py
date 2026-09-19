@@ -33,6 +33,17 @@ def _write_fixture(
         f"0 0 0 0 0 0 basin 1000 {et} 0 10 90 {perc} {wateryld}\n",
         encoding="utf-8",
     )
+    yearly_rows = "\n".join(
+        f"365 12 31 {year} 1 1 basin 1000 {et} 0 10 90 {perc} {wateryld}"
+        for year in range(2010, 2020)
+    )
+    (txt / "basin_wb_yr.txt").write_text(
+        "basin_wb_yr\n"
+        "jday mon day yr unit gis_id name precip et pet surq_gen latq perc wateryld\n"
+        "mm mm mm mm mm mm mm mm mm mm mm mm mm mm\n"
+        f"{yearly_rows}\n",
+        encoding="utf-8",
+    )
     (txt / "hydrology.hyd").write_text(
         "hydrology.hyd\n"
         "name lat_ttime lat_sed can_max esco epco orgn_enrich orgp_enrich cn3_swf bio_mix perco lat_orgn lat_orgp pet_co latq_co\n"
@@ -149,3 +160,41 @@ def test_subsurface_prior_finalize_records_post_rerun_improvement(tmp_path: Path
     assert finalized["status"] == "applied_improved"
     assert finalized["water_balance_after"]["wateryld_to_precip"] == pytest.approx(0.47)
     assert finalized["improvement"]["improved_toward_observed_qp"] is True
+
+
+def test_subsurface_prior_ignores_validation_observations_and_water_balance(tmp_path: Path) -> None:
+    training = _obs_series_for_annual_depth(100.0, 200.0, n_days=2191)
+    training.index = pd.date_range("2010-01-01", "2015-12-31", freq="D")
+
+    results = []
+    for label, validation_depth, validation_wateryld in (
+        ("low", 200.0, 100.0),
+        ("high", 700.0, 900.0),
+    ):
+        run = tmp_path / label
+        txt = _write_fixture(run, wateryld=100.0)
+        validation = _obs_series_for_annual_depth(100.0, validation_depth, n_days=1461)
+        validation.index = pd.date_range("2016-01-01", "2019-12-31", freq="D")
+        obs = pd.concat([training, validation])
+        path = txt / "basin_wb_yr.txt"
+        lines = path.read_text(encoding="utf-8").splitlines()
+        for index in range(9, 13):
+            fields = lines[index].split()
+            fields[-1] = str(validation_wateryld)
+            lines[index] = " ".join(fields)
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+        results.append(
+            apply_subsurface_prior_correction(
+                run,
+                txt,
+                obs_series=obs,
+                conditioning_period=("2010-01-01", "2015-12-31"),
+            )
+        )
+
+    assert [result["status"] for result in results] == ["not_applied", "not_applied"]
+    assert results[0]["observed_runoff"] == results[1]["observed_runoff"]
+    assert results[0]["water_balance_before"] == results[1]["water_balance_before"]
+    assert results[0]["observed_runoff"]["n_days"] == 2191
+    assert results[0]["conditioning_period"] == ["2010-01-01", "2015-12-31"]

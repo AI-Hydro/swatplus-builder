@@ -128,6 +128,7 @@ def test_run_workflow_launches_detached_process_and_status_roundtrips(
             captured["kwargs"] = kwargs
 
     monkeypatch.setattr(mcp_server.subprocess, "Popen", _FakePopen)
+    monkeypatch.setattr(mcp_server.threading.Thread, "start", lambda self: None)
 
     out_dir = tmp_path / "wf"
     res = tools["run_workflow"].fn(
@@ -140,6 +141,8 @@ def test_run_workflow_launches_detached_process_and_status_roundtrips(
     )
     assert res.status == "started"
     assert res.pid == 99999999
+    assert "swatplus_builder.mcp.worker" in captured["argv"]
+    captured["argv"] = _json.loads((out_dir / "workflow_launch.json").read_text())["argv"]
     assert "--usgs-id" in captured["argv"] and "01547700" in captured["argv"]
     assert "--hru-mode" in captured["argv"] and "full_overlay" in captured["argv"]
     assert "--min-hru-fraction" in captured["argv"] and "0.001" in captured["argv"]
@@ -159,6 +162,8 @@ def test_run_workflow_launches_detached_process_and_status_roundtrips(
     Path(res.log_path).write_text(
         "engine noise line\n" + _json.dumps(payload, indent=2) + "\n", encoding="utf-8"
     )
+    state = _json.loads((out_dir / "workflow_launch.json").read_text())
+    (out_dir / "workflow_result.json").write_text(_json.dumps({"launch_id": state["launch_id"], "returncode": 0}))
     status = tools["workflow_status"].fn(req=WorkflowStatusRequest(out_dir=str(out_dir)))
     assert status.status == "completed"
     assert status.success is True

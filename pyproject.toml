@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "swatplus-builder"
-version = "0.7.13"
+version = "0.7.14"
 description = "Build and calibrate SWAT+ hydrologic models from a USGS gauge ID — with evidence-backed, claim-governed results."
 readme = "README.md"
 license = { text = "MIT" }
@@ -74,7 +74,7 @@ soils = [
     "adlfs>=2024.2",
 ]
 mcp = [
-    "mcp>=1.2",
+    "mcp>=1.2,<2",  # FastMCP API; MCP 2 renames/removes this surface.
 ]
 swatplus = [
     # pySWATPlus: calibration parameter editing + sensitivity analysis

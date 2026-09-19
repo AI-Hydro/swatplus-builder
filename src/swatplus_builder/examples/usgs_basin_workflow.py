@@ -48,8 +48,9 @@ import random
 import shutil
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from swatplus_builder.types import SoilProfile
@@ -837,6 +838,7 @@ def main(
     sim_end: str = SIM_END,
     warmup_years: int = 0,
     build_config: object = None,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ):
     global STATION_ID, log
 
@@ -869,6 +871,7 @@ def main(
     from swatplus_builder.gis.tables import build_tables
     from swatplus_builder.gis.validate import validate_watershed
     from swatplus_builder.output.eval import evaluate_run, terminal_channel_ids
+    from swatplus_builder.output.mass_trace import fetch_usgs_site_metadata
     from swatplus_builder.output.metadata import (
         RunMetadata,
         sha256_file,
@@ -876,7 +879,6 @@ def main(
         utc_now_iso,
         write_metadata,
     )
-    from swatplus_builder.output.mass_trace import fetch_usgs_site_metadata
     from swatplus_builder.output.plots.wrapper import generate_all_plots
     from swatplus_builder.soil.sda import fetch_sda_mukeys_for_geometry
     from swatplus_builder.soil.writer import write_soils
@@ -1781,7 +1783,8 @@ def main(
             stations,
             start=weather_start_str,
             end=sim_end,
-            settings=ref_settings
+            settings=ref_settings,
+            progress_callback=progress_callback,
         )
     except Exception as exc:
         from swatplus_builder.errors import SwatBuilderExternalError
@@ -1806,6 +1809,7 @@ def main(
                 start=weather_start_str,
                 end=sim_end,
                 settings=ref_settings,
+                progress_callback=progress_callback,
             )
         except Exception as fallback_exc:
             if not isinstance(fallback_exc, SwatBuilderExternalError):
@@ -2269,6 +2273,15 @@ def main(
             f"sim_source_staged_to_outputs={sim_source_file}; method={sim_source_stage_method}"
         )
 
+    weather_client_version = None
+    if weather_source == "gridmet":
+        try:
+            import pygridmet  # type: ignore[import-untyped]
+
+            weather_client_version = getattr(pygridmet, "__version__", None)
+        except Exception:  # pragma: no cover - provider already fetched successfully
+            weather_client_version = None
+
     md = RunMetadata(
         timestamp_utc=utc_now_iso(),
         usgs_id=STATION_ID,
@@ -2300,6 +2313,17 @@ def main(
             "n_subbasins_for_weather_context": int(len(tables.subbasins)),
             "station_selection": weather_station_selection,
             "provider_fallback_reason": weather_provider_fallback_reason or "",
+            "provider_client": "pygridmet" if weather_source == "gridmet" else "pydaymet",
+            "provider_client_version": weather_client_version,
+            "stations": [
+                {
+                    "name": series.station.name,
+                    "lat": float(series.station.lat),
+                    "lon": float(series.station.lon),
+                    "elev": float(series.station.elev),
+                }
+                for series in weather_bundle.stations
+            ],
             "weather_variables": sorted(
                 {
                     var
@@ -2307,6 +2331,11 @@ def main(
                     for var in series.variables()
                 }
             ),
+            "calendar_validated": bool(weather_bundle.provenance.get("calendar_validated")),
+            "raw_values_validated": bool(weather_bundle.provenance.get("raw_values_validated")),
+            "imputation_count": int(weather_bundle.provenance.get("imputation_count", 0)),
+            "imputations": list(weather_bundle.provenance.get("imputations", [])),
+            "claim_impact": str(weather_bundle.provenance.get("claim_impact", "none")),
         },
         retry_attempts=retry_attempts,
         lte_hru_channel_scale_correction=(

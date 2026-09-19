@@ -12,6 +12,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from ..evidence.integrity import sha256_file
 from ..params.governance import calibration_eligible_full_mode_parameters
 
 
@@ -390,6 +391,7 @@ def run_diagnostic_calibration(
                 "final_routing_flow_gates": final_routing_flow_gates,
                 "timing_limitation_documented": timing_limitation["documented"],
                 "timing_limitation_basis": timing_limitation["basis"],
+                "timing_limitation_exception": timing_limitation["exception"],
                 "hydrograph_comparison": hydrograph_report,
                 "skill_diagnostics": skill_diagnostics,
                 "final_metrics_authority": "verification_summary.json",
@@ -1089,19 +1091,19 @@ def _documented_timing_limitation(
     pbias: float | None,
 ) -> dict[str, object]:
     if nse is None or kge is None or nse >= 0.0 or kge < 0.40:
-        return {"documented": False, "basis": None}
+        return {"documented": False, "basis": None, "exception": None}
     if pbias is not None and abs(pbias) > 30.0:
-        return {"documented": False, "basis": None}
+        return {"documented": False, "basis": None, "exception": None}
     path = skill_diagnostics.get("skill_diagnostics_json")
     if not path:
-        return {"documented": False, "basis": None}
+        return {"documented": False, "basis": None, "exception": None}
     try:
         payload = json.loads(Path(str(path)).read_text(encoding="utf-8"))
     except Exception:
-        return {"documented": False, "basis": None}
+        return {"documented": False, "basis": None, "exception": None}
     flags = payload.get("diagnostic_flags")
     if not isinstance(flags, list):
-        return {"documented": False, "basis": None}
+        return {"documented": False, "basis": None, "exception": None}
     timing_symptoms: list[str] = []
     for flag in flags:
         if not isinstance(flag, dict):
@@ -1110,12 +1112,23 @@ def _documented_timing_limitation(
         if "timing" in symptom.lower() or "peak lag" in symptom.lower():
             timing_symptoms.append(symptom)
     if not timing_symptoms:
-        return {"documented": False, "basis": None}
+        return {"documented": False, "basis": None, "exception": None}
     basis = (
         f"KGE={kge:.3f} passes the research minimum while NSE={nse:.3f} is negative; "
         f"skill diagnostics document timing limitation: {', '.join(timing_symptoms[:3])}."
     )
-    return {"documented": True, "basis": basis}
+    evidence_path = Path(str(path)).resolve()
+    return {
+        "documented": True,
+        "basis": basis,
+        "exception": {
+            "authorized": True,
+            "scope": "negative_nse_with_kge",
+            "basis": basis,
+            "supporting_artifact": str(evidence_path),
+            "supporting_artifact_sha256": sha256_file(evidence_path),
+        },
+    }
 
 
 def _check_locked_txt_routing_flow(

@@ -1335,6 +1335,8 @@ def test_screen_parameters_against_lock_writes_basin_specific_artifact(monkeypat
     assert progress["status"] == "complete"
     assert progress["completed_parameters"] == 1
     assert progress["total_parameters"] == 1
+    assert progress["completed_bounds"] == 2
+    assert progress["total_bounds"] == 2
     assert progress["max_workers"] == 1
     assert progress["parameters"][0]["parameter"] == "CN2"
 

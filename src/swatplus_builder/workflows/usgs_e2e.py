@@ -39,6 +39,9 @@ from ..governance import (
 from ..governance import (
     soil_fidelity_gate as _soil_fidelity_gate_impl,
 )
+from ..governance import (
+    weather_fidelity_gate as _weather_fidelity_gate_impl,
+)
 from ..orchestrate import run_pipeline
 from ..output.et_diagnostics import write_et_partition_diagnostics
 from ..output.landuse_fidelity import build_landuse_fidelity_block
@@ -537,6 +540,23 @@ def _claim_lists(
             }
         )
 
+    weather_gate = _weather_fidelity_gate(values)
+    if weather_gate["passed"]:
+        allowed.append(
+            {
+                "claim": "weather_fidelity_gate_passed",
+                "tier": "research_grade",
+                "basis": weather_gate["reason"],
+            }
+        )
+    else:
+        blocked.append(
+            {
+                "claim": "weather_fidelity_gate_passed",
+                "tier": "research_grade",
+                "reason": weather_gate["reason"],
+            }
+        )
     improvement_gate = _calibration_improvement_gate(values)
     if improvement_gate["passed"]:
         allowed.append(
@@ -695,6 +715,7 @@ def _effective_claim_tier(
     if not (
         calibration_success
         and _research_metric_gate(values)["passed"]
+        and _weather_fidelity_gate(values)["passed"]
         and _calibration_improvement_gate(values)["passed"]
     ):
         return "diagnostic"
@@ -716,6 +737,10 @@ def _research_metric_gate(values: dict[str, Any]) -> dict[str, Any]:
 
 def _soil_fidelity_gate(values: dict[str, Any]) -> dict[str, Any]:
     return _soil_fidelity_gate_impl(values)
+
+
+def _weather_fidelity_gate(values: dict[str, Any]) -> dict[str, Any]:
+    return _weather_fidelity_gate_impl(values)
 
 
 def _landuse_fidelity_gate(values: dict[str, Any]) -> dict[str, Any]:
@@ -936,6 +961,12 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
         with events_path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(rec, default=str) + "\n")
 
+    def _pipeline_progress(event: dict[str, Any]) -> None:
+        payload = dict(event)
+        stage = str(payload.pop("stage", "weather_gridmet"))
+        status = str(payload.pop("status", "progress"))
+        _event(stage, status, **payload)
+
     if events_path.exists():
         events_path.unlink()
     _event("workflow", "started", usgs_id=request.usgs_id, model_family=request.model_family)
@@ -987,6 +1018,10 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
                 allow_diagnostic_fallbacks=True,
                 hru_mode=request.hru_mode,
                 min_hru_fraction=request.min_hru_fraction,
+                observation_conditioning_period=(
+                    split["calibration_start"], split["calibration_end"]
+                ),
+                progress_callback=_pipeline_progress,
             )
             values.update(summary if isinstance(summary, dict) else {"pipeline_summary": str(summary)})
             _promote_soil_provenance_from_metadata(values, out)
@@ -1136,6 +1171,11 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
             locked_txtinout = cal_provenance.get("locked_calibrated_txtinout")
             if locked_txtinout and values.get("sim_source_file"):
                 locked_txtinout_path = Path(str(locked_txtinout))
+                values["fresh_txtinout_dir"] = str(locked_txtinout_path)
+                receipt_path = locked_txtinout_path / "engine_run_receipt.json"
+                values["engine_run_id"] = (
+                    json.loads(receipt_path.read_text()).get("run_id") if receipt_path.is_file() else None
+                )
                 locked_sim_source = locked_txtinout_path / str(values["sim_source_file"])
                 if locked_sim_source.is_file():
                     values["sim_source_path"] = str(locked_sim_source)
@@ -1199,6 +1239,10 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
                 )
             if cal_provenance.get("timing_limitation_basis"):
                 values["timing_limitation_basis"] = cal_provenance.get("timing_limitation_basis")
+            if isinstance(cal_provenance.get("timing_limitation_exception"), dict):
+                values["timing_limitation_exception"] = cal_provenance.get(
+                    "timing_limitation_exception"
+                )
             if cal_provenance.get("sensitivity_screen_basis"):
                 values["sensitivity_screen_basis"] = cal_provenance.get("sensitivity_screen_basis")
                 values["sensitivity_screen_path"] = cal_provenance.get("sensitivity_screen_path")
@@ -1288,7 +1332,11 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
             outlet_prov[k] = values[k]
     outlet_path = out / "outlet_provenance.json"
     outlet_path.write_text(json.dumps(outlet_prov, indent=2) + "\n", encoding="utf-8")
+    from ..evidence.integrity import sha256_file
+
     values["outlet_provenance_path"] = str(outlet_path)
+    values["outlet_provenance_sha256"] = sha256_file(outlet_path)
+    values["workflow_run_id"] = run_id
 
     try:
         values["landuse_fidelity"] = build_landuse_fidelity_block(

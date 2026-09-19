@@ -308,12 +308,10 @@ class TestHappyPath:
         )
         assert bundle.stations[0].station.name == "custom_name"
 
-    def test_tmax_always_gt_tmin_even_if_server_ships_inverted(
+    def test_inverted_temperature_is_rejected(
         self, monkeypatch, tmp_path
     ):
-        """If GridMET ever returns tmmn >= tmmx (rare, but real bug in
-        older product versions), the adapter must still produce a
-        strictly-increasing pair so the engine's validator passes."""
+        """A bad provider value must not be silently rewritten as observed forcing."""
         from swatplus_builder.weather import fetch_gridmet
 
         def bad(*, coords, dates, variables):
@@ -332,16 +330,13 @@ class TestHappyPath:
             )
 
         _install_fake_pygridmet(monkeypatch, _FakeClient(bad))
-        bundle = fetch_gridmet(
-            stations=[(40.0, -80.0, 200.0)],
-            start="2015-01-01",
-            end="2015-01-03",
-            cache_dir=tmp_path,
-        )
-        s = bundle.stations[0]
-        assert s.tmax is not None and s.tmin is not None
-        for tx, tn in zip(s.tmax, s.tmin):
-            assert tx > tn
+        with pytest.raises(SwatBuilderPipelineError, match="minimum temperature"):
+            fetch_gridmet(
+                stations=[(40.0, -80.0, 200.0)],
+                start="2015-01-01",
+                end="2015-01-03",
+                cache_dir=tmp_path,
+            )
 
     def test_round_trip_through_writer(self, monkeypatch, tmp_path):
         from swatplus_builder.weather import write_observed
@@ -390,8 +385,116 @@ class TestExternalErrors:
             cache_dir=tmp_path,
         )
 
-        assert captured["conn_timeout"] >= 1000
+        assert captured["conn_timeout"] == 300
         assert captured["validate_filesize"] is False
+
+    def test_timeout_and_attempt_budget_can_be_bounded_by_environment(
+        self, monkeypatch, tmp_path
+    ):
+        from swatplus_builder.weather import fetch_gridmet
+
+        captured = {}
+
+        class _OptionAwareClient:
+            def get_bycoords(self, **kwargs):
+                captured.update(kwargs)
+                return _mk_df(
+                    coords=kwargs["coords"],
+                    dates=kwargs["dates"],
+                    variables=kwargs["variables"],
+                )
+
+        _install_fake_pygridmet(monkeypatch, _OptionAwareClient())
+        monkeypatch.setenv("SWATPLUS_GRIDMET_CONN_TIMEOUT_SECONDS", "45")
+        monkeypatch.setenv("SWATPLUS_GRIDMET_FETCH_ATTEMPTS", "1")
+
+        fetch_gridmet(
+            stations=[(41.1, -77.5, 300.0)],
+            start="2015-01-01",
+            end="2015-01-05",
+            variables=["pcp"],
+            cache_dir=tmp_path,
+        )
+
+        assert captured["conn_timeout"] == 45
+
+    def test_progress_callback_reports_each_station(self, monkeypatch, tmp_path):
+        from swatplus_builder.weather import fetch_gridmet
+
+        _install_fake_pygridmet(monkeypatch, _FakeClient(_mk_df))
+        events = []
+
+        fetch_gridmet(
+            stations=[(41.1, -77.5, 300.0), (41.2, -77.6, 320.0)],
+            start="2015-01-01",
+            end="2015-01-05",
+            variables=["pcp"],
+            cache_dir=tmp_path,
+            progress_callback=events.append,
+        )
+
+        assert [event["status"] for event in events] == [
+            "started",
+            "station_started",
+            "station_completed",
+            "station_started",
+            "station_completed",
+            "completed",
+        ]
+        assert events[-1]["stations_completed"] == 2
+        assert events[-1]["stations_total"] == 2
+
+    def test_stations_in_same_native_cell_share_provider_fetch(
+        self, monkeypatch, tmp_path
+    ):
+        from swatplus_builder.weather import fetch_gridmet
+
+        fake = _FakeClient(_mk_df)
+        _install_fake_pygridmet(monkeypatch, fake)
+        events = []
+
+        bundle = fetch_gridmet(
+            stations=[(41.100, -77.500, 300.0), (41.101, -77.501, 325.0)],
+            start="2015-01-01",
+            end="2015-01-05",
+            variables=["pcp"],
+            cache_dir=tmp_path,
+            progress_callback=events.append,
+        )
+
+        assert len(fake.calls) == 1
+        assert len(bundle.stations) == 2
+        assert bundle.stations[0].station.name != bundle.stations[1].station.name
+        assert bundle.stations[0].pcp == bundle.stations[1].pcp
+        completed = [event for event in events if event["status"] == "station_completed"]
+        assert completed[0]["reused_grid_cell"] is False
+        assert completed[1]["reused_grid_cell"] is True
+        assert events[-1]["unique_grid_cells"] == 1
+
+    @pytest.mark.parametrize(
+        ("setting", "value"),
+        [
+            ("SWATPLUS_GRIDMET_CONN_TIMEOUT_SECONDS", "0"),
+            ("SWATPLUS_GRIDMET_CONN_TIMEOUT_SECONDS", "invalid"),
+            ("SWATPLUS_GRIDMET_FETCH_ATTEMPTS", "6"),
+        ],
+    )
+    def test_invalid_reliability_budget_is_rejected(
+        self, monkeypatch, tmp_path, setting, value
+    ):
+        from swatplus_builder.weather import fetch_gridmet
+
+        _install_fake_pygridmet(monkeypatch, _FakeClient(_mk_df))
+        monkeypatch.setenv(setting, value)
+
+        with pytest.raises(SwatBuilderInputError, match=setting):
+            fetch_gridmet(
+                stations=[(41.1, -77.5, 300.0)],
+                start="2015-01-01",
+                end="2015-01-05",
+                variables=["pcp"],
+                cache_dir=tmp_path,
+            )
 
     def test_transient_pygridmet_exception_is_retried(
         self, monkeypatch, tmp_path
@@ -437,6 +540,7 @@ class TestExternalErrors:
         fake.get_bycoords = boom  # type: ignore[assignment]
         _install_fake_pygridmet(monkeypatch, fake)
         monkeypatch.setattr("swatplus_builder.weather.gridmet.time.sleep", lambda _s: None)
+        events = []
 
         with pytest.raises(SwatBuilderExternalError, match="THREDDS 503") as excinfo:
             fetch_gridmet(
@@ -444,10 +548,13 @@ class TestExternalErrors:
                 start="2015-01-01",
                 end="2015-01-05",
                 cache_dir=tmp_path,
+                progress_callback=events.append,
             )
         assert excinfo.value.context.get("station") == "s41100n77500w"
-        assert excinfo.value.context.get("attempts") == 3
-        assert attempts["n"] == 3
+        assert excinfo.value.context.get("attempts") == 2
+        assert attempts["n"] == 2
+        assert events[-1]["status"] == "station_failed"
+        assert events[-1]["attempts"] == 2
 
     def test_row_count_mismatch_triggers_pipeline_error(
         self, monkeypatch, tmp_path
@@ -478,6 +585,72 @@ class TestExternalErrors:
                 cache_dir=tmp_path,
             )
 
+    def test_matching_row_count_with_shifted_calendar_is_rejected(
+        self, monkeypatch, tmp_path
+    ):
+        from swatplus_builder.weather import fetch_gridmet
+
+        def shifted(**kwargs):
+            idx = pd.date_range("2015-01-02", periods=5, freq="D")
+            return pd.DataFrame({"pr (mm)": [1.0] * 5}, index=idx)
+
+        fake = _FakeClient(lambda **kwargs: None)
+        fake.get_bycoords = shifted  # type: ignore[assignment]
+        _install_fake_pygridmet(monkeypatch, fake)
+
+        with pytest.raises(SwatBuilderPipelineError, match="wrong daily calendar"):
+            fetch_gridmet(
+                stations=[(41.1, -77.5, 300.0)],
+                start="2015-01-01",
+                end="2015-01-05",
+                variables=["pcp"],
+                cache_dir=tmp_path,
+            )
+
+    @pytest.mark.parametrize(
+        ("variable", "variables"),
+        [("pr (mm)", ["pcp"]), ("vs (m/s)", ["wnd"]), ("srad (W/m2)", ["slr"])],
+    )
+    def test_nonfinite_weather_is_rejected(
+        self, monkeypatch, tmp_path, variable, variables
+    ):
+        from swatplus_builder.weather import fetch_gridmet
+
+        def nonfinite(**kwargs):
+            idx = pd.date_range(kwargs["dates"][0], kwargs["dates"][1], freq="D")
+            return pd.DataFrame({variable: [float("nan")] * len(idx)}, index=idx)
+
+        fake = _FakeClient(lambda **kwargs: None)
+        fake.get_bycoords = nonfinite  # type: ignore[assignment]
+        _install_fake_pygridmet(monkeypatch, fake)
+
+        with pytest.raises(SwatBuilderPipelineError, match="non-finite"):
+            fetch_gridmet(
+                stations=[(41.1, -77.5, 300.0)],
+                start="2015-01-01",
+                end="2015-01-05",
+                variables=variables,
+                cache_dir=tmp_path,
+            )
+
+    def test_real_client_without_timeout_support_is_rejected(
+        self, monkeypatch, tmp_path
+    ):
+        from swatplus_builder.weather import fetch_gridmet
+
+        fake = _FakeClient(_mk_df)
+        fake.__version__ = "0.15.0"
+        _install_fake_pygridmet(monkeypatch, fake)
+
+        with pytest.raises(SwatBuilderExternalError, match="bounded connection timeouts"):
+            fetch_gridmet(
+                stations=[(41.1, -77.5, 300.0)],
+                start="2015-01-01",
+                end="2015-01-05",
+                variables=["pcp"],
+                cache_dir=tmp_path,
+            )
+
     def test_single_missing_boundary_day_is_repaired(self, monkeypatch, tmp_path):
         from swatplus_builder.weather import fetch_gridmet
 
@@ -502,6 +675,9 @@ class TestExternalErrors:
 
         assert bundle.n_days == 5
         assert bundle.stations[0].pcp == [2.0] * 5
+        assert bundle.provenance["imputation_count"] == 1
+        assert bundle.provenance["imputations"][0]["date"] == "2015-01-01"
+        assert bundle.provenance["imputations"][0]["method"] == "backward_fill_from_first_provider_day"
 
     def test_single_missing_internal_day_is_repaired(self, monkeypatch, tmp_path):
         from swatplus_builder.weather import fetch_gridmet

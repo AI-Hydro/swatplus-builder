@@ -37,11 +37,12 @@ from __future__ import annotations
 
 import datetime as _dt
 import logging
+import math
 import os
 import time
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ..config import DEFAULT_SETTINGS, Settings
 from ..errors import (
@@ -78,9 +79,12 @@ GRIDMET_VARIABLE_MAP: dict[WeatherVar, tuple[str, ...]] = {
     "slr": ("srad",),
 }
 
-_GRIDMET_FETCH_ATTEMPTS = 3
+_GRIDMET_FETCH_ATTEMPTS = 2
 _GRIDMET_RETRY_SLEEP_SECONDS = 2.0
-_GRIDMET_CONN_TIMEOUT_SECONDS = 1800
+_GRIDMET_CONN_TIMEOUT_SECONDS = 300
+_GRIDMET_GRID_SPACING_DEGREES = 1.0 / 24.0
+_GRIDMET_WESTERNMOST_CENTER = -124.7666666667
+_GRIDMET_NORTHERNMOST_CENTER = 49.4
 # GridMET typically lags real-time by 3–5 days; 7 is a conservative buffer.
 # Requests with end dates within this window may receive fewer rows than
 # expected because the THREDDS server silently clips to its coverage boundary.
@@ -100,6 +104,8 @@ or a 3-tuple ``(lat, lon, elev)`` — in which case the station name is
 derived via :func:`station_name` so rows collide with the editor's
 auto-generated ``weather_sta_cli``."""
 
+ProgressCallback = Callable[[dict[str, Any]], None]
+
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -114,6 +120,7 @@ def fetch_gridmet(
     variables: Sequence[WeatherVar] = ("pcp", "tmp", "hmd", "wnd", "slr"),
     cache_dir: Path | str | None = None,
     settings: Settings = DEFAULT_SETTINGS,
+    progress_callback: ProgressCallback | None = None,
 ) -> WeatherBundle:
     """Fetch daily GridMET for every station and build a :class:`WeatherBundle`.
 
@@ -137,6 +144,9 @@ def fetch_gridmet(
             ``pygridmet`` (pygridmet's own logic — we just honour it).
             Defaults to ``settings.cache_dir / "gridmet"``.
         settings: Runtime overrides.
+        progress_callback: Optional callback receiving provider/station progress
+            dictionaries. Callback failures are logged and do not interrupt
+            weather acquisition.
 
     Returns:
         :class:`WeatherBundle` with one :class:`StationSeries` per input
@@ -175,31 +185,134 @@ def fetch_gridmet(
     client = _load_pygridmet()
     cache_path = _resolve_cache_dir(cache_dir, settings)
     os.environ.setdefault("HYRIVER_CACHE_NAME", str(cache_path / "hyriver_cache.sqlite"))
+    conn_timeout = _positive_env_int(
+        "SWATPLUS_GRIDMET_CONN_TIMEOUT_SECONDS",
+        _GRIDMET_CONN_TIMEOUT_SECONDS,
+        maximum=1800,
+    )
+    fetch_attempts = _positive_env_int(
+        "SWATPLUS_GRIDMET_FETCH_ATTEMPTS",
+        _GRIDMET_FETCH_ATTEMPTS,
+        maximum=5,
+    )
+    unique_grid_cells = {_gridmet_cell_key(station) for station in stations_typed}
+
+    _emit_progress(
+        progress_callback,
+        status="started",
+        provider="gridmet",
+        stations_total=len(stations_typed),
+        variables=list(gridmet_vars),
+        start=start,
+        end=end,
+        connection_timeout_seconds=conn_timeout,
+        fetch_attempts=fetch_attempts,
+        unique_grid_cells=len(unique_grid_cells),
+    )
 
     series_list: list[StationSeries] = []
-    for station in stations_typed:
-        df = _fetch_one(
-            client=client,
-            station=station,
-            start=start,
-            end=end,
-            variables=gridmet_vars,
-            cache_dir=cache_path,
+    data_by_grid_cell: dict[tuple[int, int], pd.DataFrame] = {}
+    imputation_records: list[dict[str, Any]] = []
+    started_at = time.monotonic()
+    for station_index, station in enumerate(stations_typed, start=1):
+        station_started_at = time.monotonic()
+        grid_cell = _gridmet_cell_key(station)
+        reused_grid_cell = grid_cell in data_by_grid_cell
+        _emit_progress(
+            progress_callback,
+            status="station_started",
+            provider="gridmet",
+            station=station.name,
+            station_index=station_index,
+            stations_total=len(stations_typed),
+            grid_cell=list(grid_cell),
+            reused_grid_cell=reused_grid_cell,
         )
-        df = _repair_bounded_day_gaps(
-            df,
-            station=station,
-            start=start,
-            end=end,
-            n_days=n_days,
-        )
-        _validate_response_shape(df, station=station, n_days=n_days)
+        if reused_grid_cell:
+            df = data_by_grid_cell[grid_cell]
+        else:
+            df = _fetch_one(
+                client=client,
+                station=station,
+                start=start,
+                end=end,
+                variables=gridmet_vars,
+                cache_dir=cache_path,
+                conn_timeout=conn_timeout,
+                fetch_attempts=fetch_attempts,
+                progress_callback=progress_callback,
+                station_index=station_index,
+                stations_total=len(stations_typed),
+            )
+            df = _repair_bounded_day_gaps(
+                df,
+                station=station,
+                start=start,
+                end=end,
+                n_days=n_days,
+            )
+            _validate_response_shape(
+                df,
+                station=station,
+                start=start,
+                end=end,
+                n_days=n_days,
+            )
+            data_by_grid_cell[grid_cell] = df
         series = _build_series(
             df=df, station=station, start=start, n_days=n_days, variables=variables
         )
         series_list.append(series)
+        for record in df.attrs.get("imputations", []):
+            if isinstance(record, dict):
+                imputation_records.append(
+                    {
+                        **record,
+                        "station": station.name,
+                        "grid_cell": list(grid_cell),
+                        "reused_grid_cell": reused_grid_cell,
+                    }
+                )
 
-    return WeatherBundle(stations=series_list, start=start, n_days=n_days)
+        _emit_progress(
+            progress_callback,
+            status="station_completed",
+            provider="gridmet",
+            station=station.name,
+            station_index=station_index,
+            stations_total=len(stations_typed),
+            grid_cell=list(grid_cell),
+            reused_grid_cell=reused_grid_cell,
+            elapsed_seconds=round(time.monotonic() - station_started_at, 3),
+        )
+
+    _emit_progress(
+        progress_callback,
+        status="completed",
+        provider="gridmet",
+        stations_completed=len(series_list),
+        stations_total=len(stations_typed),
+        unique_grid_cells=len(data_by_grid_cell),
+        elapsed_seconds=round(time.monotonic() - started_at, 3),
+    )
+
+    return WeatherBundle(
+        stations=series_list,
+        start=start,
+        n_days=n_days,
+        provenance={
+            "provider": "gridmet",
+            "calendar_validated": True,
+            "raw_values_validated": True,
+            "imputation_count": len(imputation_records),
+            "imputations": imputation_records,
+            "claim_impact": (
+                "weather_forcing_contains_declared_imputation"
+                if imputation_records
+                else "none"
+            ),
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -313,6 +426,56 @@ def _resolve_cache_dir(
     return p
 
 
+def _positive_env_int(name: str, default: int, *, maximum: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise SwatBuilderInputError(
+            f"{name} must be an integer; got {raw!r}",
+            setting=name,
+            value=raw,
+        ) from exc
+    if value < 1 or value > maximum:
+        raise SwatBuilderInputError(
+            f"{name} must be between 1 and {maximum}; got {value}",
+            setting=name,
+            value=value,
+            maximum=maximum,
+        )
+    return value
+
+
+def _gridmet_cell_key(station: WeatherStation) -> tuple[int, int]:
+    """Return the nearest native GridMET cell index for a station.
+
+    GridMET cell centers form a 1/24-degree grid starting at the westernmost
+    and northernmost centers below. Stations with the same key would be
+    selected from the same cell by pygridmet, so one provider fetch can safely
+    supply each of their SWAT+ station series.
+    """
+    lon_index = math.floor(
+        (station.lon - _GRIDMET_WESTERNMOST_CENTER) / _GRIDMET_GRID_SPACING_DEGREES
+        + 0.5
+    )
+    lat_index = math.floor(
+        (_GRIDMET_NORTHERNMOST_CENTER - station.lat) / _GRIDMET_GRID_SPACING_DEGREES
+        + 0.5
+    )
+    return lat_index, lon_index
+
+
+def _emit_progress(callback: ProgressCallback | None, **event: Any) -> None:
+    if callback is None:
+        return
+    try:
+        callback(event)
+    except Exception as exc:  # pragma: no cover - defensive observer isolation
+        log.warning("GridMET progress callback failed: %s", exc)
+
+
 def _fetch_one(
     *,
     client,  # type: ignore[no-untyped-def]
@@ -321,43 +484,74 @@ def _fetch_one(
     end: str,
     variables: Sequence[str],
     cache_dir: Path,
+    conn_timeout: int,
+    fetch_attempts: int,
+    progress_callback: ProgressCallback | None,
+    station_index: int,
+    stations_total: int,
 ) -> pd.DataFrame:
     """Call pygridmet for a single (lon, lat). Translate errors."""
+    import inspect
+
+    parameters = inspect.signature(client.get_bycoords).parameters
+    supports_reliability_options = (
+        "conn_timeout" in parameters
+        and "validate_filesize" in parameters
+    ) or any(parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters.values())
+    if not supports_reliability_options and (
+        getattr(client, "__version__", None) is not None
+        or getattr(client, "__name__", "") == "pygridmet"
+    ):
+        raise SwatBuilderExternalError(
+            "Installed pygridmet does not support bounded connection timeouts. "
+            "Install pygridmet>=0.16 before acquiring GridMET forcing.",
+            provider="gridmet",
+            client_version=getattr(client, "__version__", None),
+        )
     last_exc: Exception | None = None
-    for attempt in range(1, _GRIDMET_FETCH_ATTEMPTS + 1):
+    for attempt in range(1, fetch_attempts + 1):
         try:
-            return client.get_bycoords(
+            kwargs = dict(
                 coords=(station.lon, station.lat),
                 dates=(start, end),
                 variables=list(variables),
                 to_xarray=False,
-                conn_timeout=_GRIDMET_CONN_TIMEOUT_SECONDS,
-                validate_filesize=False,
             )
-        except TypeError as exc:
-            if "conn_timeout" not in str(exc) and "validate_filesize" not in str(exc):
-                raise
-            try:
-                return client.get_bycoords(
-                    coords=(station.lon, station.lat),
-                    dates=(start, end),
-                    variables=list(variables),
-                    to_xarray=False,
-                )
-            except Exception as fallback_exc:
-                last_exc = fallback_exc
-                if attempt < _GRIDMET_FETCH_ATTEMPTS:
-                    time.sleep(_GRIDMET_RETRY_SLEEP_SECONDS)
+            if supports_reliability_options:
+                kwargs.update(conn_timeout=conn_timeout, validate_filesize=False)
+            return client.get_bycoords(**kwargs)
         except Exception as exc:  # pygridmet raises a medley of types
             last_exc = exc
-            if attempt < _GRIDMET_FETCH_ATTEMPTS:
+            if attempt < fetch_attempts:
+                _emit_progress(
+                    progress_callback,
+                    status="station_retrying",
+                    provider="gridmet",
+                    station=station.name,
+                    station_index=station_index,
+                    stations_total=stations_total,
+                    attempt=attempt,
+                    attempts_total=fetch_attempts,
+                    error=str(exc)[-300:],
+                )
                 time.sleep(_GRIDMET_RETRY_SLEEP_SECONDS)
 
     assert last_exc is not None
+    _emit_progress(
+        progress_callback,
+        status="station_failed",
+        provider="gridmet",
+        station=station.name,
+        station_index=station_index,
+        stations_total=stations_total,
+        attempts=fetch_attempts,
+        connection_timeout_seconds=conn_timeout,
+        error=str(last_exc)[-300:],
+    )
     raise SwatBuilderExternalError(
         f"pygridmet.get_bycoords failed for station {station.name!r} "
         f"at ({station.lat}, {station.lon}) after "
-        f"{_GRIDMET_FETCH_ATTEMPTS} attempts: {last_exc}",
+        f"{fetch_attempts} attempts: {last_exc}",
         station=station.name,
         lat=station.lat,
         lon=station.lon,
@@ -365,7 +559,8 @@ def _fetch_one(
         end=end,
         variables=list(variables),
         cache_dir=str(cache_dir),
-        attempts=_GRIDMET_FETCH_ATTEMPTS,
+        attempts=fetch_attempts,
+        connection_timeout_seconds=conn_timeout,
     ) from last_exc
 
 
@@ -427,17 +622,20 @@ def _repair_bounded_day_gaps(
         )
 
     repaired = df.copy()
+    imputations: list[dict[str, Any]] = []
     for day in sorted(missing):
         if day < first_available:
             # Leading gap: backward-fill from first available row
             row = repaired.loc[[repaired.index.min()]].copy()
             row.index = pd.DatetimeIndex([day])
             repaired = pd.concat([row, repaired])
+            method = "backward_fill_from_first_provider_day"
         elif day > last_available:
             # Trailing gap (server clipped end of coverage): forward-fill
             row = repaired.loc[[repaired.index.max()]].copy()
             row.index = pd.DatetimeIndex([day])
             repaired = pd.concat([repaired, row])
+            method = "forward_fill_from_last_provider_day"
         else:
             # Interior gap: average flanking days from the original data
             prev_day = day - pd.Timedelta(days=1)
@@ -453,14 +651,26 @@ def _repair_bounded_day_gaps(
             )
             row.index = pd.DatetimeIndex([day])
             repaired = pd.concat([repaired, row])
+            method = "linear_mean_of_adjacent_provider_days"
+        imputations.append(
+            {
+                "date": str(day.date()),
+                "variables": [str(column).split("(")[0].strip() for column in df.columns],
+                "method": method,
+            }
+        )
 
-    return repaired.sort_index()
+    repaired = repaired.sort_index()
+    repaired.attrs["imputations"] = imputations
+    return repaired
 
 
 def _validate_response_shape(
     df: pd.DataFrame,
     *,
     station: WeatherStation,
+    start: str,
+    end: str,
     n_days: int,
 ) -> None:
     """Guard against upstream date-range bugs.
@@ -470,6 +680,8 @@ def _validate_response_shape(
     coverage) we want to fail loudly here rather than write a partial
     ``.pcp`` file that the engine would choke on hours later.
     """
+    import pandas as pd
+
     if len(df) != n_days:
         raise SwatBuilderPipelineError(
             f"GridMET returned {len(df)} rows for station {station.name!r}, "
@@ -478,6 +690,28 @@ def _validate_response_shape(
             station=station.name,
             got=int(len(df)),
             expected=n_days,
+        )
+    if not isinstance(df.index, pd.DatetimeIndex):
+        raise SwatBuilderPipelineError(
+            f"GridMET returned a non-datetime index for station {station.name!r}",
+            station=station.name,
+        )
+    got = pd.DatetimeIndex(df.index)
+    if got.tz is not None:
+        got = got.tz_localize(None)
+    got = got.normalize()
+    expected_index = pd.date_range(start, end, freq="D")
+    if not got.equals(expected_index):
+        raise SwatBuilderPipelineError(
+            f"GridMET returned the wrong daily calendar for station {station.name!r}: "
+            f"expected {start} through {end}",
+            station=station.name,
+            expected_start=start,
+            expected_end=end,
+            got_start=str(got.min().date()) if len(got) else None,
+            got_end=str(got.max().date()) if len(got) else None,
+            unique=bool(got.is_unique),
+            monotonic=bool(got.is_monotonic_increasing),
         )
 
 
@@ -495,30 +729,40 @@ def _build_series(
     pcp = tmax = tmin = hmd = wnd = slr = None
 
     if "pcp" in variables:
-        pcp = [round(float(v), 2) for v in _col(normalized, "pr", station)]
+        raw_pcp = _validated_raw_values(normalized, "pr", station, minimum=0.0)
+        pcp = [round(v, 2) for v in raw_pcp]
     if "tmp" in variables:
-        tmmx = _col(normalized, "tmmx", station)
-        tmmn = _col(normalized, "tmmn", station)
-        tmax = [round(float(v) - 273.15, 2) for v in tmmx]
-        tmin = [round(float(v) - 273.15, 2) for v in tmmn]
-        # Sanity — if GridMET ever ships a bad cell, tmmx < tmmn flips
-        # signs downstream. Log-and-clamp rather than reject; the user
-        # can filter later.
-        tmax, tmin = _ensure_tmax_gt_tmin(tmax, tmin)
+        tmmx = _validated_raw_values(normalized, "tmmx", station, minimum=150.0, maximum=350.0)
+        tmmn = _validated_raw_values(normalized, "tmmn", station, minimum=150.0, maximum=350.0)
+        if any(low >= high for high, low in zip(tmmx, tmmn)):
+            raise SwatBuilderPipelineError(
+                f"GridMET minimum temperature is not below maximum temperature for station {station.name!r}",
+                station=station.name,
+            )
+        tmax = [round(v - 273.15, 2) for v in tmmx]
+        tmin = [round(v - 273.15, 2) for v in tmmn]
     if "hmd" in variables:
-        rmin = _col(normalized, "rmin", station)
-        rmax = _col(normalized, "rmax", station)
+        rmin = _validated_raw_values(normalized, "rmin", station, minimum=0.0, maximum=100.0)
+        rmax = _validated_raw_values(normalized, "rmax", station, minimum=0.0, maximum=100.0)
+        if any(low > high for low, high in zip(rmin, rmax)):
+            raise SwatBuilderPipelineError(
+                f"GridMET minimum humidity exceeds maximum humidity for station {station.name!r}",
+                station=station.name,
+            )
         hmd = [
-            round(max(0.0, min(1.0, (float(a) + float(b)) / 200.0)), 3)
+            round((a + b) / 200.0, 3)
             for a, b in zip(rmin, rmax)
         ]
     if "wnd" in variables:
-        wnd = [round(max(0.0, float(v)), 2) for v in _col(normalized, "vs", station)]
+        wnd = [
+            round(v, 2)
+            for v in _validated_raw_values(normalized, "vs", station, minimum=0.0)
+        ]
     if "slr" in variables:
         # W/m² → MJ/m²/day: multiply by 86400 s / 1e6 = 0.0864.
         slr = [
-            round(max(0.0, float(v) * 0.0864), 2)
-            for v in _col(normalized, "srad", station)
+            round(v * 0.0864, 2)
+            for v in _validated_raw_values(normalized, "srad", station, minimum=0.0)
         ]
 
     return StationSeries(
@@ -563,6 +807,42 @@ def _col(
             missing=name,
             available=sorted(cols),
         ) from exc
+
+
+def _validated_raw_values(
+    cols: dict[str, pd.Series],
+    name: str,
+    station: WeatherStation,
+    *,
+    minimum: float | None = None,
+    maximum: float | None = None,
+) -> list[float]:
+    values = [float(value) for value in _col(cols, name, station)]
+    for index, value in enumerate(values):
+        if not math.isfinite(value):
+            raise SwatBuilderPipelineError(
+                f"GridMET variable {name!r} contains a non-finite value for station {station.name!r}",
+                station=station.name,
+                variable=name,
+                row=index,
+            )
+        if minimum is not None and value < minimum:
+            raise SwatBuilderPipelineError(
+                f"GridMET variable {name!r} is below {minimum} for station {station.name!r}",
+                station=station.name,
+                variable=name,
+                row=index,
+                value=value,
+            )
+        if maximum is not None and value > maximum:
+            raise SwatBuilderPipelineError(
+                f"GridMET variable {name!r} exceeds {maximum} for station {station.name!r}",
+                station=station.name,
+                variable=name,
+                row=index,
+                value=value,
+            )
+    return values
 
 
 def _ensure_tmax_gt_tmin(

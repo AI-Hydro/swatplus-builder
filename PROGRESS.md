@@ -10461,3 +10461,256 @@ Verification:
 - `PYTHONPATH=src python -m ruff check src/swatplus_builder/output/dashboard.py tests/test_output_dashboard.py`
 - `python -m build --wheel --outdir /tmp/swatplus-builder-wheel-check`
 - `git diff --check`
+
+## 2026-07-13 - Cache Cleanup And Exact Run Archival
+
+- Removed expired release-smoke environments, abandoned objective scratch,
+  browser QA files, project test/type/build caches, and `uv`/`pip` download
+  caches. Scientific run trees were excluded from this disposable pass.
+- Audited repository-local ignored runs and external validation groups against
+  current project/report references. Kept the current positive and negative
+  release validations, objective-report source groups, hardening runs,
+  `01031500` recovery evidence, and current dashboard extracted.
+- Converted seven superseded run trees from 25.58 GiB to 2.30 GiB of exact
+  `tar.zst` archives under
+  `/Users/mgalib/swatplus_run_archives/20260713/`. Before deleting a source,
+  compared source/archive entry counts, ran `zstd -t`, generated SHA-256
+  sidecars, and reverified every checksum.
+- Reduced the checkout from 26 GiB to 4.3 GiB. Available disk space increased
+  from 4.9 GiB to 30 GiB after cache cleanup and archival. The tracked working
+  tree was clean before the documentation record was added.
+
+Verification:
+
+- `shasum -a 256 -c /Users/mgalib/swatplus_run_archives/20260713/*.sha256`
+  (all seven archives passed when checked individually)
+- `zstd -t` and source/archive entry-count equality for every archive
+- Current dashboard retained at
+  `/Users/mgalib/swatplus_runs/calibration_resume_validate_20260710/01547700_2010_2019_fulloverlay/dashboard.html`
+- `git diff --check`
+
+## 2026-07-16 - Publication Evidence Freeze And Thesis Integration
+
+- Froze 18 scoped claims against the dated 11-basin objective-suite report,
+  the retained USGS `01547700` positive run, the retained USGS `03349000`
+  negative control, and eight deterministic governance challenges.
+- Rewrote the Environmental Modelling & Software manuscript around end-to-end
+  operation plus package-owned claim authority, added verified closest-work
+  citations, and documented the diagnostic-guided DDS calibration protocol
+  without claiming optimizer or hydrologic superiority.
+- Generated six manuscript figures and one thesis derivative. AI-assisted
+  imagery is limited to two disclosed conceptual mechanism figures; all result
+  visuals remain scripted and artifact-derived. Every PDF was rasterized at
+  300 dpi, manually inspected, refined, and accepted in the figure manifest.
+- Replaced the SWATPlus-Builder thesis placeholder section with completed,
+  evidence-bounded results and synchronized concise status statements across
+  Chapters 1, 2, and 8. The comparative 50/400-run agent study remains
+  prospective.
+- Added a reproducibility manifest that records evidence checksums, focused-run
+  Builder commits, the current environment, and the current SWAT+ engine
+  checksum. It explicitly does not claim that the current checksum identifies
+  the historical 2026-07-10 run binary; a tagged public evidence archive
+  remains required before submission.
+
+Verification:
+
+- `python -m py_compile Research_article/scripts/build_visual_assets.py Research_article/scripts/build_reproducibility_manifest.py`
+- selected governance mechanism tests (`8 passed`)
+- manuscript visual manifest: six manuscript figures and one thesis derivative accepted
+- thesis `latexmk -lualatex thesis`: 106 pages, 0 undefined references or citations
+- `git diff --check` in both repositories
+
+## 2026-07-16 - Publication Independent Review Closure
+
+- Corrected the negative-control figure so successful locked verification is
+  distinct from failed final claim gates and failed withheld transfer.
+- Expanded the frozen ledger to cover the objective suite's 11 provenance and
+  one metric claim, the two selected outlet GIS identifiers, and the sealed
+  input counts already reported in the manuscript and thesis.
+- Added bounded comparisons to SWAT+ Toolbox, R-SWAT, pySWATPlus, Parallel DDS,
+  and the broader SWAT-UQ platform without introducing feature, runtime,
+  optimizer, or hydrologic-superiority claims.
+- Regenerated all six manuscript figures and the thesis derivative, completed
+  raster review, rebuilt the 106-page thesis, and received an independent PASS
+  with no remaining major scientific or consistency findings.
+
+Verification:
+
+- selected governance mechanism tests (`8 passed`)
+- all six manuscript figures plus one thesis derivative accepted in the visual manifest
+- thesis `latexmk -lualatex thesis`: 106 pages, no undefined references or citations
+- independent reviewer: `PASS`
+- `git diff --check` in both repositories
+
+## 2026-07-16 - Separate Thesis Evidence and Release Audit
+
+- Replaced the retired combined thesis evaluation overview with seven
+  single-purpose vector plots: one numbered suite map, three USGS 01547700
+  diagnostics, and three USGS 03349000 diagnostics.
+- Moved calibration bounds, suite status, focused metrics, package decisions,
+  and deterministic governance challenges into native editable LaTeX tables.
+- Retained the operator/package/claim mechanism as native TikZ and removed
+  embedded figure titles, source notes, and result cards from thesis plots.
+- Corrected the focused sensitivity-screen description: 16 parameters were
+  evaluated, 14 retained, `CH_N2` and `CH_K2` produced zero objective response
+  and were classified `dead`, and `GW_DELAY` remained separately unsupported.
+- Regenerated and accepted five numbered manuscript figures, a separate
+  graphical abstract, and seven thesis derivatives after 300-dpi raster review.
+- Audited software availability. The manuscript checkout declares 0.7.13 and
+  registers 13 MCP tools, while public PyPI still serves 0.4.0 and describes 11
+  tools. A synchronized tag, wheel, documentation build, and evidence archive
+  remain submission blockers.
+- Added descriptive event-ledger spans of 86 min 48 s and 113 min 58 s with an
+  explicit prohibition on runtime comparison because the execution environment
+  was not fully frozen.
+
+Verification:
+
+- selected governance mechanism tests (`8 passed`)
+- claims ledger schema and sequence (`20 rows`, `12 columns`)
+- `python -m py_compile` for both publication generators
+- all manuscript and thesis visual records accepted in `figure_manifest.json`
+- thesis `latexmk -lualatex thesis`: 113 pages, no undefined references or citations
+- `git diff --check` in both repositories
+
+## 2026-07-16 - Public Release Evidence Correction
+
+- Rechecked the public package and documentation after the final publication
+  audit. PyPI serves version 0.7.13, and both its project description and the
+  MCP tool-surface page report 13 tools.
+- Corrected claim C20, the evidence freeze, manuscript availability statement,
+  thesis limitations, framing, project status, and reproducibility checklist.
+- Retained the actual discrepancy: the public project-status page still says
+  11 tools.
+- Kept the checksummed evidence archive, historical engine identity, and
+  archival identifier as submission blockers; version equality alone does not
+  establish run reconstruction.
+
+Verification:
+
+- public PyPI and documentation audit on 2026-07-16
+- claims ledger schema and sequence (`20 rows`, `12 columns`)
+- selected governance mechanism tests (`8 passed`)
+- thesis `latexmk -lualatex thesis`: 113 pages
+- `git diff --check` in both repositories
+
+## 2026-09-16 - Security, Reliability, and Enhancement Review
+
+- Reviewed checkout `00592c4` across MCP, governance, locked calibration,
+  artifact storage, validation, evaluation, CI/release, and documentation.
+- Recorded nine findings and prioritized enhancement scope in
+  `docs/SECURITY_RELIABILITY_REVIEW_2026-09-16.md`.
+- Reproduced non-finite gate acceptance, failed-validation cache reuse,
+  unreaped-child status errors, duplicate launch/log truncation, stale artifact
+  metrics, artifact-root traversal, and existence-only evidence verification
+  using isolated temporary probes. Duplicate launch used mocked subprocesses;
+  child lifecycle used a harmless real child, subsequently reaped.
+- Updated the project entry point. Application code and existing run artifacts
+  were not changed; fixes and live scientific revalidation remain pending.
+
+Verification:
+
+- Supported Python 3.13.2: 184 governance/workflow/MCP/artifact/lock tests passed.
+- 49 validation/evaluation/solver/real-objective tests passed.
+- `git diff --check` passed.
+- No live basin simulations or installed-dependency CVE scan were performed.
+
+## 2026-09-16 - Security and Reliability Hardening Implemented
+
+- Implemented all nine findings from the review: finite numeric gates, successful
+  validation caching, supervised MCP lifecycle, exclusive output directories,
+  immutable manifest-backed artifacts, path confinement, shared evidence/input
+  verification and execution receipts, mandatory release contract tests, and
+  pinned CI executable downloads/cache validation.
+- Added 38 hardening regression cases. Updated synthetic workflow fixtures to
+  provide real hashes and execution receipts rather than empty placeholder JSON.
+- Clean wheel installation exposed MCP 2 removing FastMCP; constrained the
+  existing MCP implementation to `<2`. Clean validation used MCP 1.30.0.
+- Both clean-solver and direct calibration-solver paths now issue run receipts;
+  receipts are excluded from model input fingerprints and candidate staging.
+- Documented compatibility: published artifact IDs are immutable, historical
+  unsealed records are preserved but not reused, and MCP launches require empty
+  output directories. Added plan completion, decision rationale, changelog, and
+  review remediation status.
+- Fixed existing unused/import-order lint findings needed to pass full source CI.
+
+Verification:
+
+- Clean wheel built and installed outside the checkout on Python 3.13.2;
+  installed module path verified under `/tmp/swatplus-hardening-20260916/venv/`.
+- Exact reusable offline CI suite: `360 passed, 2 skipped, 1 deselected` in
+  `55.20 s`. Skips are absent vendored-editor provenance/schema fixtures;
+  deselected test requires a live SWAT+ engine.
+- Additional source affected suites passed, including 295 initial contract,
+  autoresearch and calibrator cases; 119 execution/MCP/orchestration/packaging
+  cases; and 188 final shared-integrity/governance/workflow cases. These overlap
+  and are not an aggregate unique test count.
+- Current clean-environment Ruff: `ruff check src/ tests/ scripts/ci/` passed.
+- `git diff --check` passed.
+- Official Linux SWAT+ and WhiteboxTools archive/member hashes obtained and
+  recorded; tampered-download/cache rejection tested with isolated fixtures.
+  Linux binaries were not executed on this macOS host.
+- No live basin simulations, remote GitHub Actions run, package publication,
+  or changes to historical run artifacts were performed.
+
+## 2026-09-16 - Live Positive-Control Workflow Audit
+
+- Ran the canonical full-overlay, research-grade workflow for USGS `01547700`
+  (2010-01-01 through 2019-12-31, three-year warmup) with the local SWAT+ engine.
+- The run completed successfully in about 39 minutes. All listed evidence gates
+  passed; final verification metrics were NSE `0.3535`, KGE `0.5822`, and PBIAS
+  `-4.95`. The terrain-length/lapse-derived claim remained correctly blocked.
+- Runtime evidence exposed two operational gaps: GridMET acquisition created
+  2,275 cache files before emitting a stage completion event, and calibration
+  progress stayed at `0/16` until all sensitivity workers finished. These are
+  observability/performance risks rather than evidence-gate bypasses.
+- Added bound-level sensitivity progress (`completed_bounds`/`total_bounds` and
+  current parameter) and recorded weather station coordinates plus provider
+  client/version in future run metadata.
+- Added GridMET start/station/retry/completion events to the canonical workflow.
+  Replaced the fixed 1,800-second connection timeout and three attempts with
+  validated defaults of 300 seconds and two attempts; operators can override
+  them with `SWATPLUS_GRIDMET_CONN_TIMEOUT_SECONDS` and
+  `SWATPLUS_GRIDMET_FETCH_ATTEMPTS` within enforced bounds.
+- Deduplicated provider requests by native 1/24-degree GridMET cell while
+  preserving every SWAT+ weather-station record. The live basin's 25 stations
+  map to 10 provider cells, avoiding 15 repeated station downloads (60%).
+- Verified manifest pointers (33/33 present), finite evidence numerics, locked
+  benchmark tests, metadata/weather tests, Ruff, and `git diff --check`. A live
+  one-station GridMET probe emitted all four expected progress states and
+  completed in 3.1 seconds with a 60-second test timeout. A two-station live
+  probe confirmed same-cell reuse and identical forcing series.
+
+Live artifact:
+
+- `/Users/mgalib/swatplus_runs/live_audit_20260916/01547700_2010_2019_full/EVIDENCE_SUMMARY.md`
+
+## 2026-09-19 - Preprint Readiness and Further Vulnerability Review
+
+- Reviewed current source, retained July/September evidence, Markdown/LaTeX
+  manuscript, compiled PDF and publication inventories. Wrote
+  `docs/PREPRINT_READINESS_REVIEW_2026-09-19.md` with prioritized findings,
+  contribution/prior-art positioning, evidence gaps and release acceptance checks.
+- Confirmed that full-period observations, including nominally withheld years,
+  influence the subsurface-prior decision before calibration. Both July cases
+  consulted 3,652 days; the positive applied the correction, the negative did
+  not. An isolated holdout-only perturbation changed the prepared parameters.
+  Historical scores are retained; strict independent-validation interpretation
+  is unsupported until corrected/re-evaluated or explicitly narrowed.
+- Reproduced shifted weather calendar acceptance, NaN weather coercion,
+  unsupported improvement-basis acceptance, truthy string timing exceptions and
+  post-receipt input mutation acceptance. Gate-level probes do not establish a
+  complete end-to-end claim-promotion exploit.
+- Existing focused suites passed: 119 tests, one live-GridMET skip. The exact
+  eight manuscript challenges also passed (overlapping coverage). All 16
+  hash-bearing manifest file entries matched locally. No fresh basin run or
+  comprehensive dependency/security scan was performed.
+- Identified SWATdoctR as missing close prior art and separated the claim-policy
+  contribution from established automation, calibration and provenance methods.
+  Inspected PDF pages 1, 2 and 11 visually; scientific interpretation is the
+  priority over layout polish.
+- Updated PROJECT.md and the manuscript GAPS.md. No application code, paper
+  result values, historical run files or public release were changed.
+- Correction to earlier readiness implications: September hardening and passing
+  live gates do not establish complete scientific validity. Same-cell reuse
+  equality is also not an independent provider-equivalence test for deduplication.

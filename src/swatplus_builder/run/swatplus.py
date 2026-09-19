@@ -51,6 +51,7 @@ import shutil
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from ..config import DEFAULT_SETTINGS, Settings
@@ -400,6 +401,10 @@ def run(
     env = _build_env(threads, exe)
     cmd = [str(exe)]
 
+    # A direct run (also used by calibration) must not inherit an earlier
+    # execution's receipt or the daily outputs covered by that receipt.
+    for name in (*_FRESH_ENGINE_FILES, "engine_run_receipt.json"):
+        (txtinout / name).unlink(missing_ok=True)
     start = time.monotonic()
     try:
         proc = subprocess.run(
@@ -456,6 +461,16 @@ def run(
             stderr_tail=stderr_tail,
             stdout_tail=stdout_tail,
             diagnostics_tail=diagnostics_tail,
+        )
+
+    completion = txtinout / "simulation.out"
+    if completion.is_file() and "Execution successfully completed" in completion.read_text(errors="replace"):
+        _write_execution_receipt(
+            txtinout,
+            proc.returncode,
+            executable=exe,
+            threads=threads,
+            timeout_s=timeout_s,
         )
 
     return SwatPlusRun(
@@ -561,6 +576,52 @@ def run_solver_subprocess(
     return proc.returncode, stdout_tail, stderr_tail
 
 
+_FRESH_ENGINE_FILES = (
+    "simulation.out", "channel_sd_day.txt", "channel_day.txt",
+    "basin_sd_cha_day.txt", "basin_cha_day.txt", "basin_wb_yr.txt",
+    "hydout_yr.txt", "hydout_aa.txt",
+)
+
+
+def _write_execution_receipt(
+    txt: Path,
+    returncode: int,
+    *,
+    executable: Path,
+    threads: int,
+    timeout_s: float,
+) -> None:
+    import json
+    from uuid import uuid4
+
+    from ..evidence.integrity import input_configuration_fingerprint, sha256_file
+
+    input_sha256, input_file_count = input_configuration_fingerprint(txt)
+
+    receipt = {
+        "schema_version": "2.0",
+        "run_id": uuid4().hex,
+        "sealed_at_utc": datetime.now(timezone.utc).isoformat(),
+        "returncode": returncode,
+        "input_configuration_sha256": input_sha256,
+        "input_configuration_file_count": input_file_count,
+        "engine": {
+            "path": str(executable.resolve()),
+            "sha256": sha256_file(executable),
+        },
+        "execution": {
+            "threads": int(threads),
+            "timeout_s": float(timeout_s) if timeout_s is not None else None,
+            "timeout_enforced": timeout_s is not None,
+        },
+        "files": {name: sha256_file(txt / name) for name in _FRESH_ENGINE_FILES
+                  if (txt / name).is_file()},
+    }
+    pending = txt / ".engine_run_receipt.tmp"
+    pending.write_text(json.dumps(receipt) + "\n", encoding="utf-8")
+    pending.replace(txt / "engine_run_receipt.json")
+
+
 def clean_and_run_solver(
     txtinout: Path | str,
     *,
@@ -603,16 +664,7 @@ def clean_and_run_solver(
             ) from exc
 
     # 1. Delete stale outputs
-    _stale_patterns = [
-        "simulation.out",
-        "channel_sd_day.txt",
-        "channel_day.txt",
-        "basin_sd_cha_day.txt",
-        "basin_cha_day.txt",
-        "basin_wb_yr.txt",
-        "hydout_yr.txt",
-        "hydout_aa.txt",
-    ]
+    _stale_patterns = ("engine_run_receipt.json", *_FRESH_ENGINE_FILES)
     last_error: SwatBuilderExternalError | None = None
     total_attempts = max(0, int(retry_attempts)) + 1
     for attempt in range(1, total_attempts + 1):
@@ -708,6 +760,13 @@ def clean_and_run_solver(
                 continue
             raise last_error
 
+        _write_execution_receipt(
+            txt,
+            rc,
+            executable=exe_path,
+            threads=threads,
+            timeout_s=timeout_s,
+        )
         return rc, stdout_tail, stderr_tail
 
     if last_error is not None:

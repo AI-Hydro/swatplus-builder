@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,8 @@ def run_pipeline(
     allow_diagnostic_fallbacks: bool = False,
     hru_mode: str = "dominant_only",
     min_hru_fraction: float = 0.0,
+    observation_conditioning_period: tuple[str, str] | None = None,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """Execute the full end-to-end validation platform for a basin.
     
@@ -62,6 +65,9 @@ def run_pipeline(
         "warmup_years": int(warmup_years),
         "hru_mode_requested": hru_mode,
         "min_hru_fraction_requested": float(min_hru_fraction),
+        "observation_conditioning_period": (
+            list(observation_conditioning_period) if observation_conditioning_period else None
+        ),
         "status": "FAILED"
     }
 
@@ -80,6 +86,7 @@ def run_pipeline(
                 allow_diagnostic_fallbacks=allow_diagnostic_fallbacks,
                 hru_mode=hru_mode,
                 min_hru_fraction=min_hru_fraction,
+                progress_callback=progress_callback,
             )
             run_config["build"] = build_result.to_dict()
             if not build_result.success:
@@ -170,6 +177,7 @@ def run_pipeline(
                 outdir,
                 txtinout,
                 obs_series=obs_series,
+                conditioning_period=observation_conditioning_period,
             )
             run_config["subsurface_prior_correction"] = subsurface_prior
             run_config["subsurface_prior_correction_path"] = subsurface_prior.get("report_path")
@@ -248,6 +256,7 @@ def run_pipeline(
                 "metrics": metrics,
                 "locked_calibration_ready": True,
                 "fresh_engine_run": True,
+                "engine_run_id": json.loads((txtinout / "engine_run_receipt.json").read_text())["run_id"],
                 "engine_returncode": rc,
                 "engine_stdout_tail": stdout_tail,
                 "engine_stderr_tail": stderr_tail,
@@ -291,7 +300,12 @@ def _load_run_metadata_fields(outdir: Path) -> dict[str, Any]:
         log.warning("Could not load run metadata from %s: %s", metadata_path, exc)
         return {}
     fields: dict[str, Any] = {}
-    for key in ("soil_mode", "soil_provenance_mode", "pct_fallback_soils"):
+    for key in (
+        "soil_mode",
+        "soil_provenance_mode",
+        "pct_fallback_soils",
+        "weather_coverage_flags",
+    ):
         if key in metadata:
             fields[key] = metadata[key]
     notes = metadata.get("notes")

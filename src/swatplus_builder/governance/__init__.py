@@ -13,6 +13,7 @@ from .gates import (
     research_metric_gate,
     sensitivity_gate,
     soil_fidelity_gate,
+    weather_fidelity_gate,
 )
 from .tiers import CLAIM_TIERS, higher_tier, tier_rank
 
@@ -25,6 +26,7 @@ __all__ = [
     "outlet_provenance_gate",
     "research_metric_gate",
     "soil_fidelity_gate",
+    "weather_fidelity_gate",
     "landuse_fidelity_gate",
     "calibration_improvement_gate",
     "sensitivity_gate",

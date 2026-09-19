@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 from swatplus_builder.orchestrate import _load_observed_series, run_pipeline
+from tests.evidence_helpers import seal_engine
 
 
 def _write_prepared_run(root: Path) -> Path:
@@ -120,6 +121,7 @@ def test_run_pipeline_builds_when_txtinout_missing(monkeypatch, tmp_path: Path) 
         )
 
     def fake_clean_and_run_solver(txtinout, **kwargs):
+        seal_engine(Path(txtinout))
         return 0, "ok", ""
 
     monkeypatch.setattr("swatplus_builder.workflows.full_build.build_full_model", fake_build_full_model)
@@ -157,6 +159,7 @@ def test_run_pipeline_promotes_builder_soil_metadata(monkeypatch, tmp_path: Path
         )
 
     def fake_clean_and_run_solver(txtinout, **kwargs):
+        seal_engine(Path(txtinout))
         return 0, "ok", ""
 
     monkeypatch.setattr("swatplus_builder.workflows.full_build.build_full_model", fake_build_full_model)
@@ -205,6 +208,7 @@ def test_run_pipeline_backfills_soil_provenance_from_metadata_notes(monkeypatch,
         )
 
     def fake_clean_and_run_solver(txtinout, **kwargs):
+        seal_engine(Path(txtinout))
         return 0, "ok", ""
 
     monkeypatch.setattr("swatplus_builder.workflows.full_build.build_full_model", fake_build_full_model)
@@ -228,6 +232,7 @@ def test_run_pipeline_clean_rerun_locks_existing_prepared_outputs(monkeypatch, t
 
     def fake_clean_and_run_solver(txtinout, **kwargs):
         assert Path(txtinout) == txt
+        seal_engine(Path(txtinout))
         return 0, "ok", ""
 
     monkeypatch.setattr("swatplus_builder.run.swatplus.clean_and_run_solver", fake_clean_and_run_solver)
@@ -264,6 +269,7 @@ def test_run_pipeline_promotes_prepared_run_soil_metadata(monkeypatch, tmp_path:
     )
 
     def fake_clean_and_run_solver(txtinout, **kwargs):
+        seal_engine(Path(txtinout))
         return 0, "ok", ""
 
     monkeypatch.setattr("swatplus_builder.run.swatplus.clean_and_run_solver", fake_clean_and_run_solver)

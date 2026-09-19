@@ -38,26 +38,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[all]"
 
-      # Cache the downloaded WBT binary across runs.  The cache key includes the
-      # pyproject hash so a whitebox-python version bump re-downloads.
+      # Cache digest-addressed executables. Changed review pins select a new
+      # cache; restored bytes are verified again before installation.
       - name: Cache WhiteboxTools binary
         id: cache-wbt
         uses: actions/cache@v4
         with:
-          path: ~/.cache/whitebox_wbt
-          key: wbt-linux-amd64-${{ hashFiles('**/pyproject.toml') }}
+          path: ~/.cache/swatplus-builder-binaries
+          key: wbt-linux-amd64-${{ hashFiles('scripts/ci/binary_pins.json') }}
 
       - name: Pre-download WhiteboxTools binary
         run: python scripts/ci/install_wbt.py
 
       - name: Bootstrap SWAT+ Linux engine (pinned release asset)
-        run: |
-          mkdir -p bin
-          curl -L -o /tmp/swatplus-linux.zip \
-            https://github.com/swat-model/swatplus/releases/download/61.0.2/swatplus-61.0.2-ifx-lin_x86_64-Rel.zip
-          unzip -o /tmp/swatplus-linux.zip -d /tmp
-          cp /tmp/swatplus-61.0.2-ifx-lin_x86_64-Rel bin/swatplus_exe
-          chmod +x bin/swatplus_exe
+        run: python scripts/ci/install_binary.py swatplus bin/swatplus_exe
 
       - name: Routing regression gate (multi-basin)
         env:
