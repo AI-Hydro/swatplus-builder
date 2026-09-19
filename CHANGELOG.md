@@ -2,7 +2,7 @@
 
 All notable changes to swatplus-builder are documented here.
 
-## [0.7.14] — 2026-09-19
+## [0.7.14] — 2026-09-20
 
 ### Scientific validity and evidence integrity
 
@@ -12,15 +12,16 @@ All notable changes to swatplus-builder are documented here.
   the prepared parameters.
 - GridMET forcing now requires the exact requested daily calendar, finite raw
   values, physical ranges, valid minimum/maximum ordering, and a provider client
-  with bounded connection-timeout support. Permitted missing-day repairs are
-  serialized by station, cell, date, variable and method; imputed forcing blocks
-  the research-grade weather-fidelity claim.
+  with bounded connection-timeout support. Known GridMET no-leap 31 December
+  omissions are separately recorded as calendar normalization; other repaired
+  gaps remain imputation and block the research-grade weather-fidelity claim.
 - Calibration improvement is recomputed from designated baseline and locked
   verification metrics. Timing exceptions require a typed, checksummed
   supporting diagnostic artifact.
 - Engine execution receipts bind output hashes to the exact input configuration,
   executable digest, thread count and timeout policy. Post-run input mutation
-  invalidates freshness evidence.
+  invalidates freshness evidence, while derived alignment tables are excluded
+  from the static model-input fingerprint.
 
 ### Security and reliability
 - Claim gates reject NaN/infinity and verify benchmark hashes, model input
@@ -41,6 +42,9 @@ All notable changes to swatplus-builder are documented here.
   against repository-pinned SHA-256 digests before execution.
 - The optional MCP dependency is constrained to `<2` because this package uses
   the v1 FastMCP API.
+- Bundled legacy SWAT+ Editor entry points no longer invoke a user-supplied
+  executable through a shell or expose the Flask debugger/tracebacks. A
+  high-severity Bandit scan is clean after these changes.
 
 ### Improved
 - Emit per-station GridMET progress events through canonical workflow runs and

@@ -213,6 +213,7 @@ def fetch_gridmet(
     series_list: list[StationSeries] = []
     data_by_grid_cell: dict[tuple[int, int], pd.DataFrame] = {}
     imputation_records: list[dict[str, Any]] = []
+    calendar_adjustment_records: list[dict[str, Any]] = []
     started_at = time.monotonic()
     for station_index, station in enumerate(stations_typed, start=1):
         station_started_at = time.monotonic()
@@ -273,6 +274,16 @@ def fetch_gridmet(
                         "reused_grid_cell": reused_grid_cell,
                     }
                 )
+        for record in df.attrs.get("calendar_adjustments", []):
+            if isinstance(record, dict):
+                calendar_adjustment_records.append(
+                    {
+                        **record,
+                        "station": station.name,
+                        "grid_cell": list(grid_cell),
+                        "reused_grid_cell": reused_grid_cell,
+                    }
+                )
 
         _emit_progress(
             progress_callback,
@@ -306,10 +317,16 @@ def fetch_gridmet(
             "raw_values_validated": True,
             "imputation_count": len(imputation_records),
             "imputations": imputation_records,
+            "calendar_adjustment_count": len(calendar_adjustment_records),
+            "calendar_adjustments": calendar_adjustment_records,
             "claim_impact": (
                 "weather_forcing_contains_declared_imputation"
                 if imputation_records
-                else "none"
+                else (
+                    "gridmet_noleap_calendar_normalized"
+                    if calendar_adjustment_records
+                    else "none"
+                )
             ),
         },
     )
@@ -623,6 +640,7 @@ def _repair_bounded_day_gaps(
 
     repaired = df.copy()
     imputations: list[dict[str, Any]] = []
+    calendar_adjustments: list[dict[str, Any]] = []
     for day in sorted(missing):
         if day < first_available:
             # Leading gap: backward-fill from first available row
@@ -652,16 +670,21 @@ def _repair_bounded_day_gaps(
             row.index = pd.DatetimeIndex([day])
             repaired = pd.concat([repaired, row])
             method = "linear_mean_of_adjacent_provider_days"
-        imputations.append(
-            {
-                "date": str(day.date()),
-                "variables": [str(column).split("(")[0].strip() for column in df.columns],
-                "method": method,
-            }
-        )
+        record = {
+            "date": str(day.date()),
+            "variables": [str(column).split("(")[0].strip() for column in df.columns],
+            "method": method,
+        }
+        if day.month == 12 and day.day == 31 and day.is_leap_year:
+            record["kind"] = "gridmet_noleap_dec31_normalization"
+            calendar_adjustments.append(record)
+        else:
+            record["kind"] = "provider_data_gap_imputation"
+            imputations.append(record)
 
     repaired = repaired.sort_index()
     repaired.attrs["imputations"] = imputations
+    repaired.attrs["calendar_adjustments"] = calendar_adjustments
     return repaired
 
 

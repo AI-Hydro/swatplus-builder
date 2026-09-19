@@ -132,6 +132,28 @@ def test_weather_fidelity_gate_requires_validated_unmodified_forcing() -> None:
     assert "imputed" in result["reason"]
 
 
+def test_weather_fidelity_gate_accepts_only_gridmet_noleap_adjustments() -> None:
+    flags = {
+        "calendar_validated": True,
+        "raw_values_validated": True,
+        "imputation_count": 0,
+        "calendar_adjustment_count": 1,
+        "calendar_adjustments": [
+            {
+                "date": "2016-12-31",
+                "variables": ["pr", "tmmx"],
+                "method": "linear_mean_of_adjacent_provider_days",
+                "kind": "gridmet_noleap_dec31_normalization",
+            }
+        ],
+    }
+    assert weather_fidelity_gate({"weather_coverage_flags": flags})["passed"]
+    flags["calendar_adjustments"][0]["date"] = "2016-07-01"
+    result = weather_fidelity_gate({"weather_coverage_flags": flags})
+    assert result["passed"] is False
+    assert "unsupported" in result["reason"]
+
+
 # ---------------------------------------------------------------------------
 # soil_fidelity_gate
 # ---------------------------------------------------------------------------

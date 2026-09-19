@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 import re
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -206,7 +207,49 @@ def weather_fidelity_gate(values: dict[str, Any]) -> dict[str, Any]:
             "passed": False,
             "reason": f"weather forcing contains {count} declared imputed station-days",
         }
-    return {"passed": True, "reason": "weather calendar and raw values validated; no imputation"}
+    adjustments = flags.get("calendar_adjustments", [])
+    adjustment_count = flags.get("calendar_adjustment_count", len(adjustments))
+    if (
+        type(adjustment_count) is not int
+        or adjustment_count < 0
+        or not isinstance(adjustments, list)
+        or len(adjustments) != adjustment_count
+    ):
+        return {"passed": False, "reason": "weather calendar-adjustment evidence is invalid"}
+    for adjustment in adjustments:
+        if not isinstance(adjustment, dict):
+            return {"passed": False, "reason": "weather calendar-adjustment record is invalid"}
+        try:
+            adjusted_date = date.fromisoformat(str(adjustment.get("date")))
+        except ValueError:
+            return {"passed": False, "reason": "weather calendar-adjustment date is invalid"}
+        if (
+            adjustment.get("kind") != "gridmet_noleap_dec31_normalization"
+            or adjusted_date.month != 12
+            or adjusted_date.day != 31
+            or not (
+                adjusted_date.year % 4 == 0
+                and (adjusted_date.year % 100 != 0 or adjusted_date.year % 400 == 0)
+            )
+            or adjustment.get("method")
+            not in {
+                "linear_mean_of_adjacent_provider_days",
+                "forward_fill_from_last_provider_day",
+            }
+            or not isinstance(adjustment.get("variables"), list)
+            or not adjustment["variables"]
+        ):
+            return {
+                "passed": False,
+                "reason": "unsupported weather calendar adjustment",
+            }
+    return {
+        "passed": True,
+        "reason": (
+            "weather calendar and raw values validated; no data-gap imputation; "
+            f"{adjustment_count} documented GridMET no-leap adjustment(s)"
+        ),
+    }
 
 
 def soil_fidelity_gate(values: dict[str, Any]) -> dict[str, Any]:

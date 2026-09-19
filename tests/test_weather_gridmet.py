@@ -709,6 +709,42 @@ class TestExternalErrors:
 
         assert bundle.n_days == 5
         assert bundle.stations[0].pcp == [1.0, 2.0, 3.0, 4.0, 5.0]
+        assert bundle.provenance["imputation_count"] == 1
+        assert bundle.provenance["calendar_adjustment_count"] == 0
+
+    def test_gridmet_noleap_dec31_is_a_documented_calendar_adjustment(
+        self, monkeypatch, tmp_path
+    ):
+        from swatplus_builder.weather import fetch_gridmet
+
+        def missing_leap_dec31(**k):
+            idx = pd.DatetimeIndex(["2016-12-30", "2017-01-01"])
+            return pd.DataFrame({"pr (mm)": [2.0, 4.0]}, index=idx)
+
+        fake = _FakeClient(lambda **k: None)
+        fake.get_bycoords = missing_leap_dec31  # type: ignore[assignment]
+        _install_fake_pygridmet(monkeypatch, fake)
+
+        bundle = fetch_gridmet(
+            stations=[(41.1, -77.5, 300.0)],
+            start="2016-12-30",
+            end="2017-01-01",
+            variables=["pcp"],
+            cache_dir=tmp_path,
+        )
+
+        assert bundle.stations[0].pcp == [2.0, 3.0, 4.0]
+        assert bundle.provenance["imputation_count"] == 0
+        assert bundle.provenance["calendar_adjustment_count"] == 1
+        assert bundle.provenance["calendar_adjustments"][0] == {
+            "date": "2016-12-31",
+            "variables": ["pr"],
+            "method": "linear_mean_of_adjacent_provider_days",
+            "kind": "gridmet_noleap_dec31_normalization",
+            "station": "s41100n77500w",
+            "grid_cell": [199, 1134],
+            "reused_grid_cell": False,
+        }
 
     def test_multiple_isolated_missing_days_are_repaired(self, monkeypatch, tmp_path):
         from swatplus_builder.weather import fetch_gridmet

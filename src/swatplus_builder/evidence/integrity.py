@@ -80,6 +80,8 @@ def input_configuration_fingerprint(txtinout_dir: Path | str) -> tuple[str, int]
         if not path.is_file() or path.name == "engine_run_receipt.json":
             continue
         name = path.name.lower()
+        if name.startswith("alignment_") and name.endswith(".csv"):
+            continue
         if name.startswith(_DYNAMIC_OUTPUT_PREFIXES) and name.endswith((".txt", ".csv")):
             continue
         files.append(path)

@@ -10,6 +10,7 @@ from _swatplus_db.project.simulation import Time_sim
 import sys
 import argparse
 import os, os.path
+import subprocess
 from datetime import datetime
 
 
@@ -57,14 +58,13 @@ class RunAll(ExecutableApi):
 		write_api.write()
 
 		# Run the model
-		cwd = os.getcwd()
-		os.chdir(input_files_path)
-		run_result = os.system(swat_exe)
+		run_result = subprocess.run(
+			[swat_exe], cwd=input_files_path, check=False
+		).returncode
 		print(run_result)
 
 		# Import output files to db if successful run
 		if run_result == 0:
-			os.chdir(cwd)
 			output_db_file = os.path.join(input_files_path, '../', 'Results', 'swatplus_output.sqlite')
 			if not os.path.exists(os.path.join(input_files_path, '../', 'Results')):
 				os.makedirs(os.path.join(input_files_path, '../', 'Results'))

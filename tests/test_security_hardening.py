@@ -315,6 +315,35 @@ def test_post_execution_input_mutation_invalidates_receipt(tmp_path, monkeypatch
     assert "inputs differ" in result["reason"]
 
 
+def test_post_execution_alignment_artifact_does_not_invalidate_receipt(tmp_path, monkeypatch):
+    from swatplus_builder.run import swatplus
+
+    txt = tmp_path / "TxtInOut"
+    txt.mkdir()
+    (txt / "file.cio").write_text("original input")
+    executable = tmp_path / "fake-engine"
+    executable.write_bytes(b"engine")
+
+    def complete(**kwargs):
+        (txt / "simulation.out").write_text("Execution successfully completed")
+        (txt / "channel_sd_day.txt").write_text("new output")
+        return 0, "", ""
+
+    monkeypatch.setattr(swatplus, "run_solver_subprocess", complete)
+    swatplus.clean_and_run_solver(txt, exe=executable)
+    receipt = json.loads((txt / "engine_run_receipt.json").read_text())
+    (txt / "alignment_calibration.csv").write_text("date,obs,sim\n")
+    result = fresh_engine_gate(
+        {
+            "fresh_engine_run": True,
+            "engine_returncode": 0,
+            "engine_run_id": receipt["run_id"],
+            "txtinout_dir": str(txt),
+        }
+    )
+    assert result["passed"] is True
+
+
 def test_execution_receipt_is_not_a_static_model_input(tmp_path):
     from swatplus_builder.calibration.locked_benchmark import _input_configuration_fingerprint
     from swatplus_builder.calibration.real_engine import _copy_fresh_txtinout

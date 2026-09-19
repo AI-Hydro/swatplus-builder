@@ -2335,6 +2335,12 @@ def main(
             "raw_values_validated": bool(weather_bundle.provenance.get("raw_values_validated")),
             "imputation_count": int(weather_bundle.provenance.get("imputation_count", 0)),
             "imputations": list(weather_bundle.provenance.get("imputations", [])),
+            "calendar_adjustment_count": int(
+                weather_bundle.provenance.get("calendar_adjustment_count", 0)
+            ),
+            "calendar_adjustments": list(
+                weather_bundle.provenance.get("calendar_adjustments", [])
+            ),
             "claim_impact": str(weather_bundle.provenance.get("claim_impact", "none")),
         },
         retry_attempts=retry_attempts,

@@ -6,7 +6,7 @@ message: >-
   is traceable to the exact run.
 title: "swatplus-builder: Claim-governed SWAT+ hydrologic modeling from a USGS gauge ID"
 version: 0.7.14
-date-released: "2026-09-19"
+date-released: "2026-09-20"
 license: MIT
 repository-code: "https://github.com/AI-Hydro/swatplus-builder"
 url: "https://ai-hydro.github.io/swatplus-builder/"

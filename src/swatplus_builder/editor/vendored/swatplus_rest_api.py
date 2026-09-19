@@ -6,7 +6,6 @@ import argparse
 import platform
 import os
 import werkzeug
-import traceback
 
 from rest import setup, aquifer, auto_complete, basin, change, channel, climate, decision_table, definitions, gwflow, hru, hru_lte, hru_parm_db, hydrology, init, lum, ops, recall, regions, reservoir, routing_unit, salts, soils, structural, water_rights
 
@@ -62,7 +61,7 @@ def teardown(exception):
 
 @app.errorhandler(werkzeug.exceptions.HTTPException)
 def handle_exception(e):
-    return make_response(jsonify(message=e.description, stacktrace=traceback.format_exc()), e.code)
+    return make_response(jsonify(message=e.description), e.code)
 
 
 if __name__ == '__main__':
@@ -70,4 +69,4 @@ if __name__ == '__main__':
 	parser = argparse.ArgumentParser(description='SWAT+ Editor REST API')
 	parser.add_argument('port', type=str, help='port number to run API', default=5000, nargs='?')
 	args = parser.parse_args()
-	app.run(port=int(args.port), debug=True, use_reloader=False)
+	app.run(host='127.0.0.1', port=int(args.port), debug=False, use_reloader=False)
