@@ -10714,3 +10714,31 @@ Live artifact:
 - Correction to earlier readiness implications: September hardening and passing
   live gates do not establish complete scientific validity. Same-cell reuse
   equality is also not an independent provider-equivalence test for deduplication.
+
+## 2026-09-21 - Preprint Release Candidate Evidence Freeze
+
+- Completed fresh, same-version focused workflows for USGS `01547700` and
+  `03349000` from version 0.7.14 commit
+  `90eeec95df7e5b088ae7a309a09fff5dff7d5841`.
+- The positive case attained package-defined `research_grade` status with locked
+  verification NSE `0.3535`, KGE `0.5822`, and PBIAS `-4.95%`; withheld
+  validation passed with NSE `0.3772`, KGE `0.6299`, and PBIAS `+0.87%`.
+- The negative control remained `exploratory`: verification improved to NSE
+  `-0.0566`, KGE `0.3515`, and PBIAS `-18.41%`, but the physical/research metric
+  and withheld-transfer requirements failed. The failure is retained rather
+  than promoted into a skill claim.
+- Both runs verified selected outlet provenance, fresh engine execution, 230
+  locked static configuration files, zero provider-data-gap imputations, and 75
+  typed GridMET no-leap calendar adjustments.
+- Regenerated the five numbered figures and graphical abstract from final
+  evidence, visually reviewed the raster previews, compiled the 17-page EMS
+  manuscript with no undefined references or overfull boxes, and inspected all
+  rendered pages.
+- Preserved the exact audited wheel digest
+  `df801313e43873ed59262630c4102558106aec3a4a1354f8a568401642c02a09`.
+  Its clean installed-wheel suite passed `367` tests with `2` skips and `1`
+  deliberate live-engine deselection; dependency audit found no known issue
+  among resolvable distributions and Bandit reported no high-severity finding.
+- Public upload remains pending author-approved correspondence, funding and
+  CRediT statements, co-author consent, repository/licence selection, and
+  explicit deposit authorization.

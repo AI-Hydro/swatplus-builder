@@ -1324,3 +1324,48 @@ Decision:
 Why: shifted dates and NaN values previously passed shape validation and could
 be relabelled or converted into plausible forcing. Silent repair is incompatible
 with a high-tier scientific claim.
+
+## 2026-09-20 — Distinguish GridMET Calendar Normalization From Missing-Data Imputation
+
+Decision:
+
+- Treat GridMET's documented omission of 31 December in leap years as a typed
+  no-leap-calendar normalization when adapting the provider series to SWAT+'s
+  Gregorian daily input sequence.
+- Record every inserted date, station, variable, method, and native grid cell.
+  Permit only leap-year 31 December adjustments with enumerated methods at the
+  package-defined research-grade tier.
+- Continue to classify every other missing provider day as data-gap imputation;
+  any such imputation blocks the research-grade weather-fidelity gate.
+
+Why:
+
+- Pygridmet's GridMET calendar intentionally omits 31 December in leap years.
+  Treating the structural calendar conversion as an arbitrary provider gap made
+  complete live runs fail a gate for the wrong reason. Treating every gap as
+  harmless would be unsafe. Typed records preserve the distinction and allow the
+  policy to reject malformed or unrecognized adjustments.
+
+Consequences:
+
+- The focused 2007–2019 reruns disclose 75 calendar adjustments per basin (three
+  dates across 25 stations) and require zero provider-data-gap imputations.
+- The gate remains fail-closed for shifted calendars, non-finite values, ordinary
+  missing days, malformed records, and unsupported adjustment methods.
+
+## 2026-09-20 — Freeze Scientific Evidence At The Executed Commit
+
+Decision:
+
+- Use commit `90eeec95df7e5b088ae7a309a09fff5dff7d5841` and package version 0.7.14
+  as the software authority for the fresh focused evidence.
+- Preserve later documentation-only edits separately; source archives and run
+  manifests must continue to identify the executed commit exactly.
+- Package the exact audited wheel by checksum. Do not rebuild or substitute a
+  wheel during archive assembly.
+
+Why:
+
+- A manuscript checkout may continue to change while figures and release notes
+  are reconciled. Binding the run, source archive, and tested wheel prevents
+  those editorial changes from silently becoming a different evaluated system.

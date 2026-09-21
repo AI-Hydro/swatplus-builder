@@ -11,7 +11,7 @@ runtime gates, provenance, diagnostics, and machine-readable evidence.
 ## Status
 
 Active hardening toward research-grade production pipeline. Last updated:
-2026-09-19.
+2026-09-21.
 
 ## Where To Read Next
 
@@ -32,21 +32,21 @@ Active hardening toward research-grade production pipeline. Last updated:
 
 ## Current State
 
-- **Preprint readiness, 2026-09-19:** do not release the manuscript unchanged.
-  `docs/PREPRINT_READINESS_REVIEW_2026-09-19.md` records a confirmed scientific
-  gap: full-period observed discharge influences pre-calibration subsurface
-  correction, including nominally withheld years. Both July cases consulted
-  those years; the positive case applied the correction. Existing scores remain
-  historical measurements, but strict independent-validation wording is not
-  supported. Additional isolated probes found weather date/NaN acceptance,
-  declaration-based gate acceptance, and incomplete execution/input binding.
-  The eight manuscript challenges still pass; 119 focused tests pass with one
-  live-weather skip. All 16 hash-bearing manifest entries still match locally.
-  Next: fix these boundaries and freeze/re-evaluate the focused pair, or narrow
-  the preprint to a disclosed retrospective software-mechanism demonstration.
-  The review sharpens contributions, adds SWATdoctR as missing close prior art,
-  and specifies the minimum release evidence. This assessment supersedes older
-  readiness implications below; no application code or retained runs changed.
+- **Preprint release candidate, 2026-09-20:** the September scientific and
+  integrity findings are fixed in version 0.7.14 at commit `90eeec9`. Adaptive
+  preparation now uses the calibration window; forcing validates its exact
+  calendar and raw values; claim exceptions are typed and recomputed; and engine
+  receipts bind outputs to the executable, settings, and static inputs. Fourteen
+  selected challenge selectors produce 16 passing cases. The exact wheel passes
+  367 installed-wheel offline contracts (2 skipped, 1 deselected), has no known
+  dependency vulnerabilities among resolvable distributions, and has zero
+  high-severity Bandit findings. Two fresh same-version workflows now provide a
+  research-grade positive case and an exploratory negative control; both bind
+  the 0.7.14 source, engine, static inputs, outputs, and outlet provenance. The
+  manuscript and figures have been reconciled to those final artifacts and
+  visually reviewed. Remaining public-release decisions are author metadata,
+  co-author consent, repository/licence choice, and upload authorization; no
+  public deposit has been made.
 
 - The 2026-09-16 review at checkout `00592c4` identified nine security,
   reliability, and evidence-validation findings, with isolated reproductions

@@ -1,6 +1,6 @@
 # swatplus-builder Roadmap
 
-Last updated: 2026-07-10.
+Last updated: 2026-09-21.
 
 ## Mission
 
@@ -130,3 +130,21 @@ Acceptance criteria:
   `docs/SWATPLUS_MODELING_PLAYBOOK.md`, `docs/AGENT_WORKFLOW.md`,
   `docs/CALIBRATION_PARAMETER_REGISTRY.md`, and
   `docs/PIPELINE_LEARNING_LOG.md` stay synchronized with implementation.
+
+## Phase 8 — Public Preprint Release
+
+Status: technical acceptance checks complete; author release inputs pending.
+
+Acceptance criteria:
+
+- Fresh positive and negative focused runs identify the same 0.7.14 source
+  commit and pass receipt, weather, and evidence-integrity checks.
+- Manuscript text, figures, claim ledger, and reproducibility manifest agree
+  with the final run artifacts.
+- The exact installed-wheel contract suite, dependency audit, high-severity
+  source scan, LaTeX build, and rendered-page review pass.
+- A portable package contains source, the audited wheel, complete focused-run
+  archives, environment and engine identity, figures/scripts, reuse notices,
+  and recursive checksums without required machine-local paths.
+- Both authors confirm correspondence, funding, CRediT roles, preprint consent,
+  repository, and license before public upload.
