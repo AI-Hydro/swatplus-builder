@@ -10742,3 +10742,18 @@ Live artifact:
 - Public upload remains pending author-approved correspondence, funding and
   CRediT statements, co-author consent, repository/licence selection, and
   explicit deposit authorization.
+
+## 2026-09-21 - Second Critical Publication Review
+
+- Corrected stale Table 5 inventory, negative benchmark KGE rounding, evidence
+  freeze date, and unconfirmed author declarations. Added an evidence checker
+  which passes current sources and rejects the previous package.
+- Repaired archive layout for LaTeX figures and publication scripts, retained
+  eleven source-hashed map coordinates, and validated figure inputs before
+  deleting previous outputs.
+- Rebuilt all publication figures and the 17-page LaTeX manuscript from a
+  separate package extraction. Thirteen figure rasters match byte for byte;
+  no undefined references or overfull boxes.
+- Review and limitations: docs/PREPRINT_CRITICAL_REVIEW_2026-09-21.md. Earlier
+  claims that checksum verification alone established complete portability are
+  superseded by this executed rebuild. No simulation source or frozen run changed.

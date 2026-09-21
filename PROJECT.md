@@ -32,6 +32,13 @@ Active hardening toward research-grade production pipeline. Last updated:
 
 ## Current State
 
+- **Second critical review, 2026-09-21:** corrected stale manuscript inventories,
+  a rounded metric, premature author declarations and broken package layouts.
+  The revised `swatplus-builder-0.7.14-90eeec9-review2` package rebuilt figures
+  and LaTeX from a separate extraction; all 13 figure rasters matched exactly.
+  See `docs/PREPRINT_CRITICAL_REVIEW_2026-09-21.md` for findings, evidence and
+  remaining limits. Author metadata and publication decisions remain pending.
+
 - **Preprint release candidate, 2026-09-20:** the September scientific and
   integrity findings are fixed in version 0.7.14 at commit `90eeec9`. Adaptive
   preparation now uses the calibration window; forcing validates its exact
@@ -47,6 +54,8 @@ Active hardening toward research-grade production pipeline. Last updated:
   visually reviewed. Remaining public-release decisions are author metadata,
   co-author consent, repository/licence choice, and upload authorization; no
   public deposit has been made.
+
+## Historical Status (superseded where newer entries differ)
 
 - The 2026-09-16 review at checkout `00592c4` identified nine security,
   reliability, and evidence-validation findings, with isolated reproductions
