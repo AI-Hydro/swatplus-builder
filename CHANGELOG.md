@@ -39,6 +39,40 @@ All notable changes to swatplus-builder are documented here.
   installed with `swat setup engine` is reported as available.
 - The editor ORM schema-drift smoke test pointed at a non-existent path and was
   always skipped; it now runs.
+- Outlet choice: when several terminal channels exist, the requested outlet is
+  now the terminal draining the largest upstream network
+  (`primary_terminal_channel_id`, topology only) instead of the lowest GIS ID.
+  Benchmark-lock pass 1 accepts `outlet_selection_period`; the canonical
+  workflow passes its calibration window so withheld validation years never
+  influence outlet auto-selection. The window is recorded in
+  `outlet_provenance.json`.
+- `evaluate_run` no longer mutates the caller's observed series, and a metric
+  failure is recorded as `metric_computation_error` instead of silently
+  dropping metric keys.
+- `build_readiness_table` reports unreadable or tampered lock/verification
+  files as `unreadable_artifact` rows instead of skipping them.
+- The vendored SWAT+ Editor is pinned (`.VENDORED_COMMIT`, upstream `v3.2.0`,
+  content-verified; `VENDORED_EDITOR_VERSION` corrected from 3.2.2) with its one
+  local patch documented in `VENDORED_PATCHES.md`; unused upstream files
+  (REST server, `get-pip.py`, build scripts) are no longer shipped in the wheel.
+- SDA mukeys are integer-coerced before being written into SQL.
+- `scripts/audit_production_objective.py` parses arguments (`--out-dir`);
+  `--help` no longer runs the audit.
+
+### Security
+- Optional MCP workspace sandbox: with `SWATPLUS_BUILDER_MCP_WORKSPACE=<dir>`
+  every path argument must resolve inside `<dir>` (symlinks resolved), and
+  SWAT+ output-file-name arguments must be bare file names.
+
+### CI
+- New `offline-test-suite` job runs the full offline test suite on Python
+  3.10–3.12 with all runtime extras; `ruff` is pinned (0.16.9) and the
+  pre-existing lint findings are fixed.
+
+### Docs
+- `QUICKSTART.md`: building the engine from source with gfortran (upstream
+  Release flags trap FP underflow and crash on real inputs), and the MCP
+  hardening environment variables.
 
 ## [0.7.13] — 2026-07-10
 

@@ -58,19 +58,20 @@ run_dir/
 
 This is tamper-*evident*, not tamper-*proof*: someone who can rewrite a run directory can recompute every hash. To make the heads an external commitment, anchor them outside the operator's control, e.g. in a dataset release commit.
 
-## 4. Recommended next fixes (not changed here)
+## 4. Follow-up fixes (R1–R9, all resolved in this PR)
 
-| ID | Severity | Finding | Recommendation |
+| ID | Severity | Finding | Resolution |
 |---|---|---|---|
-| R1 | Medium (scientific) | Benchmark lock pass 1 (`outlet_policy="auto"`) can switch outlets by **best NSE over the full observed record**, including the years later withheld for the transfer check. The model-structure choice therefore sees validation data. The volume diagnostics already flag an autodetected outlet when there are several terminals. | Select outlets from topology (the gauge-snapped channel), or score selection on the calibration window only. Record the selection window in `outlet_provenance.json`. |
-| R2 | Medium (scientific) | `orchestrate.run_pipeline` passes `terminal_ids[0]` (the lowest GIS ID) as the requested outlet when there are several terminals, then relies on auto-selection. | Pass the delineation's snapped outlet ID explicitly. |
-| R3 | Medium (process) | CI runs only `tests/test_smoke.py`. F1, F2, F3 and F9 would all have been caught by the offline suite, which takes minutes. The CI `ruff` step is also unpinned, and current ruff reports 7 pre-existing findings. | Run the full offline suite on 3.10–3.12 and pin `ruff`. |
-| R4 | Low (security) | MCP tools accept arbitrary filesystem paths for reads and writes. For a local stdio server that is same-privilege, but an agent can be steered. | Optional workspace-root allowlist for MCP path arguments. |
-| R5 | Low (auditability) | `build_readiness_table` silently skips unreadable or tampered lock and verification files. | Report them as `unreadable` rows. |
-| R6 | Low (supply chain) | The vendored SWAT+ Editor has no committed `.VENDORED_COMMIT` pin. `get-pip.py` (2.6 MB) and platform build scripts ship inside the wheel. | Commit the pin and exclude non-runtime vendored files from the wheel. |
-| R7 | Low | `scripts/audit_production_objective.py` has no argument parsing: `--help` runs the audit and writes to `docs/`. | Add `argparse`. |
-| R8 | Info (engine) | Upstream SWAT+ CMake builds with `-ffpe-trap=...underflow` even in Release. That gfortran binary crashes with an FPE on the upstream reference watershed; it runs once the trap is removed. | Document supported binaries and flags. The engine SHA-256 and revision are now recorded per run. |
-| R9 | Low | `evaluate_run` mutates the caller's `obs_series.index` in place and swallows metric exceptions, which leaves keys silently missing. | Copy the input and record the failure reason. |
+| R1 | Low (scientific; downgraded from Medium) | Benchmark lock pass 1 (`outlet_policy="auto"`) scored outlet candidates against the full observed record, including years later withheld for the transfer check. On closer reading the exposure is narrow. In `auto` mode a non-terminal requested outlet is upgraded by **flow magnitude**, not NSE. The NSE-based switch only runs when that upgrade finds nothing, which in practice means the terminals are dry. | `lock_benchmark(..., outlet_selection_period=)` scores pass 1 only inside that window and records it in `outlet_provenance.json`; pass 2 still covers the full record. The canonical workflow passes its calibration window through `run_pipeline`. An empty window fails loudly. |
+| R2 | Medium (scientific) | `run_pipeline` (and the example workflow) requested `terminal_ids[0]`, the lowest GIS ID, as the outlet when there were several terminals. | New `primary_terminal_channel_id()` picks the terminal with the largest accumulated upstream channel area, following `chandeg.con` `sdc` links. It uses topology only, never observed data; ties go to the lowest ID. The basis is recorded as `requested_outlet_basis`. |
+| R3 | Medium (process) | CI ran only `tests/test_smoke.py`, and its `ruff` was unpinned (7 findings already on `main`). | New `offline-test-suite` CI job runs the full offline suite on 3.10, 3.11 and 3.12 with all runtime extras; `ruff` is pinned to 0.16.9; the pre-existing findings are fixed. |
+| R4 | Low (security) | MCP tools accepted arbitrary filesystem paths. | Opt-in `SWATPLUS_BUILDER_MCP_WORKSPACE=<dir>`. Every MCP path argument (inputs and outputs, with symlinks resolved) must resolve inside it. Output-file-name arguments must be bare file names. |
+| R5 | Low (auditability) | `build_readiness_table` silently skipped unreadable or tampered lock and verification files. | Each one becomes an `unreadable_artifact` row with `artifact_error`. |
+| R6 | Low (supply chain) | There was no vendored-editor commit pin, and the wheel shipped unused upstream files. | Content comparison shows the vendored tree is upstream **v3.2.0**, not the 3.2.2 the code claimed. The `src/api` tree hash matches; 145 of 147 files are identical, and the other 2 carry the documented channel-length patch. `.VENDORED_COMMIT` is committed, `VENDORED_EDITOR_VERSION` is corrected to 3.2.0, and `VENDORED_PATCHES.md` lists the local patch. `rest/`, `swatplus_rest_api.py`, `get-pip.py`, `Pipfile` and the build scripts are excluded from the wheel. The two provenance tests that were always skipped now run. |
+| R7 | Low | `scripts/audit_production_objective.py --help` ran the audit and wrote files. | `argparse` with `--out-dir`. |
+| R8 | Info (engine) | Upstream's gfortran Release flags trap floating-point underflow, and the resulting binary crashes on real inputs. | Documented in `QUICKSTART.md`, with a verified build recipe. The engine SHA-256 and revision are recorded on every run. |
+| R9 | Low | `evaluate_run` changed the caller's `obs_series` index in place and silently dropped metric keys when a metric failed. | It now works on a copy, and a metric failure is recorded as `metric_computation_error` with NaN-filled keys. |
+| — | Low (hardening) | SDA map-unit keys (mukeys) were written into the SQL `IN (...)` clause without coercion. | They are `int()`-coerced first; non-integer keys raise an error. |
 
 Checks that **passed** review:
 - Split-sample withholding in `calibrate_against_lock`: the validation window is excluded from the objective.
@@ -78,7 +79,8 @@ Checks that **passed** review:
 - Stale channel outputs are deleted before candidate runs.
 - Engine success requires the `Execution successfully completed` banner.
 - Unit conversions are correct: `channel_sd`/`basin_sd_cha` are m³/s, and `channel_day`/`basin_cha` are ha·m/day × 10⁴ / 86,400.
-- SQL built for SDA queries escapes WKT. Map-unit keys (mukeys) come from rasters and are annotated `list[int]` but not coerced; `int()`-coercing them before building the `IN (...)` clause would make that guarantee explicit.
+- SQL built for SDA queries escapes WKT; mukeys are now integer-coerced.
+- The vendored editor's `hyd_sed_lte_cha.len = 0.0005` km (0.5 m) channel transfer length is a deliberate deviation from upstream. It is justified in `DECISIONS.md` and now recorded in `VENDORED_PATCHES.md`. It is a modelling choice, not a bug, but anyone reading routing or timing results should know about it.
 
 ## 5. What the research says, and what to take from it for SWAT-S1
 
@@ -112,8 +114,7 @@ Checks that **passed** review:
 
 ## 6. Suggested next steps
 
-1. Land R1–R3 so the data the decision model learns from is itself scientifically clean.
-2. Instrument the next layer of decisions inside `diagnostic_calibrator`: phase selection, parameter-family opening, and stop/continue. Record the real candidate set at each fork, so episodes carry the counterfactual structure the vision doc (§8.5) requires.
-3. Add a compact, versioned state serializer (token-budgeted) and a `DecisionEpisode` → Laya JSON compiler that keeps the model-agnostic record canonical.
-4. Build a fault-injection harness (vision doc §8.3) that reuses the locked-benchmark machinery, so injected-cause episodes carry the same audit trail.
-5. Once network egress is allowed for USGS, 3DEP, GridMET and Planetary Computer (plus the reference DBs), run the 11-basin objective suite and archive `swat audit verify` output with each run.
+1. Instrument the next layer of decisions inside `diagnostic_calibrator`: phase selection, parameter-family opening, and stop/continue. Record the real candidate set at each fork, so episodes carry the counterfactual structure the vision doc (§8.5) requires.
+2. Add a compact, versioned state serializer (token-budgeted) and a `DecisionEpisode` → Laya JSON compiler that keeps the model-agnostic record canonical.
+3. Build a fault-injection harness (vision doc §8.3) that reuses the locked-benchmark machinery, so injected-cause episodes carry the same audit trail.
+4. Once network egress is allowed for USGS, 3DEP, GridMET and Planetary Computer (plus the reference DBs), run the 11-basin objective suite and archive `swat audit verify` output with each run.

@@ -1020,6 +1020,7 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
                 allow_diagnostic_fallbacks=True,
                 hru_mode=request.hru_mode,
                 min_hru_fraction=request.min_hru_fraction,
+                outlet_selection_period=(split["calibration_start"], split["calibration_end"]),
             )
             values.update(summary if isinstance(summary, dict) else {"pipeline_summary": str(summary)})
             _promote_soil_provenance_from_metadata(values, out)

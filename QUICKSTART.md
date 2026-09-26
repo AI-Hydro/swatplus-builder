@@ -56,6 +56,27 @@ Verify:
 swat health --json   # engine + reference-DB readiness; exit 0 = healthy
 ```
 
+#### Building the engine from source (Linux, gfortran)
+
+If no prebuilt binary suits your platform, the engine builds from
+[`swat-model/swatplus`](https://github.com/swat-model/swatplus) at a validated
+tag. Upstream's `CMakeLists.txt` adds `-fcheck=all -ffpe-trap=invalid,zero,overflow,underflow`
+to the gfortran flags **even for Release builds**; such a binary aborts with
+`Floating point exception` on ordinary inputs (including upstream's own
+`refdata/Ames_sub1`). Strip those debug traps before building:
+
+```bash
+git clone --depth 1 --branch 61.0.2.61 https://github.com/swat-model/swatplus.git
+cd swatplus
+sed -i 's/ -fcheck=all -ffpe-trap=invalid,zero,overflow,underflow//; s/ -fsignaling-nans//' CMakeLists.txt
+cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
+swat setup engine --path build/swatplus-61.0.2.61-gnu-lin_x86_64-Rel
+```
+
+Every workflow run records the engine's path, SHA-256 and revision in
+`events.jsonl` (`stage: environment`), so results are traceable to the exact
+binary that produced them.
+
 ## 4. Run the canonical workflow (one command)
 
 One USGS gauge ID → build → fresh engine run → benchmark lock → gated
@@ -135,6 +156,18 @@ Then ask the agent:
 The agent calls `run_workflow` (background launch), polls `workflow_status`,
 then reads `evidence_summary_path`. The `run_workflow` response includes
 `equivalent_cli` — the exact `swat workflow run` command for reproducibility.
+
+MCP hardening (environment variables read by the server):
+
+| Variable | Effect |
+|---|---|
+| `SWATPLUS_BUILDER_MCP_WORKSPACE=<dir>` | Every path a tool accepts (inputs and outputs, symlinks resolved) must lie inside `<dir>`; recommended whenever the agent reads untrusted content. |
+| `SWATPLUS_BUILDER_MCP_ALLOW_BINARY_OVERRIDE=1` | Allow `locked_calibrate` to run a caller-supplied engine `binary`; refused by default. |
+
+After a run, `swat audit verify <run_dir>` checks the hash-chained
+`events.jsonl` / `decisions.jsonl` against the heads sealed in
+`run_manifest.json`, and `swat audit episodes <run_dir>` exports the recorded
+decisions as `DecisionEpisode` JSONL.
 
 ### The agent contract (what the agent may and may not do)
 

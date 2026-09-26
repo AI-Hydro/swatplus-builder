@@ -431,9 +431,25 @@ def build_audit() -> dict[str, Any]:
     }
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description=(
+            "Audit the production objective against the canonical objective-suite "
+            "report and write OBJECTIVE_COMPLIANCE_AUDIT.{json,md}."
+        )
+    )
+    parser.add_argument(
+        "--out-dir",
+        type=Path,
+        default=ROOT / "docs",
+        help="Directory for the audit JSON/Markdown (default: docs/).",
+    )
+    args = parser.parse_args(argv)
+
     out = build_audit()
-    out_dir = ROOT / "docs"
+    out_dir = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     json_path = out_dir / "OBJECTIVE_COMPLIANCE_AUDIT.json"
     md_path = out_dir / "OBJECTIVE_COMPLIANCE_AUDIT.md"

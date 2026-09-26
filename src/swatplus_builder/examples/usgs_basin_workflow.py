@@ -868,7 +868,7 @@ def main(
     from swatplus_builder.gis.soil import extract_unique_mukeys, fetch_mukey_raster
     from swatplus_builder.gis.tables import build_tables
     from swatplus_builder.gis.validate import validate_watershed
-    from swatplus_builder.output.eval import evaluate_run, terminal_channel_ids
+    from swatplus_builder.output.eval import evaluate_run, primary_terminal_channel_id
     from swatplus_builder.output.mass_trace import fetch_usgs_site_metadata
     from swatplus_builder.output.metadata import (
         RunMetadata,
@@ -2108,8 +2108,8 @@ def main(
         sim_path = wf.txtinout_dir / "channel_sd_day.txt"
     if not sim_path.exists():
         sim_path = wf.txtinout_dir / "channel_day.txt"
-    terminal_ids = terminal_channel_ids(wf.txtinout_dir)
-    requested_outlet = terminal_ids[0] if terminal_ids else 1
+    primary_terminal = primary_terminal_channel_id(wf.txtinout_dir)
+    requested_outlet = primary_terminal if primary_terminal is not None else 1
     selection_eval = evaluate_run(
         sim_path,
         q_obs,

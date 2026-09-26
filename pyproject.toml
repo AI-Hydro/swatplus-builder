@@ -100,6 +100,7 @@ dev = [
     "mypy>=1.10",
     "ruff>=0.5",
     "pre-commit>=3.7",
+    "tomli>=2.0; python_version < '3.11'",  # tomllib backport for tests on 3.10
     "matplotlib>=3.7,<4.0",  # for soil plot tests
 ]
 docs = [
@@ -127,6 +128,15 @@ swat-mcp = "swatplus_builder.mcp.server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/swatplus_builder"]
+# Upstream editor files kept in the tree for provenance diffs but never
+# imported at runtime (see editor/vendored/VENDORED_PATCHES.md).
+exclude = [
+  "src/swatplus_builder/editor/vendored/rest",
+  "src/swatplus_builder/editor/vendored/swatplus_rest_api.py",
+  "src/swatplus_builder/editor/vendored/get-pip.py",
+  "src/swatplus_builder/editor/vendored/Pipfile",
+  "src/swatplus_builder/editor/vendored/python-build-*",
+]
 
 # Explicit sdist allowlist. Without this, hatchling sweeps the entire project
 # root (minus VCS-ignored paths) into the sdist — which previously pulled a

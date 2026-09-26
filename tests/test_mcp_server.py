@@ -476,3 +476,59 @@ def test_locked_calibrate_refuses_binary_override_by_default(monkeypatch, tmp_pa
             )
         )
     assert called["calibrate"] is False
+
+
+def test_workspace_env_confines_mcp_paths(monkeypatch, tmp_path: Path) -> None:
+    """Audit R4: with SWATPLUS_BUILDER_MCP_WORKSPACE set, paths outside it are refused."""
+    import pytest
+
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    inside = workspace / "run"
+    inside.mkdir()
+    (inside / "metrics.json").write_text('{"nse": 0.5, "kge": 0.4, "pbias": 1.0}\n', encoding="utf-8")
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    monkeypatch.setenv("SWATPLUS_BUILDER_MCP_WORKSPACE", str(workspace))
+    tools = _tool_map()
+
+    ok = tools["compare_runs"].fn(req=CompareRunsRequest(run_artifacts=[str(inside), str(inside)]))
+    assert ok.summaries[0]["nse"] == 0.5
+
+    with pytest.raises(ValueError, match="outside the MCP workspace"):
+        tools["compare_runs"].fn(req=CompareRunsRequest(run_artifacts=[str(inside), str(outside)]))
+    with pytest.raises(ValueError, match="outside the MCP workspace"):
+        tools["compare_runs"].fn(
+            req=CompareRunsRequest(run_artifacts=[str(inside), str(workspace / ".." / "elsewhere")])
+        )
+
+
+def test_workspace_guard_follows_symlinks(monkeypatch, tmp_path: Path) -> None:
+    import pytest
+
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    outside = tmp_path / "secret"
+    outside.mkdir()
+    (workspace / "link").symlink_to(outside, target_is_directory=True)
+    monkeypatch.setenv("SWATPLUS_BUILDER_MCP_WORKSPACE", str(workspace))
+
+    with pytest.raises(ValueError, match="outside the MCP workspace"):
+        mcp_server._ws(workspace / "link")
+
+
+def test_lock_benchmark_rejects_path_like_output_names(tmp_path: Path) -> None:
+    import pytest
+
+    tools = _tool_map()
+    with pytest.raises(ValueError, match="bare SWAT\\+ output file name"):
+        tools["lock_benchmark"].fn(
+            req=LockBenchmarkRequest(
+                txtinout_dir=str(tmp_path),
+                observed_csv=str(tmp_path / "obs.csv"),
+                out_dir=str(tmp_path / "out"),
+                basin_id="usgs_x",
+                outlet_gis_id=1,
+                sim_source_file="../../etc/passwd",
+            )
+        )

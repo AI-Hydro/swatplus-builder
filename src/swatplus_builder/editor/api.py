@@ -81,7 +81,7 @@ _log = logging.getLogger(__name__)
 # exact upstream SHA).  This is the upstream release string, *not* our
 # package version.  Kept as a module constant so tests can assert against
 # it when the vendor script bumps the tag.
-VENDORED_EDITOR_VERSION: str = "3.2.2"
+VENDORED_EDITOR_VERSION: str = "3.2.0"  # content-verified against upstream tag v3.2.0
 
 
 # ---------------------------------------------------------------------------
