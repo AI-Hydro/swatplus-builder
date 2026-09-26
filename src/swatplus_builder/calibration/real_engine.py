@@ -507,8 +507,11 @@ def _prepare_txtinout_for_objective(
         score_start=score_start,
         score_end=score_end,
     )
-    # Prevent stale copied outputs from being scored.
+    # Prevent stale copied outputs from being scored. basin_wb_aa.txt feeds the
+    # candidate physical/water-balance gate; a copy left over from the base
+    # run would otherwise be judged if the candidate run did not rewrite it.
     for name in (
+        "basin_wb_aa.txt",
         "channel_day.txt",
         "channel_sd_day.txt",
         "channel_sdmorph_day.txt",

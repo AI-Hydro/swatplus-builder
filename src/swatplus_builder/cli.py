@@ -54,6 +54,13 @@ setup_app = typer.Typer(
 )
 app.add_typer(setup_app, name="setup")
 
+audit_app = typer.Typer(
+    name="audit",
+    help="Verify a run's tamper-evident ledgers and export decision episodes.",
+    no_args_is_help=True,
+)
+app.add_typer(audit_app, name="audit")
+
 
 class _DiscardingBuffer:
     closed = False
@@ -339,8 +346,18 @@ def cmd_health(
     _check("package_import", critical=True, ok=pkg_ok, detail=f"v{__version__}" if pkg_ok else "import failed")
 
     # --- optional: SWAT+ binary ---
-    exe_path = os.environ.get("SWATPLUS_EXE", "")
+    # Use the same resolver as real runs (settings → $SWATPLUS_EXE →
+    # ~/.swatplus_builder/bin → PATH) so an engine installed with
+    # ``swat setup engine`` is reported as available.
     from pathlib import Path as _P
+
+    from .errors import SwatBuilderExternalError
+    from .run.swatplus import locate_binary
+
+    try:
+        exe_path = str(locate_binary())
+    except SwatBuilderExternalError:
+        exe_path = ""
     exe_ok = bool(exe_path) and _P(exe_path).is_file()
     if exe_ok:
         import subprocess as _sp
@@ -362,7 +379,8 @@ def cmd_health(
             exe_detail = exe_path
     else:
         exe_detail = (
-            "SWATPLUS_EXE not set — engine binary required for real runs. "
+            "SWAT+ engine not found (SWATPLUS_EXE, ~/.swatplus_builder/bin, PATH) — "
+            "engine binary required for real runs. "
             "Builder targets SWAT+ v2023 (validated rev 60.5.7–61.0.2.61; "
             "shipped binary 61.0.2.61). Download: https://swat.tamu.edu/software/plus/"
         )
@@ -2025,6 +2043,52 @@ def cmd_setup_engine(
         rprint(f"  [dim](smoke test skipped: {exc})[/dim]")
 
     rprint("\nRun [bold]swat health[/bold] to confirm full setup.")
+
+
+@audit_app.command("verify")
+def cmd_audit_verify(
+    run_dir: str = typer.Argument(..., help="Workflow run directory (contains run_manifest.json)."),
+    as_json: bool = typer.Option(False, "--json", help="Print the full verification report as JSON."),
+) -> None:
+    """Check events.jsonl and decisions.jsonl hash chains against the sealed heads.
+
+    Exit 0 when both ledgers verify and match the heads sealed in
+    run_manifest.json; exit 1 otherwise.
+    """
+    from .audit import verify_run_audit
+
+    report = verify_run_audit(run_dir)
+    if as_json:
+        typer.echo(json.dumps(report, indent=2))
+    else:
+        status = "[green]OK[/green]" if report["ok"] else "[red]FAILED[/red]"
+        rprint(f"Audit ledgers for {report['run_dir']}: {status}")
+        for name, res in report["ledgers"].items():
+            rprint(f"  {name}: {res['record_count']} records, head {res['head_sha256'][:16]}…")
+            for problem in res["problems"]:
+                rprint(f"    [red]{problem}[/red]")
+        for problem in report.get("problems", []):
+            rprint(f"  [red]{problem}[/red]")
+    raise typer.Exit(code=0 if report["ok"] else 1)
+
+
+@audit_app.command("episodes")
+def cmd_audit_episodes(
+    run_dirs: list[str] = typer.Argument(..., help="One or more workflow run directories."),  # noqa: B008
+    out: str | None = typer.Option(None, "--out", help="Write JSONL here instead of stdout."),
+) -> None:
+    """Export recorded decisions joined with outcomes as DecisionEpisode JSONL."""
+    from .audit import canonical_json, export_decision_episodes
+
+    rows = [ep for rd in run_dirs for ep in export_decision_episodes(rd)]
+    text = "".join(canonical_json(r) + "\n" for r in rows)
+    if out is None:
+        typer.echo(text, nl=False)
+    else:
+        out_path = Path(out)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(text, encoding="utf-8")
+        rprint(f"Wrote {len(rows)} decision episodes to {out}", file=sys.stderr)
 
 
 if __name__ == "__main__":

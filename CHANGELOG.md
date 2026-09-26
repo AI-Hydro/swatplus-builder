@@ -2,6 +2,44 @@
 
 All notable changes to swatplus-builder are documented here.
 
+## [Unreleased]
+
+### Added
+- Tamper-evident audit trail for the canonical workflow. `events.jsonl` is now a
+  SHA-256 hash-chained ledger (additive `seq`/`prev_sha256`/`sha256` fields),
+  and a new `decisions.jsonl` records each governed decision point
+  (`claim_tier_contract`, `calibration_precheck`, `effective_claim_tier`) as
+  state → options → chosen → outcome, with the deciding policy. Both ledger
+  heads are sealed into `run_manifest.json` (`audit_ledgers`), and the final
+  evidence files are hashed into the chain (`evidence_sealed` event).
+- Each run records an environment fingerprint (package version, git SHA,
+  engine path/SHA-256/revision, key dependency versions).
+- `swat audit verify <run_dir>` checks both ledgers against the sealed heads;
+  `swat audit episodes <run_dir>...` exports decisions joined with outcomes as
+  model-agnostic `DecisionEpisode` JSONL for decision-model data preparation.
+- Re-running a workflow in the same directory archives the previous attempt's
+  ledgers under `audit_history/` instead of deleting them.
+
+### Fixed
+- The package (including `swat workflow run`) failed to import on Python 3.10,
+  its declared minimum, because eight modules imported `datetime.UTC` (3.11+).
+- Fresh `[mcp]` installs resolved `mcp` 2.x, which removed `FastMCP`; the extra
+  is now pinned to `mcp>=1.2,<2`.
+- `requests` (used by the SDA and SoilGrids soil clients on the real build
+  path) is now a declared dependency.
+- MCP `locked_calibrate` no longer swallows independent-verification failures;
+  it reports `verification_status` (`verified` | `skipped` | `failed`) and the
+  error, and refuses a caller-supplied `binary` path unless the server opts in
+  with `SWATPLUS_BUILDER_MCP_ALLOW_BINARY_OVERRIDE=1`.
+- Calibration candidates delete a copied `basin_wb_aa.txt` before the engine
+  run, so the candidate water-balance gate can never judge the base run's file.
+- An unrecognized requested claim tier (e.g. a typo) now falls back to
+  `diagnostic` with an explicit policy note instead of passing through.
+- `swat health` now resolves the engine the same way runs do, so an engine
+  installed with `swat setup engine` is reported as available.
+- The editor ORM schema-drift smoke test pointed at a non-existent path and was
+  always skipped; it now runs.
+
 ## [0.7.13] — 2026-07-10
 
 ### Fixed

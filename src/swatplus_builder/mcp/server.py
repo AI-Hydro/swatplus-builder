@@ -172,7 +172,14 @@ class LockedCalibrateRequest(BaseModel):
         description="Effective parameter names (default: CN2, ALPHA_BF).",
     )
     n_evaluations: int = Field(30, ge=1, description="Total real-engine evaluations.")
-    binary: str | None = Field(None, description="Optional SWAT+ binary path override.")
+    binary: str | None = Field(
+        None,
+        description=(
+            "Optional SWAT+ binary path override. Refused unless the server was started "
+            "with SWATPLUS_BUILDER_MCP_ALLOW_BINARY_OVERRIDE=1, because it executes an "
+            "arbitrary file; install the engine with `swat setup engine` instead."
+        ),
+    )
     timeout_s: float = Field(3600.0, description="Per-evaluation engine timeout (seconds).")
     skip_verify: bool = Field(False, description="Skip independent verification step.")
 
@@ -186,6 +193,15 @@ class LockedCalibrateResponse(BaseModel):
     delta_nse: float | None = None
     delta_kge: float | None = None
     improved: bool | None = None
+    verification_status: Literal["verified", "skipped", "failed"] = Field(
+        ...,
+        description=(
+            "'verified' only when the independent fresh-copy rerun succeeded. "
+            "'skipped' and 'failed' results are unverified candidates and must not "
+            "be reported as calibrated metrics."
+        ),
+    )
+    verification_error: str | None = None
     best_solution_json: str
     outdir: str
 
@@ -260,6 +276,7 @@ class WorkflowStatusResponse(BaseModel):
 
 
 _LAUNCH_STATE_FILENAME = "workflow_launch.json"
+_BINARY_OVERRIDE_ENV = "SWATPLUS_BUILDER_MCP_ALLOW_BINARY_OVERRIDE"
 
 
 def _pid_alive(pid: int) -> bool:
@@ -712,10 +729,17 @@ def create_mcp_server() -> FastMCP:
             "Run the locked-benchmark calibration protocol: calibrate against a locked alignment "
             "context then independently verify the best solution. Returns NSE/KGE deltas vs. "
             "the locked baseline. Requires benchmark_dir from lock_benchmark. "
-            "Guardrail: only CN2 and ALPHA_BF are effective parameters until routing terms activate."
+            "Defaults to CN2 and ALPHA_BF unless `parameters` is supplied. Only report "
+            "metrics when verification_status is 'verified'."
         ),
     )
     def mcp_locked_calibrate(req: LockedCalibrateRequest) -> LockedCalibrateResponse:
+        if req.binary and os.environ.get(_BINARY_OVERRIDE_ENV) != "1":
+            raise ValueError(
+                "locked_calibrate refuses a caller-supplied `binary` path because it would "
+                "execute an arbitrary file. Install the engine with `swat setup engine`, or "
+                f"start the MCP server with {_BINARY_OVERRIDE_ENV}=1 to allow overrides."
+            )
         evidence = calibrate_against_lock(
             lock=Path(req.benchmark_dir),
             base_txtinout=Path(req.base_txtinout),
@@ -728,6 +752,8 @@ def create_mcp_server() -> FastMCP:
         delta_nse: float | None = None
         delta_kge: float | None = None
         improved: bool | None = None
+        verification_status: Literal["verified", "skipped", "failed"] = "skipped"
+        verification_error: str | None = None
         if not req.skip_verify:
             try:
                 vr = verify_calibration(
@@ -741,8 +767,12 @@ def create_mcp_server() -> FastMCP:
                 delta_nse = vr.delta_nse
                 delta_kge = vr.delta_kge
                 improved = vr.improved
-            except Exception:
-                pass
+                verification_status = "verified"
+            except Exception as exc:
+                # Surface the failure: an unverified candidate must never look
+                # like a verified calibration to the calling agent.
+                verification_status = "failed"
+                verification_error = f"{type(exc).__name__}: {exc}"
         return LockedCalibrateResponse(
             basin_id=evidence.basin_id,
             n_evaluations=evidence.n_evaluations,
@@ -751,6 +781,8 @@ def create_mcp_server() -> FastMCP:
             delta_nse=delta_nse,
             delta_kge=delta_kge,
             improved=improved,
+            verification_status=verification_status,
+            verification_error=verification_error,
             best_solution_json=evidence.best_solution_json,
             outdir=evidence.outdir,
         )

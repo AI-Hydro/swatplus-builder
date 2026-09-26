@@ -18,6 +18,7 @@ from swatplus_builder.mcp.server import (
     CompareRunsRequest,
     DiagnoseFailureRequest,
     LockBenchmarkRequest,
+    LockedCalibrateRequest,
     ProposeParametersRequest,
     QueryArtifactsRequest,
     ReadinessTableRequest,
@@ -390,3 +391,88 @@ def test_readiness_table_tool_finds_verification_artifacts(tmp_path: Path) -> No
     assert resp.row_count == 1
     assert resp.rows[0]["basin_id"] == "usgs_01547700"
     assert resp.rows[0]["verification_status"] == "verified_improved"
+
+
+def _fake_calibration_evidence(tmp_path: Path):
+    from swatplus_builder.calibration.locked_benchmark import CalibrationEvidence
+
+    return CalibrationEvidence(
+        basin_id="usgs_test01",
+        n_evaluations=3,
+        best_nse=0.61,
+        best_kge=0.55,
+        history_csv=str(tmp_path / "history.csv"),
+        summary_md=str(tmp_path / "summary.md"),
+        best_solution_json=str(tmp_path / "best_solution.json"),
+        outdir=str(tmp_path),
+    )
+
+
+def test_locked_calibrate_surfaces_verification_failure(monkeypatch, tmp_path: Path) -> None:
+    """A failed independent rerun must be reported, not silently dropped."""
+    import swatplus_builder.mcp.server as mcp_server_mod
+
+    monkeypatch.setattr(
+        mcp_server_mod, "calibrate_against_lock", lambda **_: _fake_calibration_evidence(tmp_path)
+    )
+
+    def failing_verify(**_):
+        raise RuntimeError("fresh-copy rerun diverged")
+
+    monkeypatch.setattr(mcp_server_mod, "verify_calibration", failing_verify)
+    tools = {t.name: t for t in mcp_server_mod.create_mcp_server()._tool_manager.list_tools()}
+
+    resp = tools["locked_calibrate"].fn(
+        req=LockedCalibrateRequest(
+            benchmark_dir=str(tmp_path), base_txtinout=str(tmp_path), out_dir=str(tmp_path)
+        )
+    )
+    assert resp.verification_status == "failed"
+    assert "fresh-copy rerun diverged" in (resp.verification_error or "")
+    assert resp.improved is None
+
+
+def test_locked_calibrate_reports_skipped_verification(monkeypatch, tmp_path: Path) -> None:
+    import swatplus_builder.mcp.server as mcp_server_mod
+
+    monkeypatch.setattr(
+        mcp_server_mod, "calibrate_against_lock", lambda **_: _fake_calibration_evidence(tmp_path)
+    )
+    tools = {t.name: t for t in mcp_server_mod.create_mcp_server()._tool_manager.list_tools()}
+
+    resp = tools["locked_calibrate"].fn(
+        req=LockedCalibrateRequest(
+            benchmark_dir=str(tmp_path),
+            base_txtinout=str(tmp_path),
+            out_dir=str(tmp_path),
+            skip_verify=True,
+        )
+    )
+    assert resp.verification_status == "skipped"
+
+
+def test_locked_calibrate_refuses_binary_override_by_default(monkeypatch, tmp_path: Path) -> None:
+    import pytest
+
+    import swatplus_builder.mcp.server as mcp_server_mod
+
+    called = {"calibrate": False}
+
+    def fake_calibrate(**_):
+        called["calibrate"] = True
+        return _fake_calibration_evidence(tmp_path)
+
+    monkeypatch.setattr(mcp_server_mod, "calibrate_against_lock", fake_calibrate)
+    monkeypatch.delenv("SWATPLUS_BUILDER_MCP_ALLOW_BINARY_OVERRIDE", raising=False)
+    tools = {t.name: t for t in mcp_server_mod.create_mcp_server()._tool_manager.list_tools()}
+
+    with pytest.raises(ValueError, match="binary"):
+        tools["locked_calibrate"].fn(
+            req=LockedCalibrateRequest(
+                benchmark_dir=str(tmp_path),
+                base_txtinout=str(tmp_path),
+                out_dir=str(tmp_path),
+                binary=str(tmp_path / "not_the_engine.sh"),
+            )
+        )
+    assert called["calibrate"] is False

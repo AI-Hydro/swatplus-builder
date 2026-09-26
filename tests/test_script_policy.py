@@ -59,6 +59,13 @@ def test_production_objective_audit_uses_current_canonical_report() -> None:
     assert "COMPLETION_AUDIT_2026-05-12" not in text
 
 
+@pytest.mark.skipif(
+    not Path("docs/objective_basin_validation_report.json").exists(),
+    reason=(
+        "Canonical objective-suite report is a locally generated, git-ignored artifact "
+        "(scripts/run_objective_10basin.py); absent on a clean checkout."
+    ),
+)
 def test_production_objective_audit_reports_current_complete_status() -> None:
     """build_audit() returns the expected structure; all 4 generic invariants pass."""
     audit = build_audit()

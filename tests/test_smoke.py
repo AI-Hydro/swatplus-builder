@@ -424,7 +424,7 @@ def test_editor_gis_orm_columns_are_producer_subset() -> None:
         Path(swatplus_builder.__file__).parent
         / "editor"
         / "vendored"
-        / "database"
+        / "_swatplus_db"
         / "project"
         / "gis.py"
     )
