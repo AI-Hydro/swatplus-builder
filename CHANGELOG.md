@@ -5,6 +5,25 @@ All notable changes to swatplus-builder are documented here.
 ## [Unreleased]
 
 ### Added
+- Decision-model data pipeline (`docs/DECISION_DATA_PIPELINE.md`):
+  - Calibration phases write `phase_decisions.json` with each phase's full
+    candidate set (metrics, gate results, phase score) and the candidate it
+    promoted; the workflow records one `calibration_phase:<phase>` ledger
+    decision per phase with every candidate's outcome attached.
+  - Fault injection (`swat fault list|inject|effect`,
+    `swatplus_builder.decision_data.faults`): documented forcing and parameter
+    faults applied to a copied TxtInOut with a hash-pinned
+    `fault_manifest.json` and a hidden `latent_fault_family` label; injections
+    that change no file or fail midway leave nothing behind, and
+    `fault_effect` flags faults that changed no simulated hydrology.
+  - `serialize_state` (version `state-v1`): deterministic, priority-ordered,
+    character-budgeted state text that refuses hidden-label keys.
+  - `swat audit typed`: compiles DecisionEpisodes into typed-decision (Choice)
+    items with bounded option sets, hard or softmax targets, fault-diagnosis
+    items for injected runs, and basin-disjoint splits.
+  - Episodes from fault-injected runs carry `source: injected_fault` and a
+    separate `latent_fault` field; the manifest is bound into `events.jsonl`
+    by hash.
 - Tamper-evident audit trail for the canonical workflow. `events.jsonl` is now a
   SHA-256 hash-chained ledger (additive `seq`/`prev_sha256`/`sha256` fields),
   and a new `decisions.jsonl` records each governed decision point
