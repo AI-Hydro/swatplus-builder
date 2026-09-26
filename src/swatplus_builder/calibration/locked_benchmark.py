@@ -138,6 +138,9 @@ class ReadinessRow(BaseModel):
     delta_kge: float | None = None
     improved: bool | None = None
     verification_status: str = "unknown"
+    # Set when an artifact under this row could not be parsed/validated; the
+    # row is reported (status "unreadable_artifact") instead of silently dropped.
+    artifact_error: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -156,6 +159,7 @@ def lock_benchmark(
     git_sha: str | None = None,
     virtual_outlet_policy: str = "none",
     virtual_outlet_authority: str | None = None,
+    outlet_selection_period: tuple[str, str] | None = None,
 ) -> BenchmarkLock:
     """Run two-pass outlet evaluation and persist a locked benchmark artifact.
 
@@ -178,6 +182,12 @@ def lock_benchmark(
                                outlet formed by summing all terminal channels.
         virtual_outlet_authority: Required justification/source when locking a
                                   virtual outlet.
+        outlet_selection_period: Inclusive ``(start, end)`` dates that pass 1
+                                 may score when it auto-selects an outlet. The
+                                 canonical workflow passes its calibration
+                                 window so observations withheld for the
+                                 transfer check never influence the outlet
+                                 choice. ``None`` scores the full record.
 
     Returns:
         :class:`BenchmarkLock` with hashes and baseline metrics.
@@ -239,11 +249,23 @@ def lock_benchmark(
             if isinstance(gid, int)
         ]
     else:
-        # Pass 1: auto to discover best outlet.
+        # Pass 1: auto to discover best outlet. Score only the selection
+        # window so withheld validation observations cannot steer the choice.
+        selection_obs = obs_series
+        if outlet_selection_period is not None:
+            sel_start = pd.Timestamp(outlet_selection_period[0])
+            sel_end = pd.Timestamp(outlet_selection_period[1])
+            sel_index = pd.to_datetime(obs_series.index)
+            selection_obs = obs_series[(sel_index >= sel_start) & (sel_index <= sel_end)]
+            if selection_obs.empty:
+                raise SwatBuilderInputError(
+                    "outlet_selection_period contains no observed days.",
+                    outlet_selection_period=list(outlet_selection_period),
+                )
         alignment_csv_auto = bmark_dir / "alignment_auto.csv"
         _, _, diag = evaluate_run(
             sim_path,
-            obs_series,
+            selection_obs.copy(),
             outlet_gis_id=outlet_gis_id,
             out_alignment_csv=alignment_csv_auto,
             outlet_policy="auto",
@@ -284,6 +306,9 @@ def lock_benchmark(
                 "outlet_autodetected": diag.get("outlet_autodetected", False),
                 "outlet_selection_reason": diag.get("outlet_selection_reason"),
                 "outlet_policy_pass2": lock_outlet_policy,
+                "outlet_selection_period": (
+                    list(outlet_selection_period) if outlet_selection_period is not None else None
+                ),
                 "outlet_scope": outlet_scope,
                 "selected_outlet_gis_ids": selected_outlet_gis_ids,
                 "virtual_outlet_policy": virtual_policy,
@@ -2030,6 +2055,9 @@ def build_readiness_table(
     root = Path(locks_root).expanduser().resolve()
     rows: list[ReadinessRow] = []
 
+    # Corrupt or tampered evidence is reported as its own row, never dropped.
+    unreadable: list[tuple[Path, Exception]] = []
+
     # Find verification_summary.json files.
     verified: dict[str, VerificationResult] = {}
     for vsf in root.rglob("verification_summary.json"):
@@ -2037,8 +2065,8 @@ def build_readiness_table(
             data = json.loads(vsf.read_text(encoding="utf-8"))
             vr = VerificationResult.model_validate(data)
             verified[vr.basin_id] = vr
-        except Exception:
-            pass
+        except Exception as exc:
+            unreadable.append((vsf, exc))
 
     # Find benchmark_lock.json files.
     locks: dict[str, BenchmarkLock] = {}
@@ -2047,8 +2075,8 @@ def build_readiness_table(
             data = json.loads(lf.read_text(encoding="utf-8"))
             bl = BenchmarkLock.model_validate(data)
             locks[bl.basin_id] = bl
-        except Exception:
-            pass
+        except Exception as exc:
+            unreadable.append((lf, exc))
 
     all_basins = set(verified) | set(locks)
     for basin in sorted(all_basins):
@@ -2072,6 +2100,16 @@ def build_readiness_table(
             else "unknown",
         )
         rows.append(row)
+
+    for bad_path, exc in unreadable:
+        rows.append(
+            ReadinessRow(
+                basin_id=f"unreadable:{bad_path.parent.name}",
+                lock_dir=str(bad_path.parent),
+                verification_status="unreadable_artifact",
+                artifact_error=f"{bad_path.name}: {type(exc).__name__}: {str(exc)[:300]}",
+            )
+        )
 
     if out_md is not None:
         _write_readiness_markdown(Path(out_md), rows)

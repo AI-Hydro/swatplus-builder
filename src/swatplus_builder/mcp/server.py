@@ -172,7 +172,14 @@ class LockedCalibrateRequest(BaseModel):
         description="Effective parameter names (default: CN2, ALPHA_BF).",
     )
     n_evaluations: int = Field(30, ge=1, description="Total real-engine evaluations.")
-    binary: str | None = Field(None, description="Optional SWAT+ binary path override.")
+    binary: str | None = Field(
+        None,
+        description=(
+            "Optional SWAT+ binary path override. Refused unless the server was started "
+            "with SWATPLUS_BUILDER_MCP_ALLOW_BINARY_OVERRIDE=1, because it executes an "
+            "arbitrary file; install the engine with `swat setup engine` instead."
+        ),
+    )
     timeout_s: float = Field(3600.0, description="Per-evaluation engine timeout (seconds).")
     skip_verify: bool = Field(False, description="Skip independent verification step.")
 
@@ -186,6 +193,15 @@ class LockedCalibrateResponse(BaseModel):
     delta_nse: float | None = None
     delta_kge: float | None = None
     improved: bool | None = None
+    verification_status: Literal["verified", "skipped", "failed"] = Field(
+        ...,
+        description=(
+            "'verified' only when the independent fresh-copy rerun succeeded. "
+            "'skipped' and 'failed' results are unverified candidates and must not "
+            "be reported as calibrated metrics."
+        ),
+    )
+    verification_error: str | None = None
     best_solution_json: str
     outdir: str
 
@@ -260,6 +276,36 @@ class WorkflowStatusResponse(BaseModel):
 
 
 _LAUNCH_STATE_FILENAME = "workflow_launch.json"
+_BINARY_OVERRIDE_ENV = "SWATPLUS_BUILDER_MCP_ALLOW_BINARY_OVERRIDE"
+_WORKSPACE_ENV = "SWATPLUS_BUILDER_MCP_WORKSPACE"
+
+
+def _ws(path: str | Path) -> Path:
+    """Resolve a caller-supplied path, confined to the MCP workspace when set.
+
+    When the server is started with ``SWATPLUS_BUILDER_MCP_WORKSPACE=<dir>``
+    every path an agent passes (inputs and outputs) must resolve inside that
+    directory, symlinks included, so a steered agent cannot read or write
+    elsewhere on disk. Without the variable, paths resolve unrestricted
+    (backwards compatible for trusted local use).
+    """
+    resolved = Path(path).expanduser().resolve()
+    root_env = os.environ.get(_WORKSPACE_ENV)
+    if root_env:
+        root = Path(root_env).expanduser().resolve()
+        if resolved != root and root not in resolved.parents:
+            raise ValueError(
+                f"Path {resolved} is outside the MCP workspace {root} "
+                f"(set by {_WORKSPACE_ENV})."
+            )
+    return resolved
+
+
+def _bare_filename(name: str) -> str:
+    """Reject output-file names that could escape their TxtInOut directory."""
+    if not name or Path(name).name != name or name in {".", ".."}:
+        raise ValueError(f"Expected a bare SWAT+ output file name, got: {name!r}")
+    return name
 
 
 def _pid_alive(pid: int) -> bool:
@@ -311,10 +357,10 @@ def create_mcp_server() -> FastMCP:
             raise ValueError(f"usgs_id must be a numeric USGS gauge ID, got: {req.usgs_id!r}")
 
         if req.out_dir is not None:
-            out_dir = Path(req.out_dir).expanduser().resolve()
+            out_dir = _ws(req.out_dir)
         else:
             stamp = time.strftime("%Y%m%d_%H%M%S")
-            out_dir = (Path.cwd() / "swatplus_runs" / "workflow" / f"usgs_{usgs_id}_{stamp}").resolve()
+            out_dir = _ws(Path.cwd() / "swatplus_runs" / "workflow" / f"usgs_{usgs_id}_{stamp}")
         out_dir.mkdir(parents=True, exist_ok=True)
 
         argv = [
@@ -393,7 +439,7 @@ def create_mcp_server() -> FastMCP:
         ),
     )
     def workflow_status(req: WorkflowStatusRequest) -> WorkflowStatusResponse:
-        out_dir = Path(req.out_dir).expanduser().resolve()
+        out_dir = _ws(req.out_dir)
         state_path = out_dir / _LAUNCH_STATE_FILENAME
         if not state_path.exists():
             return WorkflowStatusResponse(
@@ -454,12 +500,12 @@ def create_mcp_server() -> FastMCP:
         ),
     )
     def build_project(req: BuildProjectRequest) -> BuildProjectResponse:
-        spec_path = Path(req.basin_spec_path).expanduser().resolve()
+        spec_path = _ws(req.basin_spec_path)
         if not spec_path.exists():
             raise ValueError(f"basin_spec_path does not exist: {spec_path}")
         payload = json.loads(spec_path.read_text(encoding="utf-8"))
         workdir = (
-            Path(req.workdir).expanduser().resolve()
+            _ws(req.workdir)
             if req.workdir is not None
             else (spec_path.parent / f"mcp_build_{spec_path.stem}").resolve()
         )
@@ -490,7 +536,7 @@ def create_mcp_server() -> FastMCP:
         ),
     )
     def run_basin(req: RunBasinRequest) -> RunBasinResponse:
-        cfg_path = Path(req.basin_config_path).expanduser().resolve()
+        cfg_path = _ws(req.basin_config_path)
         if not cfg_path.exists():
             raise ValueError(f"basin_config_path does not exist: {cfg_path}")
         payload = json.loads(cfg_path.read_text(encoding="utf-8"))
@@ -499,7 +545,7 @@ def create_mcp_server() -> FastMCP:
         usgs_id = str(payload.get("usgs_id", "")).strip()
         if not usgs_id:
             raise ValueError("basin config must contain non-empty 'usgs_id'.")
-        outdir = Path(str(payload.get("outdir", cfg_path.parent / f"run_{usgs_id}"))).expanduser().resolve()
+        outdir = _ws(str(payload.get("outdir", cfg_path.parent / f"run_{usgs_id}")))
         summary = run_pipeline(
             usgs_id=usgs_id,
             outdir=outdir,
@@ -536,18 +582,18 @@ def create_mcp_server() -> FastMCP:
                 basin_id=req.basin_id,
                 simulation_start=date.fromisoformat(req.start),
                 simulation_end=date.fromisoformat(req.end),
-                txtinout_dir=Path(req.txtinout_dir).expanduser().resolve(),
-                observed_csv=Path(req.observed_csv).expanduser().resolve(),
+                txtinout_dir=_ws(req.txtinout_dir),
+                observed_csv=_ws(req.observed_csv),
                 parameters=[p.strip().upper() for p in req.parameters if p.strip()],
                 objectives=[o.strip().lower() for o in req.objectives if o.strip()],
                 algorithm=req.algorithm,
                 n_gen=req.n_gen,
                 pop_size=req.pop_size,
                 seed=req.seed,
-                artifacts_root=Path(req.artifacts_root).expanduser().resolve(),
+                artifacts_root=_ws(req.artifacts_root),
                 engine_version="unknown",
                 warm_start=True,
-                sim_output_file=req.sim_output_file,
+                sim_output_file=_bare_filename(req.sim_output_file),
                 outlet_gis_id=int(req.outlet_gis_id),
             )
         )
@@ -596,7 +642,7 @@ def create_mcp_server() -> FastMCP:
     def compare_runs(req: CompareRunsRequest) -> CompareRunsResponse:
         out: list[dict[str, float | str | None]] = []
         for p in req.run_artifacts:
-            path = Path(p).expanduser().resolve()
+            path = _ws(p)
             metrics_path = path / "metrics.json"
             if not metrics_path.exists():
                 out.append({"run_artifact": str(path), "nse": None, "kge": None, "pbias": None})
@@ -617,7 +663,7 @@ def create_mcp_server() -> FastMCP:
         description="Query artifact store summaries with optional filters.",
     )
     def query_artifacts(req: QueryArtifactsRequest) -> QueryArtifactsResponse:
-        store = LocalArtifactStore(req.artifacts_root)
+        store = LocalArtifactStore(str(_ws(req.artifacts_root)))
         rows = store.query(
             ArtifactQuery(
                 basin_id=req.basin_id,
@@ -633,7 +679,7 @@ def create_mcp_server() -> FastMCP:
         description="Run rule-based diagnostics for a run artifact directory or alignment CSV.",
     )
     def diagnose_failure(req: DiagnoseFailureRequest) -> DiagnoseFailureResponse:
-        rows = diagnose(req.run_artifact)
+        rows = diagnose(str(_ws(req.run_artifact)))
         payload = [r.model_dump(mode="json") for r in rows]
         return DiagnoseFailureResponse(count=len(payload), diagnoses=payload)
 
@@ -642,11 +688,11 @@ def create_mcp_server() -> FastMCP:
         description="Run curated-suite validation and return summary counts with report path.",
     )
     def validate(req: ValidateRequest) -> ValidateResponse:
-        specs = load_basin_specs(req.basins_file)
+        specs = load_basin_specs(str(_ws(req.basins_file)))
         results, report_dir = run_validation(
             basins=specs,
-            artifacts_root=req.artifacts_root,
-            runs_root=req.runs_root,
+            artifacts_root=str(_ws(req.artifacts_root)),
+            runs_root=str(_ws(req.runs_root)),
             engine_version=req.engine_version,
         )
         success_count = sum(1 for r in results if r.status in {"success", "cached"})
@@ -672,7 +718,8 @@ def create_mcp_server() -> FastMCP:
 
         from swatplus_builder.output.eval import terminal_channel_ids
 
-        obs_df = pd.read_csv(req.observed_csv, index_col=0, parse_dates=True)
+        sim_source_file = _bare_filename(req.sim_source_file)
+        obs_df = pd.read_csv(_ws(req.observed_csv), index_col=0, parse_dates=True)
         obs_col = "discharge" if "discharge" in obs_df.columns else obs_df.columns[0]
         obs_series = pd.Series(
             obs_df[obs_col].astype(float).values,
@@ -681,7 +728,7 @@ def create_mcp_server() -> FastMCP:
         ).dropna()
         outlet_gis_id = req.outlet_gis_id
         if outlet_gis_id is None:
-            terminal_ids = terminal_channel_ids(req.txtinout_dir)
+            terminal_ids = terminal_channel_ids(_ws(req.txtinout_dir))
             if len(terminal_ids) != 1:
                 raise ValueError(
                     "outlet_gis_id was omitted, but the prepared topology does not have exactly "
@@ -690,12 +737,12 @@ def create_mcp_server() -> FastMCP:
                 )
             outlet_gis_id = terminal_ids[0]
         lock = lock_benchmark(
-            txtinout_dir=Path(req.txtinout_dir),
+            txtinout_dir=_ws(req.txtinout_dir),
             obs_series=obs_series,
-            out_dir=Path(req.out_dir),
+            out_dir=_ws(req.out_dir),
             basin_id=req.basin_id,
             outlet_gis_id=outlet_gis_id,
-            sim_source_file=req.sim_source_file,
+            sim_source_file=sim_source_file,
         )
         return LockBenchmarkResponse(
             basin_id=lock.basin_id,
@@ -712,37 +759,50 @@ def create_mcp_server() -> FastMCP:
             "Run the locked-benchmark calibration protocol: calibrate against a locked alignment "
             "context then independently verify the best solution. Returns NSE/KGE deltas vs. "
             "the locked baseline. Requires benchmark_dir from lock_benchmark. "
-            "Guardrail: only CN2 and ALPHA_BF are effective parameters until routing terms activate."
+            "Defaults to CN2 and ALPHA_BF unless `parameters` is supplied. Only report "
+            "metrics when verification_status is 'verified'."
         ),
     )
     def mcp_locked_calibrate(req: LockedCalibrateRequest) -> LockedCalibrateResponse:
+        if req.binary and os.environ.get(_BINARY_OVERRIDE_ENV) != "1":
+            raise ValueError(
+                "locked_calibrate refuses a caller-supplied `binary` path because it would "
+                "execute an arbitrary file. Install the engine with `swat setup engine`, or "
+                f"start the MCP server with {_BINARY_OVERRIDE_ENV}=1 to allow overrides."
+            )
         evidence = calibrate_against_lock(
-            lock=Path(req.benchmark_dir),
-            base_txtinout=Path(req.base_txtinout),
-            out_dir=Path(req.out_dir),
+            lock=_ws(req.benchmark_dir),
+            base_txtinout=_ws(req.base_txtinout),
+            out_dir=_ws(req.out_dir),
             parameters=req.parameters,
             n_evaluations=req.n_evaluations,
-            binary=Path(req.binary) if req.binary else None,
+            binary=_ws(req.binary) if req.binary else None,
             timeout_s=req.timeout_s,
         )
         delta_nse: float | None = None
         delta_kge: float | None = None
         improved: bool | None = None
+        verification_status: Literal["verified", "skipped", "failed"] = "skipped"
+        verification_error: str | None = None
         if not req.skip_verify:
             try:
                 vr = verify_calibration(
-                    lock=Path(req.benchmark_dir),
+                    lock=_ws(req.benchmark_dir),
                     best_solution_json=Path(evidence.best_solution_json),
-                    base_txtinout=Path(req.base_txtinout),
-                    out_dir=Path(req.out_dir),
-                    binary=Path(req.binary) if req.binary else None,
+                    base_txtinout=_ws(req.base_txtinout),
+                    out_dir=_ws(req.out_dir),
+                    binary=_ws(req.binary) if req.binary else None,
                     timeout_s=req.timeout_s,
                 )
                 delta_nse = vr.delta_nse
                 delta_kge = vr.delta_kge
                 improved = vr.improved
-            except Exception:
-                pass
+                verification_status = "verified"
+            except Exception as exc:
+                # Surface the failure: an unverified candidate must never look
+                # like a verified calibration to the calling agent.
+                verification_status = "failed"
+                verification_error = f"{type(exc).__name__}: {exc}"
         return LockedCalibrateResponse(
             basin_id=evidence.basin_id,
             n_evaluations=evidence.n_evaluations,
@@ -751,6 +811,8 @@ def create_mcp_server() -> FastMCP:
             delta_nse=delta_nse,
             delta_kge=delta_kge,
             improved=improved,
+            verification_status=verification_status,
+            verification_error=verification_error,
             best_solution_json=evidence.best_solution_json,
             outdir=evidence.outdir,
         )
@@ -766,8 +828,8 @@ def create_mcp_server() -> FastMCP:
     )
     def mcp_readiness_table(req: ReadinessTableRequest) -> ReadinessTableResponse:
         rows = build_readiness_table(
-            Path(req.locks_root),
-            out_md=Path(req.out_md) if req.out_md else None,
+            _ws(req.locks_root),
+            out_md=_ws(req.out_md) if req.out_md else None,
         )
         return ReadinessTableResponse(
             row_count=len(rows),

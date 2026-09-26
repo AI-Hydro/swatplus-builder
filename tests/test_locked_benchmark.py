@@ -1528,3 +1528,82 @@ def test_split_sample_raises_on_too_short_validation_period(monkeypatch, tmp_pat
             calibration_phases=[{"phase": "volume", "parameters": ["CN2"], "budget": 5}],
             validation_period=("2010-03-01", "2010-03-05"),  # only 5 days
         )
+
+
+# ---------------------------------------------------------------------------
+# Outlet selection must not see withheld validation observations (audit R1)
+# ---------------------------------------------------------------------------
+
+
+def _capture_evaluate_run_calls(monkeypatch) -> list[dict]:
+    import swatplus_builder.calibration.locked_benchmark as lb
+
+    real = lb.evaluate_run
+    calls: list[dict] = []
+
+    def spy(sim_path, obs_series, **kwargs):
+        calls.append({"policy": kwargs.get("outlet_policy"), "obs_index": pd.to_datetime(obs_series.index)})
+        return real(sim_path, obs_series, **kwargs)
+
+    monkeypatch.setattr(lb, "evaluate_run", spy)
+    return calls
+
+
+def test_outlet_selection_pass_scores_only_selection_window(tmp_path, obs_series, monkeypatch):
+    txtinout = tmp_path / "TxtInOut"
+    txtinout.mkdir()
+    _make_fake_sim_file(txtinout)
+    _make_chandeg_con(txtinout, terminal_gis_id=1)
+    calls = _capture_evaluate_run_calls(monkeypatch)
+
+    lock = lock_benchmark(
+        txtinout_dir=txtinout,
+        obs_series=obs_series,
+        out_dir=tmp_path / "lock_window",
+        basin_id="usgs_window",
+        outlet_gis_id=1,
+        sim_source_file="channel_sd_day.txt",
+        outlet_selection_period=("2010-01-01", "2010-06-30"),
+    )
+
+    auto = next(c for c in calls if c["policy"] == "auto")
+    strict = next(c for c in calls if c["policy"] == "strict")
+    assert auto["obs_index"].max() <= pd.Timestamp("2010-06-30")
+    assert strict["obs_index"].max() == obs_series.index.max()  # pass 2 keeps the full record
+    provenance = json.loads(
+        (Path(lock.benchmark_dir) / "outlet_provenance.json").read_text(encoding="utf-8")
+    )
+    assert provenance["outlet_selection_period"] == ["2010-01-01", "2010-06-30"]
+
+
+def test_outlet_selection_window_without_observations_fails_loudly(tmp_path, obs_series):
+    txtinout = tmp_path / "TxtInOut"
+    txtinout.mkdir()
+    _make_fake_sim_file(txtinout)
+    _make_chandeg_con(txtinout, terminal_gis_id=1)
+    with pytest.raises(SwatBuilderInputError, match="outlet_selection_period"):
+        lock_benchmark(
+            txtinout_dir=txtinout,
+            obs_series=obs_series,
+            out_dir=tmp_path / "lock_empty",
+            basin_id="usgs_window",
+            outlet_gis_id=1,
+            sim_source_file="channel_sd_day.txt",
+            outlet_selection_period=("1990-01-01", "1990-12-31"),
+        )
+
+
+def test_readiness_table_reports_unreadable_artifacts(tmp_path):
+    """Audit R5: corrupt/tampered lock files are surfaced, not silently dropped."""
+    _make_benchmark_lock(tmp_path / "good", "usgs_good")
+    bad = tmp_path / "bad" / "benchmark"
+    bad.mkdir(parents=True)
+    (bad / "benchmark_lock.json").write_text("{not json", encoding="utf-8")
+
+    rows = build_readiness_table(tmp_path)
+
+    statuses = {r.basin_id: r.verification_status for r in rows}
+    assert statuses["usgs_good"] == "locked_no_verification"
+    bad_rows = [r for r in rows if r.verification_status == "unreadable_artifact"]
+    assert len(bad_rows) == 1
+    assert "benchmark_lock.json" in (bad_rows[0].artifact_error or "")
