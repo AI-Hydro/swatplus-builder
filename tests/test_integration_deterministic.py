@@ -16,10 +16,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from swatplus_builder.output.eval import _terminal_ids_from_chandeg_con, evaluate_run
-
 
 # ---------------------------------------------------------------------------
 # Helpers: synthetic data fixtures

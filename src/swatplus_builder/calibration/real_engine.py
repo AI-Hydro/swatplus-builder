@@ -13,9 +13,9 @@ from typing import Any
 
 import pandas as pd
 
+from .. import __version__ as _builder_version
 from ..output.eval import evaluate_run
 from ..run import run as run_swat
-from .. import __version__ as _builder_version
 
 RealObjective = Callable[[dict[str, float]], dict[str, Any]]
 

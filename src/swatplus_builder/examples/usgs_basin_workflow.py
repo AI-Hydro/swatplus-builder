@@ -869,6 +869,7 @@ def main(
     from swatplus_builder.gis.tables import build_tables
     from swatplus_builder.gis.validate import validate_watershed
     from swatplus_builder.output.eval import evaluate_run, terminal_channel_ids
+    from swatplus_builder.output.mass_trace import fetch_usgs_site_metadata
     from swatplus_builder.output.metadata import (
         RunMetadata,
         sha256_file,
@@ -876,7 +877,6 @@ def main(
         utc_now_iso,
         write_metadata,
     )
-    from swatplus_builder.output.mass_trace import fetch_usgs_site_metadata
     from swatplus_builder.output.plots.wrapper import generate_all_plots
     from swatplus_builder.soil.sda import fetch_sda_mukeys_for_geometry
     from swatplus_builder.soil.writer import write_soils

@@ -1127,7 +1127,7 @@ def _assert_pyswatplus_compatible(mod: object) -> None:
     if missing:
         raise RuntimeError(
             "pySWATPlus API contract mismatch — the following expected symbols "
-            f"are missing:\n  " + "\n  ".join(missing) + "\n\n"
+            "are missing:\n  " + "\n  ".join(missing) + "\n\n"
             f"This package requires pySWATPlus < {_PY_SWATPLUS_SUPPORTED_UPTO[0]}.{_PY_SWATPLUS_SUPPORTED_UPTO[1]}.0. "
             "If you have upgraded pySWATPlus, either pin it back or update the "
             "compatibility patches in calibrator.py."
