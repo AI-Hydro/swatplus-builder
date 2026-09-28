@@ -10902,3 +10902,29 @@ No multi-basin concurrent run has been tried, and the basin list used so
 far (02177000, 03339000) is not a curated reference set — see
 `../Swatplus_decision/research/BUILDER_READINESS.md`'s P0 items before
 treating any of this as trusted training data.
+
+## 2026-09-28 — Generated the real reference basin pool (full CONUS)
+
+Ran `scripts/basin_inclusion_protocol.py --states all` for real (previous
+run was a 2-state /tmp throwaway). Clean: 49/49 state queries succeeded, no
+retries needed. Result: `basins/reference_pool_v1.json` (2.6MB) — 4,067
+basins included (2,015 development, 2,052 held_out_final_assessment),
+5,473 excluded (2,951 insufficient period of record, 2,072 drainage area
+out of bounds, 259 not a stream site, 178 missing drainage area, 13
+contaminated by prior use — correctly caught 01547700, 03339000, and 11
+others already referenced in curated_v1.json, various tests/, and
+scripts/overclaiming_pilot/config.py). 489 basins (12.0%) carry the
+USGS HCDN-2009 reference-quality flag. Drainage areas span 130-7770 km^2
+across all 49 states/DC.
+
+`.gitignore` needed a second fix: `basins/` excluded the whole directory,
+so `!basins/reference_pool_v1.json` alone didn't work (git doesn't descend
+into an excluded directory to check per-file negations) -- had to switch to
+`basins/*` + `!basins/` + per-file allow, mirroring the existing docs/
+pattern. Caught by `git status` showing the file still untracked after the
+first attempt.
+
+Not yet done: no converter from this pool's schema to
+decision_data_batch.py's basin-spec JSON exists yet -- that's the next
+concrete step before any batch run can actually consume this pool. The
+held_out_final_assessment group must not be touched until then either.
