@@ -272,21 +272,31 @@ lines added `run_pipeline` parameters) and were resolved by keeping both.
 After the merge: ruff clean; pytest 1177 passed, 7 skipped (opt-in live);
 see that commit message for each resolution.
 
-**Blocker for §3 step 1 (live labelled episodes): the objective behind the
-labels.** A parallel local readiness review
-(`../Swatplus_decision/research/BUILDER_READINESS.md`, 2026-09-23) reproduced
-a unit dependence in `output/metrics.py::log_kge`. It uses a fixed
-ε = 0.01 m³/s and clips negative flow. Converting m³/s to L/s moved a
-synthetic log-KGE from −0.2551 to 0.9172, while raw KGE stayed at 0.9182.
-The locked phase objective uses `0.6·KGE + 0.4·log-KGE`
-(`calibration/locked_benchmark.py`, `_phase_score` region). That makes
-`phase_decisions.json` targets partly depend on this term. With a fixed ε,
-the term means different things in large and small basins. Episodes
-generated now are fine for pipeline smoke tests, but not as training labels
-until a **versioned** low-flow objective is in place (e.g., ε scaled to the
-observed mean flow, following Santos et al. 2018; historical scores kept).
-Also read that report's P0/P1 table. Several items there are now addressed
-by PR #25 (fault/effect validation, leakage-refusing serializer,
-basin-hash splits). Others are still open: independent reference basins,
-separate decision-development and final-assessment periods, and dead
-routing actions (CH_N2/CH_K2).
+**Former blocker for §3 step 1 (live labelled episodes), now fixed
+(2026-09-28): the objective behind the labels.** A parallel local readiness
+review (`../Swatplus_decision/research/BUILDER_READINESS.md`, 2026-09-23)
+reproduced a fixed-epsilon issue in `output/metrics.py::log_kge`: it added a
+constant ε = 0.01 m³/s before the log transform, so the same 0.01 was a
+large fraction of a headwater stream's flow and a negligible fraction of a
+large river's. A synthetic 7-value probe showed the score swinging from
+−0.2551 to +0.91 under a pure m³/s→L/s relabeling of the same data, while
+raw KGE stayed at 0.9182. The locked phase objective uses
+`0.6·KGE + 0.4·log-KGE` (`calibration/locked_benchmark.py`, `_score_candidate`).
+Fixed by adding `output/metrics.py::log_kge_v2` — epsilon set to 1% of each
+basin's own mean observed flow (Pushpalatha et al. 2012's convention) rather
+than one global constant. `log_kge` itself is untouched for historical-score
+reproducibility; `evaluate_run` now records both `log_kge` and `log_kge_v2`;
+`_score_candidate` prefers `log_kge_v2` and only falls back to legacy
+`log_kge` for metrics recorded before this change. See `log_kge_v2`'s
+docstring and `tests/test_metrics.py` for what this does and does **not**
+fix — it removes the arbitrary shared constant, but log-transformed metrics
+remain inherently unstable on very small, low-flow-dominated samples
+(Santos et al. 2018), which no epsilon choice eliminates. Verified: ruff
+clean; pytest 1186 passed, 5 skipped (opt-in live), 0 failed.
+
+Live episode generation (§3 step 1) is now unblocked on this specific
+concern. Still read that readiness report's P0/P1 table before mass-
+generating labels — several items are addressed by PR #25 (fault/effect
+validation, leakage-refusing serializer, basin-hash splits), but others
+remain open: independent reference basins, separate decision-development
+and final-assessment periods, and dead routing actions (CH_N2/CH_K2).

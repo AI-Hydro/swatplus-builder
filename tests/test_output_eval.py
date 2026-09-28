@@ -703,10 +703,13 @@ def test_evaluate_run_includes_log_kge_metric(tmp_path):
     _df, metrics = evaluate_run(txt / "channel_sd_day.txt", obs, outlet_gis_id=1)
 
     assert "log_kge" in metrics
+    assert "log_kge_v2" in metrics
     import math
     assert math.isfinite(metrics["log_kge"])
+    assert math.isfinite(metrics["log_kge_v2"])
     # Perfect simulation → log_kge should be close to 1
     assert metrics["log_kge"] > 0.99
+    assert metrics["log_kge_v2"] > 0.99
 
 
 def test_log_kge_score_prefers_recession_fit(tmp_path):
@@ -724,6 +727,28 @@ def test_log_kge_score_prefers_recession_fit(tmp_path):
     score_b = _score_candidate(candidate_b, objective="maintain_volume_gate_then_rank_nse_kge")
 
     assert score_b > score_a, f"Better log_kge should rank higher: {score_b} > {score_a}"
+
+
+def test_score_candidate_prefers_log_kge_v2_over_legacy_when_both_present():
+    """log_kge_v2 must win over the legacy fixed-epsilon log_kge when both are recorded."""
+    from swatplus_builder.calibration.locked_benchmark import _score_candidate
+
+    # Legacy log_kge says A is worse; log_kge_v2 says A is better. The score
+    # must follow log_kge_v2, proving it — not the legacy key — drives the
+    # objective when both are present (new engine runs record both).
+    candidate_a = {
+        "nse": 0.5, "kge": 0.6, "log_kge": 0.1, "log_kge_v2": 0.9, "pbias": 10.0,
+        "physical_gate_passed": 1.0, "calibration_process_gate_passed": 1.0,
+    }
+    candidate_b = {
+        "nse": 0.5, "kge": 0.6, "log_kge": 0.7, "log_kge_v2": 0.2, "pbias": 10.0,
+        "physical_gate_passed": 1.0, "calibration_process_gate_passed": 1.0,
+    }
+
+    score_a = _score_candidate(candidate_a, objective="maintain_volume_gate_then_rank_nse_kge")
+    score_b = _score_candidate(candidate_b, objective="maintain_volume_gate_then_rank_nse_kge")
+
+    assert score_a > score_b
 
 
 # ---------------------------------------------------------------------------

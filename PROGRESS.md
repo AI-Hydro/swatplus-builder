@@ -10821,3 +10821,25 @@ Cross-checked the cloud handoff against the local readiness review. The
 phase-score labels consume the unit-dependent log-KGE, so a versioned
 low-flow objective must come before labelled episode generation. Recorded
 in `docs/AGENT_HANDOFF.md` §7.
+
+## 2026-09-28 — Fixed log-KGE fixed-epsilon issue blocking decision labels
+
+Added `output/metrics.py::log_kge_v2`: epsilon set to 1% of each basin's own
+mean observed flow (Pushpalatha et al. 2012), replacing the fixed 0.01 m^3/s
+constant in `log_kge` (kept unchanged for historical-score reproducibility)
+that a 7-value synthetic probe showed swinging −0.2551 → +0.91 under a pure
+m^3/s→L/s relabeling. `calibration/locked_benchmark.py::_score_candidate`
+now prefers `log_kge_v2`, falling back to legacy `log_kge` only for metrics
+recorded before this change. `evaluate_run` records both keys.
+
+This does not make log-transformed metrics fully scale-invariant (the KGE
+bias-ratio term is not exactly invariant under a shared additive log-space
+shift) or fix their inherent instability on tiny, low-flow-dominated samples
+(Santos et al. 2018) — documented honestly in the function's docstring and
+`tests/test_metrics.py` rather than claimed as a complete fix.
+
+Verified: ruff 0.16.9 clean; pytest 1186 passed, 5 skipped (opt-in live),
+0 failed, in a fresh venv with CI extras. No engine run. This was the
+blocker recorded in `docs/AGENT_HANDOFF.md` §7 for generating live decision
+episodes as training labels; see that section (now updated) for what's
+still open before mass-generating labels.

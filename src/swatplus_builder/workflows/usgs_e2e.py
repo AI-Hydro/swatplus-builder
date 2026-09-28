@@ -899,7 +899,7 @@ def _compact_metrics(metrics: Any) -> dict[str, float | None] | None:
     if not isinstance(metrics, dict):
         return None
     out: dict[str, float | None] = {}
-    for key in ("nse", "kge", "log_kge", "pbias", "bfi_obs", "bfi_sim", "delta_nse", "delta_kge"):
+    for key in ("nse", "kge", "log_kge", "log_kge_v2", "pbias", "bfi_obs", "bfi_sim", "delta_nse", "delta_kge"):
         if key in metrics:
             try:
                 out[key] = float(metrics[key])

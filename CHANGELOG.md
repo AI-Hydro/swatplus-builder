@@ -4,6 +4,24 @@ All notable changes to swatplus-builder are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- `output/metrics.py`: added `log_kge_v2`, a scale-aware replacement for the
+  calibration phase objective's low-flow term. `log_kge` (kept unchanged)
+  adds a *fixed* 0.01 m^3/s epsilon before the log transform; a headwater
+  stream and a large river share that one constant, and a synthetic 7-value
+  probe showed the score swinging from -0.2551 to +0.91 under a pure
+  m^3/s -> L/s relabeling of the same data while raw KGE stayed at 0.9182
+  (`docs/AGENT_HANDOFF.md` §7; Santos, Thirel & Perrin 2018). `log_kge_v2`
+  sizes epsilon to 1% of each basin's own mean observed flow instead
+  (Pushpalatha et al. 2012's convention). `calibration/locked_benchmark.py`'s
+  phase score now prefers `log_kge_v2` when present, falling back to legacy
+  `log_kge` only for metrics recorded before this change, so old runs'
+  objective values stay reproducible. `evaluate_run` now records both keys.
+  This does not eliminate the inherent numerical instability of log-
+  transformed metrics on very small, low-flow-dominated samples — see
+  `log_kge_v2`'s docstring — and it blocks generating decision-model
+  training labels from `phase_decisions.json` until this landed.
+
 ### Added
 - Decision-model data pipeline (`docs/DECISION_DATA_PIPELINE.md`):
   - Calibration phases write `phase_decisions.json` with each phase's full

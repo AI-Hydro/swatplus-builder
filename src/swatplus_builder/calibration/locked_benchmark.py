@@ -1604,7 +1604,7 @@ def _is_finite_number(value: object) -> bool:
 
 
 PHASE_DECISIONS_SCHEMA = "swatplus_builder.calibration_phase_decisions/v1"
-_CANDIDATE_METRIC_KEYS = ("nse", "kge", "log_kge", "pbias", "bfi_obs", "bfi_sim")
+_CANDIDATE_METRIC_KEYS = ("nse", "kge", "log_kge", "log_kge_v2", "pbias", "bfi_obs", "bfi_sim")
 
 
 def _finite_or_none(value: Any) -> float | None:
@@ -2114,7 +2114,12 @@ def _score_candidate(metrics: dict[str, Any], *, objective: str) -> float:
     try:
         nse = float(metrics.get("nse", float("nan")))
         kge = float(metrics.get("kge", float("nan")))
-        log_kge_val = float(metrics.get("log_kge", float("nan")))
+        # log_kge_v2 (scale-aware epsilon) is preferred; legacy log_kge (fixed
+        # 0.01 m^3/s epsilon, unit-dependent — see metrics.log_kge_v2's
+        # docstring) is used only for engine runs recorded before v2 existed,
+        # so old runs' objective values stay reproducible.
+        log_kge_val = metrics.get("log_kge_v2", metrics.get("log_kge"))
+        log_kge_val = float(log_kge_val) if log_kge_val is not None else float("nan")
         pbias = float(metrics.get("pbias", float("nan")))
         bfi_sim = float(metrics.get("bfi_sim", float("nan")))
     except Exception:
@@ -2133,8 +2138,9 @@ def _score_candidate(metrics: dict[str, Any], *, objective: str) -> float:
             return float("-inf")
     nse_term = nse if math.isfinite(nse) else -10.0
     kge_term = kge if math.isfinite(kge) else -10.0
-    # log_kge is a bonus if available; falls back to 0 (neutral) if not recorded
-    # so the objective remains valid for engine runs that pre-date log_kge.
+    # log-KGE is a bonus if available; falls back to 0 (neutral) if neither
+    # log_kge_v2 nor legacy log_kge was recorded, so the objective remains
+    # valid for engine runs that pre-date either metric.
     log_kge_term = log_kge_val if math.isfinite(log_kge_val) else 0.0
     volume_term = -abs(pbias) / 30.0
     if "rank_nse_kge" in objective:

@@ -9,7 +9,7 @@ from typing import Any, Literal
 
 import pandas as pd
 
-from swatplus_builder.output.metrics import baseflow_index, kge, log_kge, nse, pbias
+from swatplus_builder.output.metrics import baseflow_index, kge, log_kge, log_kge_v2, nse, pbias
 from swatplus_builder.output.reader import read_output_file
 
 log = logging.getLogger(__name__)
@@ -231,6 +231,7 @@ def evaluate_run(
         metrics["nse"] = nse(obs_list, sim_list)
         metrics["kge"] = kge(obs_list, sim_list)
         metrics["log_kge"] = log_kge(obs_list, sim_list)
+        metrics["log_kge_v2"] = log_kge_v2(obs_list, sim_list)
         metrics["pbias"] = pbias(obs_list, sim_list)
         metrics["bfi_obs"] = baseflow_index(obs_list)
         metrics["bfi_sim"] = baseflow_index(sim_list)
@@ -239,7 +240,7 @@ def evaluate_run(
         # silently missing keys.
         log.warning("Metric computation failed: %s", e)
         diagnostics["metric_computation_error"] = f"{type(e).__name__}: {e}"
-        for key in ("nse", "kge", "log_kge", "pbias", "bfi_obs", "bfi_sim"):
+        for key in ("nse", "kge", "log_kge", "log_kge_v2", "pbias", "bfi_obs", "bfi_sim"):
             metrics.setdefault(key, float("nan"))
 
     if return_diagnostics:

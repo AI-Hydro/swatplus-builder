@@ -30,6 +30,7 @@ __all__ = [
     "kge",
     "kge_components",
     "log_kge",
+    "log_kge_v2",
     "pbias",
     "baseflow_index",
     "flow_duration_curve_quantiles",
@@ -157,6 +158,47 @@ def log_kge(obs: Sequence[float], sim: Sequence[float], epsilon: float = 0.01) -
     log_obs = [math.log(v) for v in obs_list]
     log_sim = [math.log(v) for v in sim_list]
     return kge(log_obs, log_sim)
+
+
+def log_kge_v2(obs: Sequence[float], sim: Sequence[float], epsilon_fraction: float = 0.01) -> float:
+    """Scale-aware log-KGE (v2): epsilon set relative to the basin's own flow.
+
+    ``log_kge`` (v1, kept unchanged for historical-score reproducibility)
+    adds a *fixed* ``epsilon`` of 0.01 m^3/s before taking the log. That
+    fixed offset makes the metric unit- and scale-dependent: converting the
+    same flows from m^3/s to L/s (a factor of 1000) moves epsilon's relative
+    weight by three orders of magnitude, and a small perennial stream and a
+    large river get very different amounts of low-flow "smoothing" from the
+    same nominal epsilon. A synthetic 7-value check showed log_kge moving
+    from -0.2551 to 0.9172 under an m^3/s -> L/s unit change alone, while raw
+    KGE stayed at 0.9182 (see docs/AGENT_HANDOFF.md §7 and Santos, Thirel &
+    Perrin 2018, https://hess.copernicus.org/articles/22/4583/2018/, on unit
+    dependence and other pitfalls of logarithmic KGE/NSE).
+
+    ``log_kge_v2`` instead sets epsilon to ``epsilon_fraction`` of the mean
+    *observed* flow (default 1%, the convention used by Pushpalatha et al.
+    2012), so a small headwater stream and a large river each get an offset
+    sized to their own flow scale, instead of sharing one arbitrary global
+    constant. This removes the dependence on that fixed constant and
+    substantially reduces (but, being a property of the KGE bias-ratio term
+    under a log transform, does not make exactly zero) the swing seen under
+    a pure unit relabeling of the same data. It also does **not** remove the
+    well-documented numerical instability of log-transformed efficiency
+    metrics on very small, low-flow-dominated samples — that instability is
+    inherent to the log transform itself, not an epsilon-choice artifact
+    (Santos et al. 2018). Falls back to ``log_kge``'s fixed 0.01 when the
+    mean observed flow is zero or non-finite (e.g. an all-dry gauge), since
+    no basin-relative scale exists in that case.
+
+    This is a new, separately versioned metric — it does not overwrite or
+    reinterpret ``log_kge``; both are recorded so historical scores stay
+    reproducible.
+    """
+    obs = list(obs)
+    _check_lengths(obs, list(sim), "log_kge_v2")
+    obs_mean = _mean([max(float(v), 0.0) for v in obs])
+    epsilon = epsilon_fraction * obs_mean if math.isfinite(obs_mean) and obs_mean > 0.0 else 0.01
+    return log_kge(obs, sim, epsilon=epsilon)
 
 
 def pbias(obs: Sequence[float], sim: Sequence[float]) -> float:
