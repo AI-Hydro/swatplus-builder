@@ -10875,3 +10875,30 @@ Not yet done: fault injection wasn't exercised in this run (no
 still open on scale (single basin, single run) — this only confirms the
 pipeline works, it is not a training set. Run artifacts (~692MB) kept
 locally under `runs/smoke_02177000/`, not committed.
+
+## 2026-09-28 — Batch driver written and validated (single basin, twice live)
+
+Added `scripts/decision_data_batch.py`: runs `swat workflow run` per basin
+as an isolated subprocess, admits a basin's decisions to the combined
+`typed_decisions.jsonl` only after `swat audit verify` passes, meters
+wall-clock and engine candidate-evaluation cost, retains every basin's
+outcome in an incremental manifest. Full scope/limits in the script's
+docstring and `docs/AGENT_HANDOFF.md` §3 item 2.
+
+First live run (USGS 03339000, 2015-2019) caught a real bug: the driver
+read `effective_claim_tier` from the wrong place in `swat workflow run
+--json`'s output (`RunUSGSWorkflowResult`'s top level has `blocker_class`,
+but `effective_claim_tier` is nested inside `values`), so it silently
+recorded `tier=None` for every fresh-run basin while `blocker_class`
+happened to be correct. The `--skip-existing` resume path was unaffected
+(it reads `evidence_summary.json` directly, which is flat). Fixed, with a
+regression test pinning the real nested shape
+(`tests/test_decision_data_batch.py`). Re-ran fresh (no skip-existing) to
+confirm: `tier=exploratory` now captured correctly, 743s wall-clock, 62
+engine candidate evaluations, 7 typed decisions, ledger verified.
+
+Not yet done: only ever run one basin at a time (`--workers 1`, serial).
+No multi-basin concurrent run has been tried, and the basin list used so
+far (02177000, 03339000) is not a curated reference set — see
+`../Swatplus_decision/research/BUILDER_READINESS.md`'s P0 items before
+treating any of this as trusted training data.

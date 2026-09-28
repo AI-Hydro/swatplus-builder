@@ -233,7 +233,11 @@ def _run_one_basin(
             )
 
         payload = _extract_json_object(proc.stdout) or {}
-        effective_tier = payload.get("effective_claim_tier")
+        # `swat workflow run --json`'s top-level object is RunUSGSWorkflowResult:
+        # {success, run_id, artifact_dir, evidence_summary_path, blocker_class,
+        # values: {...effective_claim_tier, ...}}. blocker_class is top-level;
+        # effective_claim_tier is only inside "values".
+        effective_tier = (payload.get("values") or {}).get("effective_claim_tier")
         blocker = payload.get("blocker_class")
         candidate_evals = _count_engine_candidate_evaluations(out_dir)
 
