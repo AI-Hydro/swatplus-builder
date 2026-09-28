@@ -10843,3 +10843,35 @@ Verified: ruff 0.16.9 clean; pytest 1186 passed, 5 skipped (opt-in live),
 blocker recorded in `docs/AGENT_HANDOFF.md` §7 for generating live decision
 episodes as training labels; see that section (now updated) for what's
 still open before mass-generating labels.
+
+## 2026-09-28 — Live smoke test: real USGS basin end-to-end, first live episodes
+
+Ran `swat workflow run --usgs-id 02177000 --start 2015-01-01 --end 2019-12-31
+--warmup-years 2 --calibrate --claim-tier diagnostic` (background, ~exited
+code 0). Prior sessions had only exercised this against the offline
+`Ames_sub1` fixture; this is the first live run against a real gauge with
+network access (USGS NWIS, GridMET, gNATSGO/Planetary Computer, 3DEP all
+reachable from this machine).
+
+Result: `runs/smoke_02177000/`, effective claim tier `exploratory` (blocked
+on `landuse_fidelity`: dominant-HRU retention 0.27, a known governance flag
+— see [[scientific-correctness-audit]]). Calibrated KGE 0.6355, NSE 0.5170,
+PBIAS 7.97%; `log_kge`=0.7380 vs `log_kge_v2`=0.7389 both recorded (close on
+this basin's flow scale, as expected — the v2 fix matters most for very
+small or very large basins, not this one). `swat audit verify` confirms both
+hash-chained ledgers intact (73 events, 13 decisions).
+
+Ran the full decision-data chain end to end for the first time on live data:
+`swat audit episodes` → 7 events; `swat audit typed --out ... ` → 7 typed
+Choice items, including 4 real calibration-phase counterfactuals (volume,
+baseflow_subsurface, peaks_timing, kge_nse_finetune; 8-9 candidates each)
+plus 3 contract/claim-tier decisions. No `latent_fault`/`fault_id` leakage
+in the exported state text (grep-clean). This is the first evidence the
+decision-data pipeline (PR #25) produces sane, real-basin training items,
+not just synthetic-fixture ones.
+
+Not yet done: fault injection wasn't exercised in this run (no
+`fault_manifest.json` requested); `docs/AGENT_HANDOFF.md` §3 step 1 is
+still open on scale (single basin, single run) — this only confirms the
+pipeline works, it is not a training set. Run artifacts (~692MB) kept
+locally under `runs/smoke_02177000/`, not committed.
