@@ -119,6 +119,7 @@ multibasin_test/
 demo_runs/
 docs/*
 !docs/
+!docs/AGENT_HANDOFF.md
 !docs/AGENT_WORKFLOW.md
 !docs/CALIBRATION_PARAMETER_REGISTRY.md
 !docs/PIPELINE_LEARNING_LOG.md
