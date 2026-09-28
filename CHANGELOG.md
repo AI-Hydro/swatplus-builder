@@ -92,6 +92,12 @@ All notable changes to swatplus-builder are documented here.
 - `QUICKSTART.md`: building the engine from source with gfortran (upstream
   Release flags trap FP underflow and crash on real inputs), and the MCP
   hardening environment variables.
+- `docs/AGENT_HANDOFF.md`: project state, what's done vs. not, and how to
+  sync a local checkout that's behind `origin/main`, for a new agent or
+  contributor picking up the project.
+- `scripts/setup_local_env.sh`: idempotent local dev environment bootstrap
+  (venv + editable install, reference DBs, engine build from source, health
+  check).
 
 ## [0.7.13] — 2026-07-10
 
