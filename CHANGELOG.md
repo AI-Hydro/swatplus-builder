@@ -4,6 +4,19 @@ All notable changes to swatplus-builder are documented here.
 
 ## [Unreleased]
 
+### Added
+- `scripts/decision_data_batch.py`: batch driver for generating decision-
+  model training data across many basins (`docs/AGENT_HANDOFF.md` §3 item 2,
+  `docs/DECISION_DATA_PIPELINE.md` §4). Runs `swat workflow run` once per
+  basin as an isolated subprocess, admits a basin's decisions into the
+  combined `typed_decisions.jsonl` only after `swat audit verify` passes on
+  its ledgers, meters wall-clock and engine candidate-evaluation cost per
+  basin, and retains every basin's outcome (success or failure) in an
+  incrementally-written manifest. Does not choose a basin-inclusion
+  protocol or separate decision-development from final-assessment periods
+  — see the script's module docstring. `tests/test_decision_data_batch.py`
+  covers its pure logic (JSON extraction, cost metering, CLI validation).
+
 ### Fixed
 - `output/metrics.py`: added `log_kge_v2`, a scale-aware replacement for the
   calibration phase objective's low-flow term. `log_kge` (kept unchanged)

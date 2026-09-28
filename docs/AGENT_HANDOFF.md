@@ -156,30 +156,46 @@ branch `main`).
 
 In rough priority order for continuing the SWAT-S1 research goal:
 
-1. **A live end-to-end run against a real USGS basin with fault injection.**
-   Everything so far has been validated on the offline `Ames_sub1` fixture.
-   The PR #25 test plan explicitly left this unchecked because the sandbox
-   it was built in had no network access to USGS NWIS, 3DEP, GridMET, or
-   Planetary Computer. **On your local machine this restriction likely
-   doesn't apply** — this should be one of the first things you try:
-   ```bash
-   swat fault inject <base_txtinout> runs/fault_test --fault precip_minus_30pct
-   swat workflow run --usgs-id 02177000 --model-family full \
-       --start 2000-01-01 --end 2019-12-31 --warmup-years 3 \
-       --calibrate --claim-tier diagnostic --out-dir runs/fault_test --json
-   swat audit verify runs/fault_test
-   swat audit episodes runs/fault_test > episodes.jsonl
-   swat audit typed episodes.jsonl > typed.jsonl
-   ```
-   If this works cleanly end-to-end, it validates the whole pipeline for
-   real basins, not just the synthetic fixture.
+1. **DONE (2026-09-28).** A live end-to-end run against a real USGS basin
+   (02177000, 2015–2019) completed cleanly with network access from this
+   machine (USGS NWIS, GridMET, gNATSGO/Planetary Computer, 3DEP all
+   reachable) — `swat audit verify` passed (73 events, 13 decisions),
+   `swat audit typed` produced 7 real typed-decision items including 4
+   genuine calibration-phase counterfactuals, and no `latent_fault`/
+   `fault_id` leakage was found in the exported state text. Fault injection
+   itself was **not** exercised in that run (see item 3 below — it needs a
+   different flow than a plain `workflow run`). See PROGRESS.md's
+   2026-09-28 "Live smoke test" entry for the full numbers.
 
-2. **Generate episodes at scale.** Nothing runs at scale by itself yet —
-   that needs a batch driver (e.g. Slurm/Anvil array jobs, or a simple
-   parallel loop) over a basin list, each run verified with
-   `swat audit verify` before its episodes are admitted to a training set.
-   This was explicitly deferred (see `docs/DECISION_DATA_PIPELINE.md` §4,
-   "Known limits").
+2. **DONE (2026-09-28, driver written; not yet run at real scale).**
+   `scripts/decision_data_batch.py` — a batch driver over a basin list.
+   Each basin runs `swat workflow run` as its own subprocess (one basin
+   crashing or hanging can't take down the batch); every basin's result is
+   retained regardless of outcome (`batch_manifest.jsonl`, one line per
+   basin, written incrementally so a killed batch loses at most the basin
+   in flight); a basin is only admitted into the combined
+   `typed_decisions.jsonl` after its own `swat audit verify` passes; cost
+   (wall-clock seconds and engine candidate-evaluation count, from
+   `phase_decisions.json`) is metered per basin and summed in
+   `batch_summary.json`. See the script's own docstring for the basins.json
+   schema and for what it explicitly does **not** do yet: no basin-inclusion
+   protocol (the basin list is whatever the caller supplies — still open,
+   see the readiness review below), no decision-development/final-
+   assessment period separation, no fault injection.
+   ```bash
+   python scripts/decision_data_batch.py \
+       --basins scripts/decision_data_batch_basins.example.json \
+       --out-root runs/decision_data_batch/<date> \
+       --workers 1   # raise only with enough spare cores; each basin already
+                      # parallelizes internally via --sensitivity-workers/--anchor-workers
+   ```
+   Validated: unit tests (`tests/test_decision_data_batch.py`) cover JSON-
+   object extraction, candidate-count metering, and CLI validation; the
+   resume/`--skip-existing` path was manually verified end-to-end against a
+   completed run (verify → typed-export → cost report, all correct, all
+   without re-running the engine). **Not yet run at actual scale** — that's
+   the real remaining work: assembling and running it over a real basin
+   list once the basin-inclusion protocol below exists.
 
 3. **Combined and hard-negative fault designs.** Current faults are single
    perturbations. The vision document (referenced in `docs/DECISION_DATA_PIPELINE.md`

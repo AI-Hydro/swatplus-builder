@@ -1,0 +1,16 @@
+[
+  {
+    "usgs_id": "02177000",
+    "start": "2015-01-01",
+    "end": "2019-12-31",
+    "warmup_years": 2,
+    "claim_tier": "diagnostic"
+  },
+  {
+    "usgs_id": "03339000",
+    "start": "2010-01-01",
+    "end": "2019-12-31",
+    "warmup_years": 3,
+    "claim_tier": "diagnostic"
+  }
+]

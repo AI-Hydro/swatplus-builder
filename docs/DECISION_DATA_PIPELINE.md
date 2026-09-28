@@ -133,3 +133,11 @@ truth.
 - Nothing here runs at scale by itself. Generating thousands of episodes needs
   external compute (for example batch jobs on Anvil), with each run directory
   verified by `swat audit verify` before its episodes are admitted.
+  `scripts/decision_data_batch.py` (added 2026-09-28) is a first driver for
+  this — it runs `swat workflow run` per basin as its own subprocess,
+  verifies each before admitting its decisions, meters wall-clock and engine
+  candidate-evaluation cost, and retains every basin's result whether it
+  succeeded or not. It has been validated on a real basin (single-basin,
+  serial) but not yet run at real multi-basin scale, and it does not choose
+  which basins belong in a trusted reference set — see its module docstring
+  for the full scope and `docs/AGENT_HANDOFF.md` §3 item 2.
