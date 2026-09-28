@@ -316,3 +316,44 @@ generating labels — several items are addressed by PR #25 (fault/effect
 validation, leakage-refusing serializer, basin-hash splits), but others
 remain open: independent reference basins, separate decision-development
 and final-assessment periods, and dead routing actions (CH_N2/CH_K2).
+
+---
+
+## 8. Basin inclusion protocol (2026-09-28)
+
+Tackled the readiness review's other P0 item: "recruit independent basins
+under a published inclusion protocol" and "basin-group isolation" between
+decision-development and final-assessment work. Full protocol and its
+disclosed gaps: `docs/BASIN_INCLUSION_PROTOCOL.md`. Script:
+`scripts/basin_inclusion_protocol.py` — queries live USGS NWIS site
+metadata per state (via `pygeohydro.NWIS`, already a pinned dependency),
+filters on stream type / period-of-record / drainage area, excludes every
+USGS ID already used anywhere in this repo's development or testing history
+(computed by scanning the repo, not hand-maintained — confirmed it
+correctly catches `02177000`, `03339000`, `01547700` with full citations),
+and deterministically splits survivors into `development` /
+`held_out_final_assessment` basin groups using a salt distinct from the
+existing per-episode train/validation/test split.
+
+Validated live against Indiana + Ohio: 195 basins included (103
+development, 92 held-out), 270 excluded with reasons recorded (198
+insufficient period of record, 56 drainage-area out of bounds, 12 not a
+stream site, 3 contaminated by prior use, 1 missing drainage area). Ruff
+clean; pytest 1202 passed, 5 skipped, 0 failed (7 new unit tests for the
+pure logic: contamination scanning, deterministic split, split-salt
+independence from the episode-level split).
+
+Disclosed gaps (read `docs/BASIN_INCLUSION_PROTOCOL.md` §7 before treating
+any generated pool as a trusted reference set): no spatial-independence
+(nested-basin) check, no climate/ecoregion stratification, the held-out
+group's "don't touch it" rule is a process convention, not machine-enforced,
+and reference quality beyond the USGS HCDN-2009 flag is not verified.
+
+Next: decide `--states` scope (currently defaults to a 3-state proof run,
+`in oh ky`; full CONUS via `--states all` takes longer and hits NWIS's
+occasional flakiness more often, though each state retries and failures are
+recorded, not silently dropped), generate `basins/reference_pool_v1.json`
+for real, then feed its `development` group into
+`scripts/decision_data_batch.py --basins <derived from reference pool>`.
+That conversion (`reference_pool_v1.json`'s `included` records ->
+`decision_data_batch.py`'s basin-spec JSON) is not yet written.

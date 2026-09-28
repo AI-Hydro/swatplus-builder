@@ -128,6 +128,7 @@ docs/*
 !docs/RUN_ARTIFACT_RETENTION.md
 !docs/SECURITY_RELIABILITY_REVIEW_2026-09-16.md
 !docs/PREPRINT_READINESS_REVIEW_2026-09-19.md
+!docs/BASIN_INCLUSION_PROTOCOL.md
 Research_article/
 SWATplus_original_docs/
 .codebuddy/
