@@ -17,6 +17,30 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import decision_data_batch as batch  # noqa: E402
 
 
+def test_basin_result_started_at_has_no_default():
+    """Regression: started_at used to be `field(default_factory=now_utc)`,
+    which evaluates at BasinResult() *construction* time -- since every
+    construction happens at the very end of _run_one_basin (right before
+    returning), started_at and finished_at ended up identical, hiding the
+    true start time entirely. A live proof run against USGS 08155240
+    (2026-09-28/29) also showed wall_clock_s itself was wrong: it used
+    time.monotonic(), which does not advance while macOS is asleep, so a
+    basin whose real run spanned ~51 minutes (confirmed via its own
+    events.jsonl timestamps and output-file mtimes) was recorded as 208s.
+    Both are fixed by computing started_at/wall_clock_s from wall-clock
+    (datetime.now(timezone.utc)) timestamps captured explicitly at the real
+    start, not from a dataclass default or a monotonic clock. Pin that
+    started_at has no default, so every call site must supply it (and a
+    reviewer must actively choose what "start" means, rather than a default
+    quietly picking "now").
+    """
+    import dataclasses
+
+    fields_by_name = {f.name: f for f in dataclasses.fields(batch.BasinResult)}
+    assert fields_by_name["started_at"].default is dataclasses.MISSING
+    assert fields_by_name["started_at"].default_factory is dataclasses.MISSING
+
+
 def test_extract_json_object_from_mixed_stdout():
     stdout = (
         "progress line one\n"

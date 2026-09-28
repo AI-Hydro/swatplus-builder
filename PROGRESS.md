@@ -10928,3 +10928,46 @@ Not yet done: no converter from this pool's schema to
 decision_data_batch.py's basin-spec JSON exists yet -- that's the next
 concrete step before any batch run can actually consume this pool. The
 held_out_final_assessment group must not be touched until then either.
+
+## 2026-09-29 — Found and fixed two real bugs in the batch driver's cost metering
+
+The 2-basin proof run (previous entry) surfaced a genuine anomaly: basin
+08155240's manifest entry claimed `wall_clock_s=207.6`, but the driver's
+own progress-print timestamps were 51 minutes apart, and the workflow's own
+`events.jsonl` (real UTC timestamps) confirmed a real ~51-minute span,
+including a GridMET station fetch that stalled at "station_retrying"
+18:30:54 and only completed 18:45:38.
+
+Root cause, confirmed by inspection, not assumed: two separate bugs.
+1. `wall_clock_s` was computed via `time.monotonic()`, which on macOS does
+   not advance while the system is asleep. If the machine slept (lid close,
+   idle) partway through a long GridMET stall, the elapsed *monotonic* time
+   silently excluded the sleep duration while real calendar time kept
+   passing.
+2. `started_at` used `field(default_factory=now_utc)`, which evaluates at
+   `BasinResult()` *construction* time -- always the very end of
+   `_run_one_basin`, right before returning -- so `started_at` and
+   `finished_at` were always identical or near-identical, never the true
+   start.
+
+Fixed both: `wall_clock_s` and `started_at` now come from
+`datetime.now(timezone.utc)` captured explicitly at the real start of the
+function and recomputed at each return point, so cost reporting reflects
+real elapsed wall-clock time (including any sleep/stall), which is the
+honest answer to "how long did this actually take" -- not SWAT+-engine
+busy time specifically. Added a regression test pinning that `started_at`
+has no default (so a future edit can't silently reintroduce the
+construction-time bug) and removed the now-dead `skipped_existing` status
+string left over from an earlier refactor.
+
+Verified live: reran one fresh basin (07180500, Cedar Creek near Cedar
+Point KS, HCDN-2009-flagged) through the fixed driver. `started_at`
+(18:50:05Z) and `finished_at` (18:56:36Z) are now genuinely distinct, and
+their real difference (391.0s) matches the reported `wall_clock_s` (391.03s)
+exactly. Full suite: ruff clean; pytest 1211 passed, 5 skipped, 0 failed.
+
+This means the earlier 2-basin proof run's reported "538s total wall-clock"
+figure (previous PROGRESS.md entry) understated the true cost -- the real
+total across both basins was closer to 330s + ~51min = ~56 minutes, not
+9 minutes. Both basins' actual results (7 typed decisions total, ledgers
+verified) are unaffected; only the cost metric was wrong.

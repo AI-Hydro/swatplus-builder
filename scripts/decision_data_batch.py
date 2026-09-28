@@ -70,8 +70,7 @@ import csv
 import json
 import subprocess
 import sys
-import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -99,16 +98,27 @@ def now_utc() -> str:
 @dataclass
 class BasinResult:
     usgs_id: str
-    status: str  # run_failed | run_timeout | ledger_verify_failed | typed_export_failed | ok | skipped_existing
+    status: str  # run_failed | run_timeout | ledger_verify_failed | typed_export_failed | ok
     out_dir: str
     stage: str  # which step the status refers to: workflow_run | audit_verify | audit_typed | skip
+    # Real-world (calendar) elapsed seconds from this basin's start to this
+    # result, computed from wall-clock timestamps -- NOT time.monotonic().
+    # On macOS, time.monotonic() does not advance while the system is
+    # asleep, so a batch left running overnight or across a lid-close can
+    # silently under-report cost by however long the machine was suspended
+    # (observed directly: a proof run recorded 208s via monotonic timing for
+    # a basin whose own internal event log and output-file timestamps span
+    # ~51 real minutes -- see PROGRESS.md's 2026-09-28/29 entry). This field
+    # is real elapsed time including any such gaps, which is the honest
+    # answer to "how long did this basin actually take", not SWAT+-engine
+    # busy time specifically.
     wall_clock_s: float
+    started_at: str
     effective_claim_tier: str | None = None
     blocker_class: str | None = None
     engine_candidate_evaluations: int | None = None
     typed_decision_count: int | None = None
     error_tail: str | None = None
-    started_at: str = field(default_factory=now_utc)
     finished_at: str | None = None
 
 
@@ -172,14 +182,18 @@ def _run_one_basin(
 ) -> BasinResult:
     usgs_id = str(spec["usgs_id"])
     out_dir = out_root / f"usgs_{usgs_id}"
-    started = time.monotonic()
+    started_dt = datetime.now(timezone.utc)
+    started_at = now_utc()
+
+    def _elapsed_s() -> float:
+        return (datetime.now(timezone.utc) - started_dt).total_seconds()
+
     evidence_path = out_dir / "evidence_summary.json"
 
     if skip_existing and evidence_path.is_file():
         # Resuming a batch: don't re-run the engine, but still verify and
         # (re)export -- a prior crash may have stopped before those steps,
         # and both are cheap/idempotent compared to the engine run itself.
-        wall_clock = 0.0
         try:
             payload = json.loads(evidence_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
@@ -213,13 +227,13 @@ def _run_one_basin(
                 status="run_timeout",
                 out_dir=str(out_dir),
                 stage="workflow_run",
-                wall_clock_s=time.monotonic() - started,
+                wall_clock_s=_elapsed_s(),
+                started_at=started_at,
                 error_tail=f"exceeded {basin_timeout_s:.0f}s timeout",
                 finished_at=now_utc(),
             )
 
         log_path.write_text(proc.stdout + "\n--- STDERR ---\n" + proc.stderr, encoding="utf-8")
-        wall_clock = time.monotonic() - started
 
         if proc.returncode != 0:
             return BasinResult(
@@ -227,7 +241,8 @@ def _run_one_basin(
                 status="run_failed",
                 out_dir=str(out_dir),
                 stage="workflow_run",
-                wall_clock_s=wall_clock,
+                wall_clock_s=_elapsed_s(),
+                started_at=started_at,
                 error_tail=(proc.stderr or proc.stdout)[-2000:],
                 finished_at=now_utc(),
             )
@@ -254,7 +269,8 @@ def _run_one_basin(
             status="ledger_verify_failed",
             out_dir=str(out_dir),
             stage="audit_verify",
-            wall_clock_s=wall_clock,
+            wall_clock_s=_elapsed_s(),
+            started_at=started_at,
             effective_claim_tier=effective_tier,
             blocker_class=blocker,
             engine_candidate_evaluations=candidate_evals,
@@ -282,7 +298,8 @@ def _run_one_basin(
             status="typed_export_failed",
             out_dir=str(out_dir),
             stage="audit_typed",
-            wall_clock_s=wall_clock,
+            wall_clock_s=_elapsed_s(),
+            started_at=started_at,
             effective_claim_tier=effective_tier,
             blocker_class=blocker,
             engine_candidate_evaluations=candidate_evals,
@@ -296,7 +313,8 @@ def _run_one_basin(
         status="ok",
         out_dir=str(out_dir),
         stage="audit_typed",
-        wall_clock_s=wall_clock,
+        wall_clock_s=_elapsed_s(),
+        started_at=started_at,
         effective_claim_tier=effective_tier,
         blocker_class=blocker,
         engine_candidate_evaluations=candidate_evals,
