@@ -302,6 +302,22 @@ def export_decision_episodes(run_dir: Path | str) -> list[dict[str, Any]]:
                 env = {k: v for k, v in rec.items() if k not in {"seq", "prev_sha256", "sha256"}}
                 break
 
+    from ..decision_data.faults import FAULT_MANIFEST_FILENAME, load_fault_manifest
+
+    manifest = load_fault_manifest(root)
+    latent_fault: dict[str, Any] | None = None
+    if manifest is not None:
+        fault = manifest.get("fault") or {}
+        # Hidden label: kept outside state_before so it can only be a target.
+        latent_fault = {
+            "family": manifest.get("latent_fault_family"),
+            "fault_id": fault.get("fault_id"),
+            "kind": fault.get("kind"),
+            "magnitude": fault.get("magnitude"),
+            "parameter": fault.get("parameter"),
+            "fault_manifest_sha256": file_sha256(root / FAULT_MANIFEST_FILENAME),
+        }
+
     episodes: list[dict[str, Any]] = []
     for decision_id, rec in decisions.items():
         outs = outcomes.get(decision_id, [])
@@ -325,7 +341,8 @@ def export_decision_episodes(run_dir: Path | str) -> list[dict[str, Any]]:
                 "outcome_vector": merged_outcome or None,
                 "outcome_observed": bool(outs),
                 "evidence": rec.get("evidence"),
-                "source": "natural",
+                "source": "injected_fault" if latent_fault else "natural",
+                "latent_fault": latent_fault,
                 "split_group": rec.get("basin_id"),
                 "builder_git_sha": env.get("git_sha"),
                 "package_version": env.get("package_version"),

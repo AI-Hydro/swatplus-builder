@@ -541,8 +541,23 @@ def calibrate_against_lock(
         tmp_progress_path.write_text(json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8")
         tmp_progress_path.replace(progress_path)
 
+    # One record per phase describing the promotion decision actually taken
+    # (see _write_phase_decisions); consumed by the workflow's decision ledger.
+    phase_records: list[dict[str, Any]] = []
+
     for phase_index, phase in enumerate(active_phases, start=1):
         phase_parameters = [p for p in phase["parameters"] if p in parameters]
+        phase_record: dict[str, Any] = {
+            "order": phase_index,
+            "phase": phase["phase"],
+            "objective": phase["objective"],
+            "budget": int(phase.get("budget") or 0),
+            "parameters_opened": list(phase_parameters),
+            "incoming_parameters": dict(current_params),
+            "incoming_metrics": dict(best_metrics),
+            "first_eval_idx": eval_idx,
+        }
+        phase_records.append(phase_record)
         if _phase_requires_prior_process_gate(phase):
             prior_gate_seen = _prior_process_gate_seen(evaluations)
             prior_gate_candidate = _best_prior_process_gate_candidate(
@@ -566,6 +581,7 @@ def calibrate_against_lock(
                     }
                 )
                 eval_idx += 1
+                phase_record["status"] = "blocked_preceding_process_gate"
                 phase_failure = SwatBuilderPipelineError(
                     f"Phase '{phase['phase']}' requires a prior volume-valid candidate "
                     "that passed calibration process gates.",
@@ -604,6 +620,7 @@ def calibrate_against_lock(
                 }
             )
             eval_idx += 1
+            phase_record["status"] = "skipped_no_eligible_parameters"
             continue
 
         phase_best_score = float("-inf")
@@ -732,6 +749,7 @@ def calibrate_against_lock(
                     phase_best_params = dict(point)
 
         if phase_best_params is None:
+            phase_record["status"] = "no_feasible_candidate"
             gate_reason = (
                 "abs(pbias) <= 30 and candidate calibration process gates pass"
                 if "rank_nse_kge" in str(phase["objective"])
@@ -746,9 +764,26 @@ def calibrate_against_lock(
             )
             break
 
+        phase_record["status"] = "promoted"
+        phase_record["promoted_parameters"] = dict(phase_best_params)
+        phase_record["promoted_score"] = float(phase_best_score)
         current_params = phase_best_params
         best_params = dict(phase_best_params)
         best_metrics = dict(phase_best_metrics)
+
+    for later_index, later_phase in enumerate(active_phases, start=1):
+        if later_index > len(phase_records):
+            phase_records.append(
+                {
+                    "order": later_index,
+                    "phase": later_phase["phase"],
+                    "objective": later_phase["objective"],
+                    "budget": int(later_phase.get("budget") or 0),
+                    "parameters_opened": [p for p in later_phase["parameters"] if p in parameters],
+                    "status": "not_reached",
+                }
+            )
+    _write_phase_decisions(cal_dir / "phase_decisions.json", phase_records, evaluations)
 
     # Write history CSV.
     history_csv = cal_dir / "history.csv"
@@ -1328,6 +1363,91 @@ def _is_finite_number(value: object) -> bool:
     import math
 
     return math.isfinite(float(value))
+
+
+PHASE_DECISIONS_SCHEMA = "swatplus_builder.calibration_phase_decisions/v1"
+_CANDIDATE_METRIC_KEYS = ("nse", "kge", "log_kge", "pbias", "bfi_obs", "bfi_sim")
+
+
+def _finite_or_none(value: Any) -> float | None:
+    import math
+
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    return f if math.isfinite(f) else None
+
+
+def _write_phase_decisions(
+    path: Path,
+    phase_records: list[dict[str, Any]],
+    evaluations: list[dict[str, Any]],
+) -> None:
+    """Persist each phase's promotion decision with its full candidate set.
+
+    Every calibration phase is a bounded decision: among the candidates it
+    evaluated, promote the best one that passes the gates, or promote none.
+    Recording all candidates (with metrics, gate outcomes and the phase score)
+    next to the one actually promoted gives decision-model training data its
+    counterfactual structure: what the alternatives would have yielded from
+    the same starting state under the same budget.
+    """
+    phases_out: list[dict[str, Any]] = []
+    for record in phase_records:
+        order = record.get("order")
+        objective = str(record.get("objective") or "")
+        candidates: list[dict[str, Any]] = []
+        promoted_eval_idx: int | None = None
+        promoted = record.get("promoted_parameters")
+        for ev in evaluations:
+            if ev.get("phase_order") != order or ev.get("status") not in {"evaluated", "invalid_objective_metrics"}:
+                continue
+            metrics = ev.get("metrics") or {}
+            score = _score_candidate(metrics, objective=objective) if ev.get("status") == "evaluated" else float("-inf")
+            feasible = bool(ev.get("volume_gate_passed")) and score != float("-inf")
+            candidates.append(
+                {
+                    "eval_idx": ev.get("eval_idx"),
+                    "parameters": {k: _finite_or_none(v) for k, v in (ev.get("parameters") or {}).items()},
+                    "metrics": {k: _finite_or_none(metrics.get(k)) for k in _CANDIDATE_METRIC_KEYS},
+                    "volume_gate_passed": ev.get("volume_gate_passed"),
+                    "physical_gate_passed": ev.get("physical_gate_passed"),
+                    "calibration_process_gate_passed": ev.get("calibration_process_gate_passed"),
+                    "physical_gate_dominant_blocker": ev.get("physical_gate_dominant_blocker"),
+                    "status": ev.get("status"),
+                    "failure_reason": ev.get("failure_reason"),
+                    "phase_score": _finite_or_none(score),
+                    "feasible": feasible,
+                }
+            )
+            if promoted_eval_idx is None and promoted is not None and ev.get("parameters") == promoted:
+                promoted_eval_idx = ev.get("eval_idx")
+        clean = {k: v for k, v in record.items() if k not in {"promoted_parameters", "first_eval_idx"}}
+        for key in ("incoming_parameters", "incoming_metrics"):
+            if isinstance(clean.get(key), dict):
+                clean[key] = {k: _finite_or_none(v) for k, v in clean[key].items()}
+        if "promoted_score" in clean:
+            clean["promoted_score"] = _finite_or_none(clean["promoted_score"])
+        phases_out.append(
+            {
+                **clean,
+                "promoted_eval_idx": promoted_eval_idx,
+                "candidate_count": len(candidates),
+                "feasible_candidate_count": sum(1 for c in candidates if c["feasible"]),
+                "candidates": candidates,
+            }
+        )
+    payload = {
+        "schema": PHASE_DECISIONS_SCHEMA,
+        # Multi-seed DDS refinement (dds_n_seeds > 1) runs after this phased
+        # search and may change the final parameters; its evaluations are in
+        # history.csv, not here.
+        "scope": "primary_phased_search",
+        "phases": phases_out,
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8")
 
 
 def _diagnostic_calibration_phases(

@@ -801,6 +801,72 @@ _MIN_YEARS_RESEARCH = 10
 _MIN_WARMUP_YEARS = 3
 
 
+def _record_calibration_phase_decisions(audit: RunAuditTrail, cal_provenance: dict[str, Any]) -> None:
+    """Copy each calibration phase's promotion decision into the decision ledger.
+
+    Options are the candidates the phase actually evaluated (``eval:<idx>``)
+    plus ``no_promotion``; the outcome carries every candidate's metrics and
+    gate results, i.e. what each alternative would have yielded from the same
+    starting state. Evidence pins the source artifacts by SHA-256.
+    """
+    history_csv = cal_provenance.get("history_csv")
+    if not isinstance(history_csv, str) or not history_csv:
+        return
+    decisions_path = Path(history_csv).parent / "phase_decisions.json"
+    if not decisions_path.is_file():
+        return
+    payload = json.loads(decisions_path.read_text(encoding="utf-8"))
+    evidence = {
+        "phase_decisions_json": str(decisions_path),
+        "phase_decisions_sha256": file_sha256(decisions_path),
+        "history_csv_sha256": file_sha256(history_csv),
+    }
+    for phase in payload.get("phases", []):
+        status = str(phase.get("status") or "unknown")
+        if status == "not_reached":
+            continue
+        candidates = phase.get("candidates") or []
+        options = [f"eval:{c['eval_idx']}" for c in candidates] + ["no_promotion"]
+        promoted = phase.get("promoted_eval_idx")
+        chosen = f"eval:{promoted}" if promoted is not None else "no_promotion"
+        decision_id = audit.decision(
+            f"calibration_phase:{phase.get('phase')}",
+            state={
+                "phase_order": phase.get("order"),
+                "objective": phase.get("objective"),
+                "budget": phase.get("budget"),
+                "parameters_opened": phase.get("parameters_opened"),
+                "incoming_parameters": phase.get("incoming_parameters"),
+                "incoming_metrics": _compact_metrics(phase.get("incoming_metrics")),
+            },
+            options=options,
+            chosen=chosen,
+            policy="calibration.locked_benchmark.calibrate_against_lock:phase_promotion",
+            rationale=status,
+            evidence=evidence,
+        )
+        audit.outcome(
+            decision_id,
+            {
+                "phase_status": status,
+                "promoted_score": phase.get("promoted_score"),
+                "feasible_candidate_count": phase.get("feasible_candidate_count"),
+                "candidate_parameters": {f"eval:{c['eval_idx']}": c.get("parameters") for c in candidates},
+                "candidate_outcomes": {
+                    f"eval:{c['eval_idx']}": {
+                        "metrics": c.get("metrics"),
+                        "feasible": c.get("feasible"),
+                        "phase_score": c.get("phase_score"),
+                        "volume_gate_passed": c.get("volume_gate_passed"),
+                        "calibration_process_gate_passed": c.get("calibration_process_gate_passed"),
+                        "physical_gate_dominant_blocker": c.get("physical_gate_dominant_blocker"),
+                    }
+                    for c in candidates
+                },
+            },
+        )
+
+
 def _compact_metrics(metrics: Any) -> dict[str, float | None] | None:
     """Keep the headline skill scores of a metrics dict for decision records."""
     if not isinstance(metrics, dict):
@@ -958,6 +1024,16 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
 
     _event("workflow", "started", usgs_id=request.usgs_id, model_family=request.model_family)
     _event("environment", "captured", archived_trails=archived_trails, **environment_fingerprint())
+    fault_manifest_path = out / "fault_manifest.json"
+    if fault_manifest_path.is_file():
+        # Bind the injected fault into the hash chain by digest only; the cause
+        # label itself stays out of every decision state.
+        _event(
+            "fault_injection",
+            "detected",
+            manifest_path=str(fault_manifest_path),
+            manifest_sha256=file_sha256(fault_manifest_path),
+        )
 
     allowed_tier, blocker, policy_notes = _allowed_claim_tier(request)
     contract_blocker = blocker
@@ -1192,6 +1268,7 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
             delta_metrics = cal_provenance.get("verification_delta_metrics")
             if isinstance(delta_metrics, dict):
                 values["calibration_delta_metrics"] = delta_metrics
+            _record_calibration_phase_decisions(audit, cal_provenance)
             for phase in cal.phases:
                 audit.event(
                     "calibration_phase",

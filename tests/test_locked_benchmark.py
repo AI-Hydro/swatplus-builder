@@ -617,6 +617,26 @@ def test_calibrate_against_lock_writes_staged_protocol(monkeypatch, tmp_path: Pa
     assert "calibration process gates" in best["kge_nse_finetune_gate"]
     assert "calibration process gates pass" in best["calibration_protocol"][-1]["gate"]
 
+    decisions = json.loads((Path(evidence.history_csv).parent / "phase_decisions.json").read_text(encoding="utf-8"))
+    assert decisions["schema"] == "swatplus_builder.calibration_phase_decisions/v1"
+    phases = {p["phase"]: p for p in decisions["phases"]}
+    assert [p["phase"] for p in decisions["phases"]] == [
+        "volume",
+        "baseflow_subsurface",
+        "peaks_timing",
+        "kge_nse_finetune",
+    ]
+    volume = phases["volume"]
+    assert volume["status"] == "promoted"
+    assert volume["parameters_opened"] == ["CN2", "PERCO"]
+    assert volume["candidate_count"] >= 2
+    promoted = next(c for c in volume["candidates"] if c["eval_idx"] == volume["promoted_eval_idx"])
+    feasible_scores = [c["phase_score"] for c in volume["candidates"] if c["feasible"]]
+    assert promoted["feasible"] and promoted["phase_score"] == max(feasible_scores)
+    assert phases["peaks_timing"]["status"] == "skipped_no_eligible_parameters"
+    # the next phase starts from the parameters the previous one promoted
+    assert phases["baseflow_subsurface"]["incoming_parameters"] == promoted["parameters"]
+
 
 def test_phase_candidate_points_keep_dense_probe_for_each_parameter() -> None:
     points = _phase_candidate_points(
@@ -853,6 +873,14 @@ def test_calibrate_against_lock_writes_history_before_phase_blocker(monkeypatch,
     assert set(history["calibration_process_condition_codes"]) == {"VOLUME_BIAS"}
     assert set(history["physical_gate_condition_codes"]) == {"VOLUME_BIAS"}
     assert set(history["physical_gate_dominant_blocker"]) == {"VOLUME_BIAS"}
+
+    decisions = json.loads((Path(history_csv).parent / "phase_decisions.json").read_text(encoding="utf-8"))
+    (volume,) = decisions["phases"]
+    assert volume["status"] == "no_feasible_candidate"
+    assert volume["promoted_eval_idx"] is None
+    assert volume["candidate_count"] == 4
+    assert volume["feasible_candidate_count"] == 0
+    assert {c["physical_gate_dominant_blocker"] for c in volume["candidates"]} == {"VOLUME_BIAS"}
 
 
 def test_calibrate_against_lock_classifies_nonfinite_candidate_metrics(
