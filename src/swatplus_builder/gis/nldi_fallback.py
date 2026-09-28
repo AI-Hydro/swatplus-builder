@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import logging
 from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+UTC = timezone.utc  # datetime.UTC is Python 3.11+; the package supports 3.10.
 
 log = logging.getLogger(__name__)
 

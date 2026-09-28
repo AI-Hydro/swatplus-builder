@@ -137,6 +137,23 @@ class TestCmdHealthExitCodes:
         exe_check = next(c for c in data["checks"] if c["name"] == "swatplus_exe")
         assert exe_check["ok"] is False
 
+    def test_health_exe_ok_for_setup_engine_install_without_env(self, tmp_path, monkeypatch):
+        """An engine installed by `swat setup engine` needs no SWATPLUS_EXE."""
+        from swatplus_builder.run import swatplus as run_swatplus
+
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        fake_exe = bin_dir / run_swatplus.BINARY_CANDIDATES[0]
+        fake_exe.write_bytes(b"")
+        fake_exe.chmod(0o755)
+        monkeypatch.setattr(run_swatplus, "ENGINE_BIN_DIR", bin_dir)
+        monkeypatch.delenv("SWATPLUS_EXE", raising=False)
+        res = runner.invoke(app, ["health", "--json"])
+        data = json.loads(res.stdout)
+        exe_check = next(c for c in data["checks"] if c["name"] == "swatplus_exe")
+        assert exe_check["ok"] is True
+        assert str(fake_exe.resolve()) in exe_check["detail"]
+
     def test_health_unhealthy_json_status_string(self):
         with patch("sys.version_info", (3, 8, 0)):
             res = runner.invoke(app, ["health", "--json"])

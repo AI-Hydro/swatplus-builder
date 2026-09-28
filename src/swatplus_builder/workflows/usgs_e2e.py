@@ -10,10 +10,16 @@ import hashlib
 import json
 import subprocess
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ..audit import (
+    RunAuditTrail,
+    archive_previous_trail,
+    environment_fingerprint,
+    file_sha256,
+)
 from ..calibration.diagnostic_calibrator import run_diagnostic_calibration
 from ..governance import (
     benchmark_lock_gate as _benchmark_lock_gate_impl,
@@ -42,6 +48,7 @@ from ..governance import (
 from ..governance import (
     weather_fidelity_gate as _weather_fidelity_gate_impl,
 )
+from ..governance.tiers import CLAIM_TIERS
 from ..orchestrate import run_pipeline
 from ..output.et_diagnostics import write_et_partition_diagnostics
 from ..output.landuse_fidelity import build_landuse_fidelity_block
@@ -56,6 +63,8 @@ from ..params.governance import (
     full_mode_extended_screen_rows,
     full_mode_screen_rows,
 )
+
+UTC = timezone.utc  # datetime.UTC is Python 3.11+; the package supports 3.10.
 
 # SWAT+-specific sensitivity gate parameters (computed once at import time)
 _SENSITIVITY_REQUIRED: frozenset[str] = frozenset(
@@ -819,6 +828,86 @@ _MIN_YEARS_RESEARCH = 10
 _MIN_WARMUP_YEARS = 3
 
 
+def _record_calibration_phase_decisions(audit: RunAuditTrail, cal_provenance: dict[str, Any]) -> None:
+    """Copy each calibration phase's promotion decision into the decision ledger.
+
+    Options are the candidates the phase actually evaluated (``eval:<idx>``)
+    plus ``no_promotion``; the outcome carries every candidate's metrics and
+    gate results, i.e. what each alternative would have yielded from the same
+    starting state. Evidence pins the source artifacts by SHA-256.
+    """
+    history_csv = cal_provenance.get("history_csv")
+    if not isinstance(history_csv, str) or not history_csv:
+        return
+    decisions_path = Path(history_csv).parent / "phase_decisions.json"
+    if not decisions_path.is_file():
+        return
+    payload = json.loads(decisions_path.read_text(encoding="utf-8"))
+    evidence = {
+        "phase_decisions_json": str(decisions_path),
+        "phase_decisions_sha256": file_sha256(decisions_path),
+        "history_csv_sha256": file_sha256(history_csv),
+    }
+    for phase in payload.get("phases", []):
+        status = str(phase.get("status") or "unknown")
+        if status == "not_reached":
+            continue
+        candidates = phase.get("candidates") or []
+        options = [f"eval:{c['eval_idx']}" for c in candidates] + ["no_promotion"]
+        promoted = phase.get("promoted_eval_idx")
+        chosen = f"eval:{promoted}" if promoted is not None else "no_promotion"
+        decision_id = audit.decision(
+            f"calibration_phase:{phase.get('phase')}",
+            state={
+                "phase_order": phase.get("order"),
+                "objective": phase.get("objective"),
+                "budget": phase.get("budget"),
+                "parameters_opened": phase.get("parameters_opened"),
+                "incoming_parameters": phase.get("incoming_parameters"),
+                "incoming_metrics": _compact_metrics(phase.get("incoming_metrics")),
+            },
+            options=options,
+            chosen=chosen,
+            policy="calibration.locked_benchmark.calibrate_against_lock:phase_promotion",
+            rationale=status,
+            evidence=evidence,
+        )
+        audit.outcome(
+            decision_id,
+            {
+                "phase_status": status,
+                "promoted_score": phase.get("promoted_score"),
+                "feasible_candidate_count": phase.get("feasible_candidate_count"),
+                "candidate_parameters": {f"eval:{c['eval_idx']}": c.get("parameters") for c in candidates},
+                "candidate_outcomes": {
+                    f"eval:{c['eval_idx']}": {
+                        "metrics": c.get("metrics"),
+                        "feasible": c.get("feasible"),
+                        "phase_score": c.get("phase_score"),
+                        "volume_gate_passed": c.get("volume_gate_passed"),
+                        "calibration_process_gate_passed": c.get("calibration_process_gate_passed"),
+                        "physical_gate_dominant_blocker": c.get("physical_gate_dominant_blocker"),
+                    }
+                    for c in candidates
+                },
+            },
+        )
+
+
+def _compact_metrics(metrics: Any) -> dict[str, float | None] | None:
+    """Keep the headline skill scores of a metrics dict for decision records."""
+    if not isinstance(metrics, dict):
+        return None
+    out: dict[str, float | None] = {}
+    for key in ("nse", "kge", "log_kge", "pbias", "bfi_obs", "bfi_sim", "delta_nse", "delta_kge"):
+        if key in metrics:
+            try:
+                out[key] = float(metrics[key])
+            except (TypeError, ValueError):
+                out[key] = None
+    return out
+
+
 def _period_split(start: str, end: str) -> dict[str, str]:
     s = datetime.fromisoformat(start)
     e = datetime.fromisoformat(end)
@@ -842,6 +931,11 @@ def _allowed_claim_tier(req: RunUSGSWorkflowRequest) -> tuple[str, str | None, l
     requested_tier = (req.claim_tier or "diagnostic").strip().lower()
     tier = requested_tier
     notes: list[str] = []
+    if requested_tier not in CLAIM_TIERS:
+        # An unrecognized tier (e.g. a typo) must not flow through as if it
+        # were a governed tier; fall back to the default diagnostic request.
+        notes.append(f"unrecognized_claim_tier:{requested_tier}")
+        requested_tier = tier = "diagnostic"
     years = datetime.fromisoformat(req.end).year - datetime.fromisoformat(req.start).year + 1
 
     if requested_tier in {"research_grade", "publication_grade"}:
@@ -947,19 +1041,13 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
     run_id = f"usgs_{request.usgs_id}_{request.start.replace('-', '')}_{request.end.replace('-', '')}"
     events_path = out / "events.jsonl"
     events: list[dict[str, Any]] = []
+    # Earlier attempts in this directory are archived, never deleted; the new
+    # attempt starts fresh hash-chained events/decisions ledgers.
+    archived_trails = archive_previous_trail(out)
+    audit = RunAuditTrail(out, run_id=run_id, basin_id=request.usgs_id)
 
     def _event(stage: str, status: str, **extra: Any) -> None:
-        rec = {
-            "time": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
-            "run_id": run_id,
-            "usgs_id": request.usgs_id,
-            "stage": stage,
-            "status": status,
-            **extra,
-        }
-        events.append(rec)
-        with events_path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(rec, default=str) + "\n")
+        events.append(audit.event(stage, status, **extra))
 
     def _pipeline_progress(event: dict[str, Any]) -> None:
         payload = dict(event)
@@ -967,9 +1055,18 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
         status = str(payload.pop("status", "progress"))
         _event(stage, status, **payload)
 
-    if events_path.exists():
-        events_path.unlink()
     _event("workflow", "started", usgs_id=request.usgs_id, model_family=request.model_family)
+    _event("environment", "captured", archived_trails=archived_trails, **environment_fingerprint())
+    fault_manifest_path = out / "fault_manifest.json"
+    if fault_manifest_path.is_file():
+        # Bind the injected fault into the hash chain by digest only; the cause
+        # label itself stays out of every decision state.
+        _event(
+            "fault_injection",
+            "detected",
+            manifest_path=str(fault_manifest_path),
+            manifest_sha256=file_sha256(fault_manifest_path),
+        )
 
     allowed_tier, blocker, policy_notes = _allowed_claim_tier(request)
     contract_blocker = blocker
@@ -981,6 +1078,22 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
             policy_notes = [*policy_notes, "virtual_all_terminal_outlet_requires_authority"]
     split = _period_split(request.start, request.end)
     _event("contract_policy", "passed" if blocker is None else "blocked", allowed_tier=allowed_tier, blocker_class=blocker)
+    audit.decision(
+        "claim_tier_contract",
+        state={
+            "requested_claim_tier": request.claim_tier,
+            "model_family": request.model_family,
+            "window_years": datetime.fromisoformat(request.end).year - datetime.fromisoformat(request.start).year + 1,
+            "warmup_years": int(request.warmup_years),
+            "calibrate": bool(request.calibrate),
+            "virtual_all_terminal_outlet": bool(request.virtual_all_terminal_outlet),
+        },
+        options=list(CLAIM_TIERS),
+        chosen=allowed_tier,
+        policy="workflows.usgs_e2e._allowed_claim_tier",
+        rationale=blocker or "contract_accepted",
+        evidence={"policy_notes": list(policy_notes)},
+    )
 
     values: dict[str, Any] = {
         "requested_claim_tier": request.claim_tier,
@@ -1021,6 +1134,7 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
                 observation_conditioning_period=(
                     split["calibration_start"], split["calibration_end"]
                 ),
+                outlet_selection_period=(split["calibration_start"], split["calibration_end"]),
                 progress_callback=_pipeline_progress,
             )
             values.update(summary if isinstance(summary, dict) else {"pipeline_summary": str(summary)})
@@ -1114,6 +1228,20 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
             "routing_flow_gates": routing_gates_payload,
             "calibration_sequence": calibration_sequence,
         }
+        precheck_decision_id = audit.decision(
+            "calibration_precheck",
+            state={
+                "physical_gates_status": physical_gates_payload.get("status"),
+                "routing_flow_gates_status": routing_gates_payload.get("status"),
+                "baseline_metrics": _compact_metrics(values.get("metrics")),
+                "claim_tier_allowed": allowed_tier,
+            },
+            options=["run_diagnostic_calibration", "block_calibration"],
+            chosen="run_diagnostic_calibration" if calibration_allowed else "block_calibration",
+            policy="workflows.usgs_e2e._calibration_precheck",
+            rationale=block_reason or "gates_permit_calibration",
+            evidence={"calibration_sequence": calibration_sequence},
+        )
         values["calibration_precheck_sequence"] = calibration_sequence
         values["calibration_precheck_physical_gates_status"] = physical_gates_payload.get("status")
         values["calibration_precheck_routing_flow_gates_status"] = routing_gates_payload.get("status")
@@ -1136,6 +1264,7 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
                 "phases": [],
             }
             _event("calibration", "blocked", reason=block_reason)
+            audit.outcome(precheck_decision_id, {"calibration_status": values["calibration_status"]})
         else:
             _event("calibration", "started", sequence=calibration_sequence)
             cal = run_diagnostic_calibration(
@@ -1185,6 +1314,26 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
             delta_metrics = cal_provenance.get("verification_delta_metrics")
             if isinstance(delta_metrics, dict):
                 values["calibration_delta_metrics"] = delta_metrics
+            _record_calibration_phase_decisions(audit, cal_provenance)
+            for phase in cal.phases:
+                audit.event(
+                    "calibration_phase",
+                    str(phase.status),
+                    phase=phase.phase,
+                    phase_stage=phase.stage,
+                    message=str(phase.message)[-500:],
+                )
+            audit.outcome(
+                precheck_decision_id,
+                {
+                    "calibration_status": values["calibration_status"],
+                    "calibration_success": bool(cal.success),
+                    "locked_verification_succeeded": cal_provenance.get("locked_verification_succeeded"),
+                    "verification_metrics": _compact_metrics(verification_metrics),
+                    "verification_delta_metrics": _compact_metrics(delta_metrics),
+                    "phases": [{"phase": p.phase, "status": p.status} for p in cal.phases],
+                },
+            )
             final_physical_gates = cal_provenance.get("final_physical_gates")
             if isinstance(final_physical_gates, dict):
                 values["baseline_physical_gates_status"] = baseline_physical_gates_payload.get("status")
@@ -1713,6 +1862,25 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
         routing_gates=routing_gates_payload,
     )
     values["effective_claim_tier"] = effective_claim_tier
+    final_claim_decision_id = audit.decision(
+        "effective_claim_tier",
+        state={
+            "claim_tier_allowed": allowed_tier,
+            "blocker_class": blocker,
+            "calibration_success": bool(values.get("calibration_success")),
+            "physical_gates_status": physical_gates_payload.get("status"),
+            "routing_flow_gates_status": routing_gates_payload.get("status"),
+            "metrics": _compact_metrics(values.get("metrics")),
+        },
+        options=list(CLAIM_TIERS),
+        chosen=effective_claim_tier,
+        policy="workflows.usgs_e2e._effective_claim_tier",
+        rationale=blocker or "evidence_supports_tier",
+    )
+    audit.outcome(
+        final_claim_decision_id,
+        {"allowed_claims": len(allowed_claims), "blocked_claims": len(blocked_claims)},
+    )
 
     gates_passed = ["contract_policy"] if contract_blocker is None else []
     gates_failed = ["contract_policy"] if contract_blocker is not None else []
@@ -1945,11 +2113,25 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
     except Exception as exc:
         _event("evidence_schema", "failed", error=str(exc)[:500])
         manifest_payload["events_recorded"] = len(events)
+        manifest_payload["audit_ledgers"] = audit.heads()
         _write_json(run_manifest_path, manifest_payload)
         raise RuntimeError("Required schema-versioned evidence bundle could not be written") from exc
 
     _event("workflow", "completed", success=bool(success), evidence_summary=str(path))
+    # Bind the final evidence files to the hash chain, then seal both ledger
+    # heads into the manifest so truncation or edits are detectable later
+    # (`swat audit verify <run_dir>`).
+    _event(
+        "evidence_sealed",
+        "completed",
+        artifacts_sha256={
+            name: file_sha256(out / name)
+            for name in ("evidence_summary.json", "evidence_v1.json", "EVIDENCE_SUMMARY.md")
+            if (out / name).is_file()
+        },
+    )
     manifest_payload["events_recorded"] = len(events)
+    manifest_payload["audit_ledgers"] = audit.heads()
     _write_json(run_manifest_path, manifest_payload)
 
     return RunUSGSWorkflowResult(

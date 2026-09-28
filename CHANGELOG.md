@@ -2,6 +2,103 @@
 
 All notable changes to swatplus-builder are documented here.
 
+## [Unreleased]
+
+### Added
+- Decision-model data pipeline (`docs/DECISION_DATA_PIPELINE.md`):
+  - Calibration phases write `phase_decisions.json` with each phase's full
+    candidate set (metrics, gate results, phase score) and the candidate it
+    promoted; the workflow records one `calibration_phase:<phase>` ledger
+    decision per phase with every candidate's outcome attached.
+  - Fault injection (`swat fault list|inject|effect`,
+    `swatplus_builder.decision_data.faults`): documented forcing and parameter
+    faults applied to a copied TxtInOut with a hash-pinned
+    `fault_manifest.json` and a hidden `latent_fault_family` label; injections
+    that change no file or fail midway leave nothing behind, and
+    `fault_effect` flags faults that changed no simulated hydrology.
+  - `serialize_state` (version `state-v1`): deterministic, priority-ordered,
+    character-budgeted state text that refuses hidden-label keys.
+  - `swat audit typed`: compiles DecisionEpisodes into typed-decision (Choice)
+    items with bounded option sets, hard or softmax targets, fault-diagnosis
+    items for injected runs, and basin-disjoint splits.
+  - Episodes from fault-injected runs carry `source: injected_fault` and a
+    separate `latent_fault` field; the manifest is bound into `events.jsonl`
+    by hash.
+- Tamper-evident audit trail for the canonical workflow. `events.jsonl` is now a
+  SHA-256 hash-chained ledger (additive `seq`/`prev_sha256`/`sha256` fields),
+  and a new `decisions.jsonl` records each governed decision point
+  (`claim_tier_contract`, `calibration_precheck`, `effective_claim_tier`) as
+  state → options → chosen → outcome, with the deciding policy. Both ledger
+  heads are sealed into `run_manifest.json` (`audit_ledgers`), and the final
+  evidence files are hashed into the chain (`evidence_sealed` event).
+- Each run records an environment fingerprint (package version, git SHA,
+  engine path/SHA-256/revision, key dependency versions).
+- `swat audit verify <run_dir>` checks both ledgers against the sealed heads;
+  `swat audit episodes <run_dir>...` exports decisions joined with outcomes as
+  model-agnostic `DecisionEpisode` JSONL for decision-model data preparation.
+- Re-running a workflow in the same directory archives the previous attempt's
+  ledgers under `audit_history/` instead of deleting them.
+
+### Fixed
+- The package (including `swat workflow run`) failed to import on Python 3.10,
+  its declared minimum, because eight modules imported `datetime.UTC` (3.11+).
+- Fresh `[mcp]` installs resolved `mcp` 2.x, which removed `FastMCP`; the extra
+  is now pinned to `mcp>=1.2,<2`.
+- `requests` (used by the SDA and SoilGrids soil clients on the real build
+  path) is now a declared dependency.
+- MCP `locked_calibrate` no longer swallows independent-verification failures;
+  it reports `verification_status` (`verified` | `skipped` | `failed`) and the
+  error, and refuses a caller-supplied `binary` path unless the server opts in
+  with `SWATPLUS_BUILDER_MCP_ALLOW_BINARY_OVERRIDE=1`.
+- Calibration candidates delete a copied `basin_wb_aa.txt` before the engine
+  run, so the candidate water-balance gate can never judge the base run's file.
+- An unrecognized requested claim tier (e.g. a typo) now falls back to
+  `diagnostic` with an explicit policy note instead of passing through.
+- `swat health` now resolves the engine the same way runs do, so an engine
+  installed with `swat setup engine` is reported as available.
+- The editor ORM schema-drift smoke test pointed at a non-existent path and was
+  always skipped; it now runs.
+- Outlet choice: when several terminal channels exist, the requested outlet is
+  now the terminal draining the largest upstream network
+  (`primary_terminal_channel_id`, topology only) instead of the lowest GIS ID.
+  Benchmark-lock pass 1 accepts `outlet_selection_period`; the canonical
+  workflow passes its calibration window so withheld validation years never
+  influence outlet auto-selection. The window is recorded in
+  `outlet_provenance.json`.
+- `evaluate_run` no longer mutates the caller's observed series, and a metric
+  failure is recorded as `metric_computation_error` instead of silently
+  dropping metric keys.
+- `build_readiness_table` reports unreadable or tampered lock/verification
+  files as `unreadable_artifact` rows instead of skipping them.
+- The vendored SWAT+ Editor is pinned (`.VENDORED_COMMIT`, upstream `v3.2.0`,
+  content-verified; `VENDORED_EDITOR_VERSION` corrected from 3.2.2) with its one
+  local patch documented in `VENDORED_PATCHES.md`; unused upstream files
+  (REST server, `get-pip.py`, build scripts) are no longer shipped in the wheel.
+- SDA mukeys are integer-coerced before being written into SQL.
+- `scripts/audit_production_objective.py` parses arguments (`--out-dir`);
+  `--help` no longer runs the audit.
+
+### Security
+- Optional MCP workspace sandbox: with `SWATPLUS_BUILDER_MCP_WORKSPACE=<dir>`
+  every path argument must resolve inside `<dir>` (symlinks resolved), and
+  SWAT+ output-file-name arguments must be bare file names.
+
+### CI
+- New `offline-test-suite` job runs the full offline test suite on Python
+  3.10–3.12 with all runtime extras; `ruff` is pinned (0.16.9) and the
+  pre-existing lint findings are fixed.
+
+### Docs
+- `QUICKSTART.md`: building the engine from source with gfortran (upstream
+  Release flags trap FP underflow and crash on real inputs), and the MCP
+  hardening environment variables.
+- `docs/AGENT_HANDOFF.md`: project state, what's done vs. not, and how to
+  sync a local checkout that's behind `origin/main`, for a new agent or
+  contributor picking up the project.
+- `scripts/setup_local_env.sh`: idempotent local dev environment bootstrap
+  (venv + editable install, reference DBs, engine build from source, health
+  check).
+
 ## [0.7.14] — 2026-09-20
 
 ### Scientific validity and evidence integrity

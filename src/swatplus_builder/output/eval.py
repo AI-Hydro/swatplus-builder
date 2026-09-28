@@ -21,6 +21,88 @@ def terminal_channel_ids(txtinout_dir: Path | str) -> list[int]:
     return sorted(_terminal_ids_from_chandeg_con(Path(txtinout_dir)))
 
 
+def primary_terminal_channel_id(txtinout_dir: Path | str) -> int | None:
+    """Pick the terminal channel that drains the largest upstream network.
+
+    Uses routing topology only (``chandeg.con``), never observed discharge, so
+    the choice cannot be tuned to the evaluation record. Each channel's
+    ``area`` is accumulated down its ``sdc`` links to the terminal it reaches;
+    when no usable ``area`` column exists every channel counts as 1. Ties
+    resolve to the lowest GIS ID so the choice is deterministic.
+
+    Returns ``None`` when ``chandeg.con`` has no terminal channel.
+    """
+    txt = Path(txtinout_dir)
+    terminals = _terminal_ids_from_chandeg_con(txt)
+    if not terminals:
+        return None
+    if len(terminals) == 1:
+        return next(iter(terminals))
+
+    channels = _parse_chandeg_links(txt / "chandeg.con")
+    by_obj_id = {c["id"]: c for c in channels}
+    weight: dict[int, float] = {}
+    for c in channels:
+        weight[int(c["gis_id"])] = float(c["area"]) if c["area"] and c["area"] > 0 else 1.0
+
+    accumulated = {gid: 0.0 for gid in terminals}
+    for c in channels:
+        seen: set[int] = set()
+        node = c
+        while node is not None and node["id"] not in seen:
+            seen.add(node["id"])
+            if int(node["gis_id"]) in terminals:
+                accumulated[int(node["gis_id"])] += weight[int(c["gis_id"])]
+                break
+            node = by_obj_id.get(node["downstream_id"]) if node["downstream_id"] is not None else None
+    return max(sorted(accumulated), key=lambda gid: accumulated[gid])
+
+
+def _parse_chandeg_links(path: Path) -> list[dict[str, Any]]:
+    """Parse ``chandeg.con`` rows into id/gis_id/area/first-downstream-channel records."""
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    col_idx: dict[str, int] | None = None
+    for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        parts = line.split()
+        if not parts:
+            continue
+        if "gis_id" in parts and "obj_typ" in parts:
+            col_idx = {c: i for i, c in enumerate(parts)}
+            continue
+        if col_idx is None or not parts[0].isdigit():
+            continue
+        try:
+            area: float | None = None
+            if "area" in col_idx:
+                try:
+                    area = float(parts[col_idx["area"]])
+                except ValueError:
+                    area = None
+            downstream: int | None = None
+            if "obj_typ" in col_idx:
+                # out_tot is followed by repeating (obj_typ obj_id hyd_typ frac)
+                # groups; follow the first channel (sdc) target.
+                i = col_idx["obj_typ"]
+                while i + 1 < len(parts):
+                    if parts[i] == "sdc" and parts[i + 1].isdigit():
+                        downstream = int(parts[i + 1])
+                        break
+                    i += 4
+            rows.append(
+                {
+                    "id": int(parts[col_idx["id"]]),
+                    "gis_id": int(parts[col_idx["gis_id"]]),
+                    "area": area,
+                    "downstream_id": downstream,
+                }
+            )
+        except (IndexError, KeyError, ValueError):
+            continue
+    return rows
+
+
 def evaluate_run(
     sim_channel_path: Path | str, 
     obs_series: pd.Series, 
@@ -76,6 +158,9 @@ def evaluate_run(
             f"No valid flow data found in {sim_channel_path} for GIS ID {outlet_gis_id}."
         )
 
+    # Work on a copy: normalizing the caller's index in place would silently
+    # change their series (e.g. drop intraday timestamps) as a side effect.
+    obs_series = obs_series.copy()
     obs_series.index = pd.to_datetime(obs_series.index).normalize()
 
     # Intersection of dates via unified aligner
@@ -150,7 +235,12 @@ def evaluate_run(
         metrics["bfi_obs"] = baseflow_index(obs_list)
         metrics["bfi_sim"] = baseflow_index(sim_list)
     except Exception as e:
+        # Keep the failure visible to callers instead of returning a dict with
+        # silently missing keys.
         log.warning("Metric computation failed: %s", e)
+        diagnostics["metric_computation_error"] = f"{type(e).__name__}: {e}"
+        for key in ("nse", "kge", "log_kge", "pbias", "bfi_obs", "bfi_sim"):
+            metrics.setdefault(key, float("nan"))
 
     if return_diagnostics:
         source_name = diagnostics.get("sim_source_file")

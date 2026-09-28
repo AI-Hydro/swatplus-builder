@@ -724,3 +724,74 @@ def test_log_kge_score_prefers_recession_fit(tmp_path):
     score_b = _score_candidate(candidate_b, objective="maintain_volume_gate_then_rank_nse_kge")
 
     assert score_b > score_a, f"Better log_kge should rank higher: {score_b} > {score_a}"
+
+
+# ---------------------------------------------------------------------------
+# primary_terminal_channel_id (audit R2): topology, not lowest GIS ID
+# ---------------------------------------------------------------------------
+
+
+def _write_chandeg(txt, rows: str) -> None:
+    txt.mkdir(parents=True, exist_ok=True)
+    (txt / "chandeg.con").write_text(
+        "chandeg.con\n"
+        "id name gis_id area lat lon elev lcha wst cst ovfl rule out_tot obj_typ obj_id hyd_typ frac\n"
+        + rows,
+        encoding="utf-8",
+    )
+
+
+def test_primary_terminal_prefers_largest_upstream_network(tmp_path):
+    from swatplus_builder.output.eval import primary_terminal_channel_id
+
+    # Terminal gis 5 drains only itself; terminal gis 9 drains channels 10, 11, 12.
+    _write_chandeg(
+        tmp_path,
+        "1 cha5 5 10.0 0 0 0 1 s 0 0 0 0\n"
+        "2 cha9 9 10.0 0 0 0 1 s 0 0 0 0\n"
+        "3 cha10 10 50.0 0 0 0 1 s 0 0 0 1 sdc 2 tot 1.0\n"
+        "4 cha11 11 50.0 0 0 0 1 s 0 0 0 1 sdc 3 tot 1.0\n"
+        "5 cha12 12 50.0 0 0 0 1 s 0 0 0 1 sdc 2 tot 1.0\n",
+    )
+    assert primary_terminal_channel_id(tmp_path) == 9
+
+
+def test_primary_terminal_single_and_missing(tmp_path):
+    from swatplus_builder.output.eval import primary_terminal_channel_id
+
+    assert primary_terminal_channel_id(tmp_path / "none") is None
+    _write_chandeg(tmp_path / "one", "1 cha4 4 1.0 0 0 0 1 s 0 0 0 0\n")
+    assert primary_terminal_channel_id(tmp_path / "one") == 4
+
+
+def test_primary_terminal_ties_resolve_to_lowest_gis_id(tmp_path):
+    from swatplus_builder.output.eval import primary_terminal_channel_id
+
+    _write_chandeg(
+        tmp_path,
+        "1 cha8 8 1.0 0 0 0 1 s 0 0 0 0\n"
+        "2 cha3 3 1.0 0 0 0 1 s 0 0 0 0\n",
+    )
+    assert primary_terminal_channel_id(tmp_path) == 3
+
+
+def test_evaluate_run_does_not_mutate_callers_series(tmp_path):
+    """Audit R9: evaluate_run must not normalize the caller's index in place."""
+    import pandas as pd
+
+    from swatplus_builder.output.eval import evaluate_run
+
+    txt = tmp_path / "TxtInOut"
+    _write_chandeg(txt, "1 cha1 1 1.0 0 0 0 1 s 0 0 0 0\n")
+    lines = ["channel_sd        Daily output: channel", "", "gis_id  yr  mon  day  flo_out"]
+    for i in range(10):
+        d = pd.Timestamp("2010-01-01") + pd.Timedelta(days=i)
+        lines.append(f"1 {d.year} {d.month} {d.day} {1.0 + i:.3f}")
+    (txt / "channel_sd_day.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    idx = pd.date_range("2010-01-01 12:00", periods=10, freq="D")
+    obs = pd.Series([1.0 + i for i in range(10)], index=idx)
+    _, metrics = evaluate_run(txt / "channel_sd_day.txt", obs, outlet_gis_id=1, outlet_policy="strict")
+
+    assert metrics["nse"] == pytest.approx(1.0)
+    assert (obs.index.hour == 12).all()

@@ -124,6 +124,12 @@ def fetch_sda_horizons(mukeys: list[int], config: SoilConfig, cache_dir: Path | 
     """Fetch rigorous soil horizons via USDA Soil Data Access API."""
     if not mukeys:
         return {}
+    # mukeys are interpolated into the SDA SQL ``IN (...)`` clause; coercing to
+    # int guarantees nothing but digits reaches the query.
+    try:
+        mukeys = [int(m) for m in mukeys]
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"SDA mukeys must be integers: {exc}") from exc
 
     url = "https://sdmdataaccess.nrcs.usda.gov/Tabular/post.rest"
 

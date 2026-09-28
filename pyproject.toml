@@ -33,6 +33,9 @@ dependencies = [
     "typer>=0.12",
     "rich>=13.7",
     "matplotlib>=3.7,<4.0",
+    # soil/sda.py and soil/soilgrids.py (imported by the real USGS build path)
+    # call the NRCS SDA and SoilGrids REST APIs directly.
+    "requests>=2.31",
 ]
 
 [project.optional-dependencies]
@@ -74,7 +77,8 @@ soils = [
     "adlfs>=2024.2",
 ]
 mcp = [
-    "mcp>=1.2,<2",  # FastMCP API; MCP 2 renames/removes this surface.
+    # mcp 2.x renamed FastMCP -> MCPServer; the server targets the 1.x API.
+    "mcp>=1.2,<2",
 ]
 swatplus = [
     # pySWATPlus: calibration parameter editing + sensitivity analysis
@@ -96,6 +100,7 @@ dev = [
     "mypy>=1.10",
     "ruff>=0.5",
     "pre-commit>=3.7",
+    "tomli>=2.0; python_version < '3.11'",  # tomllib backport for tests on 3.10
     "matplotlib>=3.7,<4.0",  # for soil plot tests
 ]
 docs = [
@@ -123,6 +128,15 @@ swat-mcp = "swatplus_builder.mcp.server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/swatplus_builder"]
+# Upstream editor files kept in the tree for provenance diffs but never
+# imported at runtime (see editor/vendored/VENDORED_PATCHES.md).
+exclude = [
+  "src/swatplus_builder/editor/vendored/rest",
+  "src/swatplus_builder/editor/vendored/swatplus_rest_api.py",
+  "src/swatplus_builder/editor/vendored/get-pip.py",
+  "src/swatplus_builder/editor/vendored/Pipfile",
+  "src/swatplus_builder/editor/vendored/python-build-*",
+]
 
 # Explicit sdist allowlist. Without this, hatchling sweeps the entire project
 # root (minus VCS-ignored paths) into the sdist — which previously pulled a

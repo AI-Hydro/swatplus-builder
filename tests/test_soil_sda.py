@@ -69,3 +69,13 @@ def test_fetch_sda_mukeys_for_geometry_wraps_provider_error(monkeypatch):
 
     with pytest.raises(SwatBuilderExternalError, match="SDA spatial mukey query failed"):
         sda.fetch_sda_mukeys_for_geometry(box(-85.89, 39.91, -85.43, 40.10))
+
+
+def test_fetch_sda_horizons_rejects_non_integer_mukeys(tmp_path):
+    """mukeys reach an SQL IN clause, so anything non-numeric must be refused."""
+    import pytest
+
+    from swatplus_builder.soil.models import SoilConfig
+
+    with pytest.raises(ValueError, match="mukeys must be integers"):
+        sda.fetch_sda_horizons(["123') OR 1=1 --"], SoilConfig(), cache_dir=tmp_path)

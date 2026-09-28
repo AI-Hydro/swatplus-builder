@@ -13,10 +13,12 @@ import json
 import logging
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+
+UTC = timezone.utc  # datetime.UTC is Python 3.11+; the package supports 3.10.
 
 
 @dataclass(frozen=True)

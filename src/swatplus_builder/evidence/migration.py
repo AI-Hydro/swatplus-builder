@@ -15,11 +15,13 @@ should not treat those as authoritative.
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from .schema import ClaimRecord, DiagnosticFinding, EvidenceBundleV1, GateResult
+
+UTC = timezone.utc  # datetime.UTC is Python 3.11+; the package supports 3.10.
 
 # ---------------------------------------------------------------------------
 # Gate → reason mapping (best-effort for legacy bundles)

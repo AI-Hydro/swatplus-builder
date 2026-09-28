@@ -753,6 +753,26 @@ def test_calibrate_against_lock_writes_staged_protocol(monkeypatch, tmp_path: Pa
     assert "calibration process gates" in best["kge_nse_finetune_gate"]
     assert "calibration process gates pass" in best["calibration_protocol"][-1]["gate"]
 
+    decisions = json.loads((Path(evidence.history_csv).parent / "phase_decisions.json").read_text(encoding="utf-8"))
+    assert decisions["schema"] == "swatplus_builder.calibration_phase_decisions/v1"
+    phases = {p["phase"]: p for p in decisions["phases"]}
+    assert [p["phase"] for p in decisions["phases"]] == [
+        "volume",
+        "baseflow_subsurface",
+        "peaks_timing",
+        "kge_nse_finetune",
+    ]
+    volume = phases["volume"]
+    assert volume["status"] == "promoted"
+    assert volume["parameters_opened"] == ["CN2", "PERCO"]
+    assert volume["candidate_count"] >= 2
+    promoted = next(c for c in volume["candidates"] if c["eval_idx"] == volume["promoted_eval_idx"])
+    feasible_scores = [c["phase_score"] for c in volume["candidates"] if c["feasible"]]
+    assert promoted["feasible"] and promoted["phase_score"] == max(feasible_scores)
+    assert phases["peaks_timing"]["status"] == "skipped_no_eligible_parameters"
+    # the next phase starts from the parameters the previous one promoted
+    assert phases["baseflow_subsurface"]["incoming_parameters"] == promoted["parameters"]
+
 
 def test_phase_candidate_points_keep_dense_probe_for_each_parameter() -> None:
     points = _phase_candidate_points(
@@ -989,6 +1009,14 @@ def test_calibrate_against_lock_writes_history_before_phase_blocker(monkeypatch,
     assert set(history["calibration_process_condition_codes"]) == {"VOLUME_BIAS"}
     assert set(history["physical_gate_condition_codes"]) == {"VOLUME_BIAS"}
     assert set(history["physical_gate_dominant_blocker"]) == {"VOLUME_BIAS"}
+
+    decisions = json.loads((Path(history_csv).parent / "phase_decisions.json").read_text(encoding="utf-8"))
+    (volume,) = decisions["phases"]
+    assert volume["status"] == "no_feasible_candidate"
+    assert volume["promoted_eval_idx"] is None
+    assert volume["candidate_count"] == 4
+    assert volume["feasible_candidate_count"] == 0
+    assert {c["physical_gate_dominant_blocker"] for c in volume["candidates"]} == {"VOLUME_BIAS"}
 
 
 def test_calibrate_against_lock_classifies_nonfinite_candidate_metrics(
@@ -1722,3 +1750,82 @@ def test_split_sample_raises_on_too_short_validation_period(monkeypatch, tmp_pat
             calibration_phases=[{"phase": "volume", "parameters": ["CN2"], "budget": 5}],
             validation_period=("2010-03-01", "2010-03-05"),  # only 5 days
         )
+
+
+# ---------------------------------------------------------------------------
+# Outlet selection must not see withheld validation observations (audit R1)
+# ---------------------------------------------------------------------------
+
+
+def _capture_evaluate_run_calls(monkeypatch) -> list[dict]:
+    import swatplus_builder.calibration.locked_benchmark as lb
+
+    real = lb.evaluate_run
+    calls: list[dict] = []
+
+    def spy(sim_path, obs_series, **kwargs):
+        calls.append({"policy": kwargs.get("outlet_policy"), "obs_index": pd.to_datetime(obs_series.index)})
+        return real(sim_path, obs_series, **kwargs)
+
+    monkeypatch.setattr(lb, "evaluate_run", spy)
+    return calls
+
+
+def test_outlet_selection_pass_scores_only_selection_window(tmp_path, obs_series, monkeypatch):
+    txtinout = tmp_path / "TxtInOut"
+    txtinout.mkdir()
+    _make_fake_sim_file(txtinout)
+    _make_chandeg_con(txtinout, terminal_gis_id=1)
+    calls = _capture_evaluate_run_calls(monkeypatch)
+
+    lock = lock_benchmark(
+        txtinout_dir=txtinout,
+        obs_series=obs_series,
+        out_dir=tmp_path / "lock_window",
+        basin_id="usgs_window",
+        outlet_gis_id=1,
+        sim_source_file="channel_sd_day.txt",
+        outlet_selection_period=("2010-01-01", "2010-06-30"),
+    )
+
+    auto = next(c for c in calls if c["policy"] == "auto")
+    strict = next(c for c in calls if c["policy"] == "strict")
+    assert auto["obs_index"].max() <= pd.Timestamp("2010-06-30")
+    assert strict["obs_index"].max() == obs_series.index.max()  # pass 2 keeps the full record
+    provenance = json.loads(
+        (Path(lock.benchmark_dir) / "outlet_provenance.json").read_text(encoding="utf-8")
+    )
+    assert provenance["outlet_selection_period"] == ["2010-01-01", "2010-06-30"]
+
+
+def test_outlet_selection_window_without_observations_fails_loudly(tmp_path, obs_series):
+    txtinout = tmp_path / "TxtInOut"
+    txtinout.mkdir()
+    _make_fake_sim_file(txtinout)
+    _make_chandeg_con(txtinout, terminal_gis_id=1)
+    with pytest.raises(SwatBuilderInputError, match="outlet_selection_period"):
+        lock_benchmark(
+            txtinout_dir=txtinout,
+            obs_series=obs_series,
+            out_dir=tmp_path / "lock_empty",
+            basin_id="usgs_window",
+            outlet_gis_id=1,
+            sim_source_file="channel_sd_day.txt",
+            outlet_selection_period=("1990-01-01", "1990-12-31"),
+        )
+
+
+def test_readiness_table_reports_unreadable_artifacts(tmp_path):
+    """Audit R5: corrupt/tampered lock files are surfaced, not silently dropped."""
+    _make_benchmark_lock(tmp_path / "good", "usgs_good")
+    bad = tmp_path / "bad" / "benchmark"
+    bad.mkdir(parents=True)
+    (bad / "benchmark_lock.json").write_text("{not json", encoding="utf-8")
+
+    rows = build_readiness_table(tmp_path)
+
+    statuses = {r.basin_id: r.verification_status for r in rows}
+    assert statuses["usgs_good"] == "locked_no_verification"
+    bad_rows = [r for r in rows if r.verification_status == "unreadable_artifact"]
+    assert len(bad_rows) == 1
+    assert "benchmark_lock.json" in (bad_rows[0].artifact_error or "")

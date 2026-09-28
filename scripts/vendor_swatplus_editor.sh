@@ -48,6 +48,8 @@ for p in [Path(f) for f in sys.argv[1:]]:
 PYEOF
 
 echo "---"
+echo "REMINDER: re-apply the local patches listed in"
+echo "  src/swatplus_builder/editor/vendored/VENDORED_PATCHES.md"
 echo "Previous commit: $PREV_COMMIT"
 echo "New commit:      $COMMIT"
 echo "Vendored into:   $DEST"

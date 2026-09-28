@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import math
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +23,8 @@ from .metrics import kge, kge_components, nse, pbias
 from .plots.utils import align_timeseries
 from .reader import read_output_file
 from .weather_forcing import write_weather_forcing_summary
+
+UTC = timezone.utc  # datetime.UTC is Python 3.11+; the package supports 3.10.
 
 
 def write_volume_bias_diagnostics(

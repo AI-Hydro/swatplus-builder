@@ -30,6 +30,7 @@ def run_pipeline(
     min_hru_fraction: float = 0.0,
     observation_conditioning_period: tuple[str, str] | None = None,
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
+    outlet_selection_period: tuple[str, str] | None = None,
 ) -> dict[str, Any]:
     """Execute the full end-to-end validation platform for a basin.
     
@@ -38,6 +39,10 @@ def run_pipeline(
         outdir: Directory to save all outputs, metrics, and plots.
         start_date: Simulation start.
         end_date: Simulation end.
+        outlet_selection_period: Optional ``(start, end)`` window the benchmark
+            lock may score when auto-selecting an outlet (the canonical workflow
+            passes its calibration window so withheld validation years never
+            influence the choice).
         
     Returns:
         JSON-serializable dict containing the run summary and metrics.
@@ -136,7 +141,7 @@ def run_pipeline(
             apply_subsurface_prior_correction,
             finalize_subsurface_prior_correction,
         )
-        from .output.eval import terminal_channel_ids
+        from .output.eval import primary_terminal_channel_id
         from .run.swatplus import clean_and_run_solver
 
         if model_family == "full":
@@ -212,12 +217,16 @@ def run_pipeline(
             _try_dashboard(outdir, run_config)
             return run_config
 
-        # Derive the terminal outlet from generated topology (chandeg.con)
-        # rather than hardcoding a possibly-invalid GIS ID.  Fall back to 1 if
-        # the file doesn't exist yet — lock_benchmark with outlet_policy="auto"
-        # will still discover the correct terminal.
-        terminal_ids = terminal_channel_ids(txtinout)
-        outlet_gis_id = terminal_ids[0] if terminal_ids else 1
+        # Derive the gauge outlet from routing topology (chandeg.con): the
+        # terminal draining the largest upstream network, never the lowest ID
+        # and never chosen from observed discharge. Fall back to 1 if the file
+        # doesn't exist yet — lock_benchmark with outlet_policy="auto" will
+        # still discover a flowing terminal.
+        primary_terminal = primary_terminal_channel_id(txtinout)
+        outlet_gis_id = primary_terminal if primary_terminal is not None else 1
+        run_config["requested_outlet_basis"] = (
+            "largest_upstream_terminal" if primary_terminal is not None else "default_gis_id_1"
+        )
 
         lock = lock_benchmark(
             txtinout_dir=txtinout,
@@ -226,6 +235,7 @@ def run_pipeline(
             basin_id=f"usgs_{usgs_id}",
             outlet_gis_id=outlet_gis_id,
             sim_source_file=sim_source.name,
+            outlet_selection_period=outlet_selection_period,
         )
         metrics_path = Path(lock.benchmark_dir) / "metrics.json"
         metrics = json.loads(metrics_path.read_text(encoding="utf-8")) if metrics_path.exists() else {}

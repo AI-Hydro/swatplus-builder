@@ -202,6 +202,30 @@ def test_prepare_txtinout_for_objective_removes_stale_morph_outputs(tmp_path: Pa
         assert not (tmp_path / name).exists()
 
 
+def test_prepare_txtinout_for_objective_removes_stale_water_balance(tmp_path: Path) -> None:
+    """The candidate physical gate must never judge the base run's basin_wb_aa.txt."""
+    _write(
+        tmp_path / "print.prt",
+        "hdr\n"
+        "nyskip day_start yrc_start day_end yrc_end interval\n"
+        "1 0 0 0 0 1\n"
+        "aa_int_cnt\n"
+        "0\n"
+        "csvout dbout cdfout\n"
+        "n n n\n"
+        "objects daily monthly yearly avann\n"
+        "channel n n y y\n"
+        "channel_sd n n y y\n"
+        "basin_cha n n y y\n"
+        "basin_sd_cha n n y y\n",
+    )
+    _write(tmp_path / "basin_wb_aa.txt", "stale\n")
+
+    _prepare_txtinout_for_objective(tmp_path)
+
+    assert not (tmp_path / "basin_wb_aa.txt").exists()
+
+
 def test_make_real_objective_rejects_source_file_fallback(monkeypatch, tmp_path: Path) -> None:
     base = tmp_path / "base"
     base.mkdir(parents=True, exist_ok=True)

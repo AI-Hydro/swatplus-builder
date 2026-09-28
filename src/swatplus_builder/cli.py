@@ -54,6 +54,20 @@ setup_app = typer.Typer(
 )
 app.add_typer(setup_app, name="setup")
 
+audit_app = typer.Typer(
+    name="audit",
+    help="Verify a run's tamper-evident ledgers and export decision episodes.",
+    no_args_is_help=True,
+)
+app.add_typer(audit_app, name="audit")
+
+fault_app = typer.Typer(
+    name="fault",
+    help="Inject documented, hidden-label faults into a TxtInOut for decision-model data.",
+    no_args_is_help=True,
+)
+app.add_typer(fault_app, name="fault")
+
 
 class _DiscardingBuffer:
     closed = False
@@ -339,8 +353,18 @@ def cmd_health(
     _check("package_import", critical=True, ok=pkg_ok, detail=f"v{__version__}" if pkg_ok else "import failed")
 
     # --- optional: SWAT+ binary ---
-    exe_path = os.environ.get("SWATPLUS_EXE", "")
+    # Use the same resolver as real runs (settings → $SWATPLUS_EXE →
+    # ~/.swatplus_builder/bin → PATH) so an engine installed with
+    # ``swat setup engine`` is reported as available.
     from pathlib import Path as _P
+
+    from .errors import SwatBuilderExternalError
+    from .run.swatplus import locate_binary
+
+    try:
+        exe_path = str(locate_binary())
+    except SwatBuilderExternalError:
+        exe_path = ""
     exe_ok = bool(exe_path) and _P(exe_path).is_file()
     if exe_ok:
         import subprocess as _sp
@@ -362,7 +386,8 @@ def cmd_health(
             exe_detail = exe_path
     else:
         exe_detail = (
-            "SWATPLUS_EXE not set — engine binary required for real runs. "
+            "SWAT+ engine not found (SWATPLUS_EXE, ~/.swatplus_builder/bin, PATH) — "
+            "engine binary required for real runs. "
             "Builder targets SWAT+ v2023 (validated rev 60.5.7–61.0.2.61; "
             "shipped binary 61.0.2.61). Download: https://swat.tamu.edu/software/plus/"
         )
@@ -2043,6 +2068,136 @@ def cmd_setup_engine(
         rprint(f"  [dim](smoke test skipped: {exc})[/dim]")
 
     rprint("\nRun [bold]swat health[/bold] to confirm full setup.")
+
+
+@audit_app.command("verify")
+def cmd_audit_verify(
+    run_dir: str = typer.Argument(..., help="Workflow run directory (contains run_manifest.json)."),
+    as_json: bool = typer.Option(False, "--json", help="Print the full verification report as JSON."),
+) -> None:
+    """Check events.jsonl and decisions.jsonl hash chains against the sealed heads.
+
+    Exit 0 when both ledgers verify and match the heads sealed in
+    run_manifest.json; exit 1 otherwise.
+    """
+    from .audit import verify_run_audit
+
+    report = verify_run_audit(run_dir)
+    if as_json:
+        typer.echo(json.dumps(report, indent=2))
+    else:
+        status = "[green]OK[/green]" if report["ok"] else "[red]FAILED[/red]"
+        rprint(f"Audit ledgers for {report['run_dir']}: {status}")
+        for name, res in report["ledgers"].items():
+            rprint(f"  {name}: {res['record_count']} records, head {res['head_sha256'][:16]}…")
+            for problem in res["problems"]:
+                rprint(f"    [red]{problem}[/red]")
+        for problem in report.get("problems", []):
+            rprint(f"  [red]{problem}[/red]")
+    raise typer.Exit(code=0 if report["ok"] else 1)
+
+
+@audit_app.command("episodes")
+def cmd_audit_episodes(
+    run_dirs: list[str] = typer.Argument(..., help="One or more workflow run directories."),  # noqa: B008
+    out: str | None = typer.Option(None, "--out", help="Write JSONL here instead of stdout."),
+) -> None:
+    """Export recorded decisions joined with outcomes as DecisionEpisode JSONL."""
+    from .audit import canonical_json, export_decision_episodes
+
+    rows = [ep for rd in run_dirs for ep in export_decision_episodes(rd)]
+    text = "".join(canonical_json(r) + "\n" for r in rows)
+    if out is None:
+        typer.echo(text, nl=False)
+    else:
+        out_path = Path(out)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(text, encoding="utf-8")
+        rprint(f"Wrote {len(rows)} decision episodes to {out}", file=sys.stderr)
+
+
+@audit_app.command("typed")
+def cmd_audit_typed(
+    run_dirs: list[str] = typer.Argument(..., help="One or more workflow run directories."),  # noqa: B008
+    out: str = typer.Option(..., "--out", help="Output JSONL of typed-decision items."),
+    max_chars: int = typer.Option(1600, "--max-chars", help="State text budget (≈4 chars/token)."),
+    max_options: int = typer.Option(16, "--max-options", help="Maximum options per question."),
+    soft_target: str = typer.Option("none", "--soft-target", help="none | softmax (calibration phases only)."),
+    temperature: float = typer.Option(0.05, "--temperature", help="Softmax temperature for --soft-target softmax."),
+) -> None:
+    """Compile recorded decisions into typed-decision (Choice) training items.
+
+    Splits are basin-disjoint (hash of the basin id) and states never contain
+    hidden fault labels.
+    """
+    from .audit import canonical_json, export_decision_episodes
+    from .decision_data.typed import compile_typed_decisions
+
+    if soft_target not in {"none", "softmax"}:
+        raise typer.BadParameter("--soft-target must be 'none' or 'softmax'")
+    episodes = [ep for rd in run_dirs for ep in export_decision_episodes(rd)]
+    items = compile_typed_decisions(
+        episodes,
+        max_chars=max_chars,
+        max_options=max_options,
+        soft_target=soft_target,  # type: ignore[arg-type]
+        temperature=temperature,
+    )
+    out_path = Path(out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text("".join(canonical_json(i) + "\n" for i in items), encoding="utf-8")
+    splits: dict[str, int] = {}
+    for item in items:
+        splits[item["meta"]["split"]] = splits.get(item["meta"]["split"], 0) + 1
+    rprint(f"Wrote {len(items)} typed decisions from {len(episodes)} episodes to {out_path} {splits}", file=sys.stderr)
+
+
+@fault_app.command("list")
+def cmd_fault_list(as_json: bool = typer.Option(False, "--json", help="Print the catalogue as JSON.")) -> None:
+    """List the built-in fault catalogue."""
+    from .decision_data.faults import DEFAULT_FAULTS
+
+    if as_json:
+        typer.echo(json.dumps([f.to_dict() for f in DEFAULT_FAULTS], indent=2))
+        return
+    for f in DEFAULT_FAULTS:
+        target = f.parameter or f.kind
+        rprint(f"{f.fault_id:22s} {f.family:19s} {target}={f.magnitude}")
+
+
+@fault_app.command("inject")
+def cmd_fault_inject(
+    base_txtinout: str = typer.Argument(..., help="Working TxtInOut to copy (never modified)."),
+    out_dir: str = typer.Argument(..., help="Run directory; receives TxtInOut/ and fault_manifest.json."),
+    fault_id: str = typer.Option(..., "--fault", help="Fault id from `swat fault list`."),
+) -> None:
+    """Copy a TxtInOut and apply one catalogued fault.
+
+    Point `swat workflow run --out-dir <out_dir>` at the same directory to run
+    the governed workflow on the faulted model; its episodes then carry the
+    fault as a hidden label.
+    """
+    from .decision_data.faults import DEFAULT_FAULTS, inject_fault
+
+    specs = {f.fault_id: f for f in DEFAULT_FAULTS}
+    if fault_id not in specs:
+        raise typer.BadParameter(f"unknown fault {fault_id!r}; see `swat fault list`")
+    txt = inject_fault(base_txtinout, out_dir, specs[fault_id])
+    rprint(f"Injected {fault_id} into {txt}")
+
+
+@fault_app.command("effect")
+def cmd_fault_effect(
+    base_txtinout: str = typer.Argument(..., help="Base TxtInOut with engine outputs."),
+    faulted_txtinout: str = typer.Argument(..., help="Faulted TxtInOut with engine outputs."),
+    tolerance: float = typer.Option(0.01, "--tolerance", help="Relative change counted as an effect."),
+) -> None:
+    """Check that a fault changed simulated hydrology (exit 1 if it did not)."""
+    from .decision_data.faults import fault_effect
+
+    report = fault_effect(base_txtinout, faulted_txtinout, tolerance=tolerance)
+    typer.echo(json.dumps(report, indent=2))
+    raise typer.Exit(code=0 if report["effective"] else 1)
 
 
 if __name__ == "__main__":
