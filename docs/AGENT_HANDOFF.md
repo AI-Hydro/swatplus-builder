@@ -259,3 +259,34 @@ each of which re-read the full cached conversation context. Prefer:
 - Ending your turn and letting event-driven wakeups (PR activity,
   `send_later` for a specific future check, not a recurring loop) bring you
   back, rather than scheduling your own recurring reminder.
+
+---
+
+## 7. Reconciliation with the local line (2026-09-28, local takeover)
+
+The cloud session above branched from `9397584` (0.7.13) and never saw 12
+local commits made in parallel (0.7.14 release, parallel sensitivity/anchor
+workers, sealed objective-trace resume, preprint evidence and review). Local
+`main` merged `origin/main` at `5b95517`. Conflicts were additive (both
+lines added `run_pipeline` parameters) and were resolved by keeping both.
+After the merge: ruff clean; pytest 1177 passed, 7 skipped (opt-in live);
+see that commit message for each resolution.
+
+**Blocker for §3 step 1 (live labelled episodes): the objective behind the
+labels.** A parallel local readiness review
+(`../Swatplus_decision/research/BUILDER_READINESS.md`, 2026-09-23) reproduced
+a unit dependence in `output/metrics.py::log_kge`. It uses a fixed
+ε = 0.01 m³/s and clips negative flow. Converting m³/s to L/s moved a
+synthetic log-KGE from −0.2551 to 0.9172, while raw KGE stayed at 0.9182.
+The locked phase objective uses `0.6·KGE + 0.4·log-KGE`
+(`calibration/locked_benchmark.py`, `_phase_score` region). That makes
+`phase_decisions.json` targets partly depend on this term. With a fixed ε,
+the term means different things in large and small basins. Episodes
+generated now are fine for pipeline smoke tests, but not as training labels
+until a **versioned** low-flow objective is in place (e.g., ε scaled to the
+observed mean flow, following Santos et al. 2018; historical scores kept).
+Also read that report's P0/P1 table. Several items there are now addressed
+by PR #25 (fault/effect validation, leakage-refusing serializer,
+basin-hash splits). Others are still open: independent reference basins,
+separate decision-development and final-assessment periods, and dead
+routing actions (CH_N2/CH_K2).

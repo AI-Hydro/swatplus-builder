@@ -10757,3 +10757,67 @@ Live artifact:
 - Review and limitations: docs/PREPRINT_CRITICAL_REVIEW_2026-09-21.md. Earlier
   claims that checksum verification alone established complete portability are
   superseded by this executed rebuild. No simulation source or frozen run changed.
+
+## 2026-09-22 - Visualizer Figure Candidates
+
+- Located the user Visualizer definition and scientific-figure-making skill.
+  Applied their evidence-first plotting and editable export conventions locally.
+- Created a paired claim-decision matrix and two-bound parameter-screening plot
+  directly from the frozen September run summaries and sensitivity artifacts.
+- Retained script, input hashes, plotted values, captions, SVG/PDF/300-dpi PNG
+  exports under Research_article/visuals/candidates_20260922. Verified recorded
+  effects against the maximum absolute NSE/KGE changes at tested bounds.
+- Figures are reviewed candidates; neither the manuscript nor release archive
+  was modified. Recommend the matrix for results and sensitivity for supplement.
+
+## 2026-09-23 — HydroDecision research readiness review
+
+Read the HydroDecision vision and prepared a separate research protocol,
+readiness assessment and feasibility plan under `../Swatplus_decision/`.
+Re-read both September workflow artifacts; these support development and
+regression checks, not a multi-basin trusted training-data library.
+
+A seven-value synthetic probe of the current `output.metrics.log_kge` changes
+from -0.2551 to 0.9172 after consistent flow/epsilon unit conversion; raw KGE
+remains 0.9182. The method is used in locked calibration objectives. This is a
+new methodological follow-up: review low-flow targets and version any change
+before generating HydroDecision labels or revising related manuscript claims.
+The result alone does not establish poor low-flow hydrology in either basin.
+Reproduction: `../Swatplus_decision/research/audit_builder.py`; captured evidence:
+`../Swatplus_decision/research/readiness_snapshot.json`.
+
+No Builder code, historical evidence or release package was modified. No fresh
+SWAT+ run occurred. Targeted pytest attempts could not start because pytest is
+absent in `.venv` and `.venv-repro`; no new regression-suite pass is claimed.
+
+## 2026-09-23 — Private paper collaboration repository
+
+Created `galib9690/SWATPlus-Builder-paper` as a private GitHub repository from
+the reviewed `swatplus-builder-0.7.14-90eeec9-review2` publication snapshot.
+The lightweight repository contains the LaTeX source and bibliography, six
+final figures, the evidence freeze, claims ledger, challenge matrix,
+reproducibility manifest, and journal support documents. Large run archives and
+software artifacts remain in the frozen reproducibility package. The local
+checkout is `/Users/mgalib/Documents/PyQSwatPlus/SWATPlus-Builder-paper`.
+
+Renamed the Overleaf entry point to `main.tex`; `latexmk -pdf main.tex`
+completed successfully and produced 17 pages with no undefined citations or
+references. Initial remote commit:
+`af45e4f8dd225d584aded7fa983a9b5938c2661a`. The requested owner `gh9690`
+did not exist (GitHub API 404), so the repository was pushed to the active
+authenticated account `galib9690` (Mohammad Galib). The repository is verified
+private. No public release or license choice was made.
+
+## 2026-09-28 — Local takeover of the cloud SWAT-S1 session
+
+Local `main` (0.7.14 line, 12 unpushed commits) and `origin/main` (PRs
+#24–#27: audit ledger, decision-data pipeline, setup script) had diverged
+from 0.7.13. Merged at `5b95517`. The seven conflicts were additive and kept
+both sides. One macOS-only test assertion (`/tmp` symlink under the new
+`_ws()` sandbox) was fixed. Verified in a fresh py3.12 venv with CI extras:
+ruff 0.16.9 clean; pytest 1177 passed, 7 skipped, 0 failed. No engine run.
+
+Cross-checked the cloud handoff against the local readiness review. The
+phase-score labels consume the unit-dependent log-KGE, so a versioned
+low-flow objective must come before labelled episode generation. Recorded
+in `docs/AGENT_HANDOFF.md` §7.

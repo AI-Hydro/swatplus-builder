@@ -32,6 +32,28 @@ Active hardening toward research-grade production pipeline. Last updated:
 
 ## Current State
 
+- **Private manuscript repository, 2026-09-23:** the reviewed `review2`
+  manuscript was extracted into a lightweight, standalone LaTeX repository and
+  pushed privately to `galib9690/SWATPlus-Builder-paper`. It compiles as
+  `main.tex` to a 17-page PDF with no undefined citations or references. The
+  repository includes final figures and the frozen evidence/claims snapshot,
+  while complete run archives remain in the reproducibility package. Licensing
+  and public release remain pending author approval.
+
+- **HydroDecision readiness assessment, 2026-09-23:** the proposed follow-on
+  research now has a separate protocol and readiness report in
+  `../Swatplus_decision/research/`. A synthetic probe reproduced unit dependence
+  in the current log-KGE implementation, which is consumed by calibration
+  objectives. Audit/version the low-flow objective before generating decision
+  labels; do not interpret this as a demonstrated failure of basin hydrology.
+  Existing source and release artifacts remain unchanged. See
+  `../Swatplus_decision/research/BUILDER_READINESS.md` and its reproduction script.
+
+- **Additional figures, 2026-09-22:** evidence-derived claim-decision and
+  parameter-screening candidates are available in
+  `Research_article/visuals/candidates_20260922`, with reproducible source and
+  editable exports. They have not been inserted into the frozen preprint.
+
 - **Second critical review, 2026-09-21:** corrected stale manuscript inventories,
   a rounded metric, premature author declarations and broken package layouts.
   The revised `swatplus-builder-0.7.14-90eeec9-review2` package rebuilt figures
