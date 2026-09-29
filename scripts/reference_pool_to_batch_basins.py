@@ -104,6 +104,12 @@ def main() -> int:
     p.add_argument("--run-end", default="2019-12-31")
     p.add_argument("--warmup-years", type=int, default=2)
     p.add_argument("--claim-tier", default="diagnostic")
+    p.add_argument("--hru-mode", default=None, choices=[None, "dominant_only", "full_overlay"])
+    p.add_argument("--min-hru-fraction", type=float, default=None)
+    p.add_argument("--contract-status", default=None, help="e.g. accepted (required with --accepted-by for research_grade).")
+    p.add_argument("--accepted-by", default=None, choices=[None, "user", "policy", "agent"])
+    p.add_argument("--max-drain-area-km2", type=float, default=None,
+                    help="Keep only basins at or below this drainage area (runtime feasibility cap; disclose it).")
     p.add_argument("--exclude-already-run", action="store_true",
                     help="Skip basins that already have a usgs_<id> run directory anywhere under runs/.")
     p.add_argument("--verify-window-data", action="store_true",
@@ -135,6 +141,8 @@ def main() -> int:
         candidates = [r for r in candidates if r["state_cd"] in wanted]
     if args.hcdn_2009_only:
         candidates = [r for r in candidates if r["hcdn_2009"]]
+    if args.max_drain_area_km2 is not None:
+        candidates = [r for r in candidates if r["drain_area_km2"] <= args.max_drain_area_km2]
 
     candidates.sort(key=lambda r: _sample_key(r["usgs_id"], args.sample_salt))
 
@@ -169,6 +177,16 @@ def main() -> int:
             "end": args.run_end,
             "warmup_years": args.warmup_years,
             "claim_tier": args.claim_tier,
+            **{
+                k: v
+                for k, v in {
+                    "hru_mode": args.hru_mode,
+                    "min_hru_fraction": args.min_hru_fraction,
+                    "contract_status": args.contract_status,
+                    "accepted_by": args.accepted_by,
+                }.items()
+                if v is not None
+            },
             # Carried through for traceability back to the pool this basin
             # came from -- decision_data_batch.py ignores unknown keys.
             "_source_pool": str(args.pool.name),

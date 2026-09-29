@@ -1,0 +1,87 @@
+{
+  "window": [
+    "2010-01-01",
+    "2019-12-31"
+  ],
+  "min_window_coverage": 0.95,
+  "checked": [
+    {
+      "usgs_id": "05580000",
+      "coverage": 1.0,
+      "kept": true,
+      "reason": null
+    },
+    {
+      "usgs_id": "06718550",
+      "coverage": 1.0,
+      "kept": true,
+      "reason": null
+    },
+    {
+      "usgs_id": "04282650",
+      "coverage": 1.0,
+      "kept": true,
+      "reason": null
+    },
+    {
+      "usgs_id": "09217900",
+      "coverage": 1.0,
+      "kept": true,
+      "reason": null
+    },
+    {
+      "usgs_id": "08057200",
+      "coverage": 0.9997,
+      "kept": true,
+      "reason": null
+    },
+    {
+      "usgs_id": "14216000",
+      "coverage": 1.0,
+      "kept": true,
+      "reason": null
+    },
+    {
+      "usgs_id": "03576500",
+      "coverage": 0.8105,
+      "kept": false,
+      "reason": null
+    },
+    {
+      "usgs_id": "12054000",
+      "coverage": 1.0,
+      "kept": true,
+      "reason": null
+    },
+    {
+      "usgs_id": "04159900",
+      "coverage": 1.0,
+      "kept": true,
+      "reason": null
+    },
+    {
+      "usgs_id": "06715000",
+      "coverage": 1.0,
+      "kept": true,
+      "reason": null
+    },
+    {
+      "usgs_id": "14354200",
+      "coverage": 1.0,
+      "kept": true,
+      "reason": null
+    },
+    {
+      "usgs_id": "01592500",
+      "coverage": 1.0,
+      "kept": true,
+      "reason": null
+    },
+    {
+      "usgs_id": "03042280",
+      "coverage": 1.0,
+      "kept": true,
+      "reason": null
+    }
+  ]
+}

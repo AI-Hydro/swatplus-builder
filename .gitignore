@@ -129,6 +129,7 @@ docs/*
 !docs/SECURITY_RELIABILITY_REVIEW_2026-09-16.md
 !docs/PREPRINT_READINESS_REVIEW_2026-09-19.md
 !docs/BASIN_INCLUSION_PROTOCOL.md
+!docs/PROSPECTIVE_EVALUATION_V1.md
 Research_article/
 SWATplus_original_docs/
 .codebuddy/
@@ -149,6 +150,8 @@ basins/*
 !basins/
 !basins/curated_v1.json
 !basins/reference_pool_v1.json
+!basins/prospective_eval_v1_basins.json
+!basins/prospective_eval_v1_basins.preflight.json
 examples/build_real_basin.py
 examples/real_basin_marsh_creek.py
 PROGRESS.md

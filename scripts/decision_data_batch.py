@@ -88,6 +88,8 @@ _PASSTHROUGH_FLAGS = {
     "min_hru_fraction": "--min-hru-fraction",
     "sensitivity_workers": "--sensitivity-workers",
     "anchor_workers": "--anchor-workers",
+    "contract_status": "--contract-status",
+    "accepted_by": "--accepted-by",
 }
 
 
