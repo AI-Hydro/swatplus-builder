@@ -109,3 +109,50 @@ def test_no_basins_matched_returns_error(tmp_path, capsys):
     out = tmp_path / "out.json"
     rc = _run(["--pool", str(pool), "--out", str(out), "--state-cd", "zz_nonexistent"])
     assert rc != 0
+
+
+def _patch_fetch(monkeypatch, series):
+    import swatplus_builder.calibration.nwis as nwis
+
+    monkeypatch.setattr(nwis, "fetch_usgs_daily_q", lambda *a, **k: series)
+
+
+def test_window_coverage_handles_microsecond_index(monkeypatch):
+    """Regression: cached NWIS series carry a datetime64[us] index; an
+    earlier version reindexed against a ns date_range and reported 0.0
+    coverage for a complete record (USGS 01197000)."""
+    import pandas as pd
+
+    idx = pd.date_range("2015-01-01", "2015-12-31", freq="D").as_unit("us")
+    _patch_fetch(monkeypatch, pd.Series(1.0, index=idx))
+    cov, reason = conv._window_discharge_coverage("x", "2015-01-01", "2015-12-31")
+    assert cov == 1.0 and reason is None
+
+
+def test_window_coverage_detects_record_gap(monkeypatch):
+    """USGS 04077400's site metadata advertises 1985-2026, but it has no
+    daily values 2001-07..2026-08; the pre-flight must see the gap."""
+    import pandas as pd
+
+    idx = pd.date_range("2015-01-01", "2015-06-30", freq="D")
+    _patch_fetch(monkeypatch, pd.Series(1.0, index=idx))
+    cov, _ = conv._window_discharge_coverage("x", "2015-01-01", "2015-12-31")
+    assert 0.49 < cov < 0.5
+
+
+def test_window_coverage_reports_fetch_error(monkeypatch):
+    import swatplus_builder.calibration.nwis as nwis
+
+    def boom(*a, **k):
+        raise ValueError("Discharge is not available for the requested query.")
+
+    monkeypatch.setattr(nwis, "fetch_usgs_daily_q", boom)
+    cov, reason = conv._window_discharge_coverage("x", "2015-01-01", "2015-12-31")
+    assert cov == 0.0 and "not available" in reason
+
+
+def test_already_run_ids(tmp_path):
+    (tmp_path / "batch_a" / "usgs_02363000").mkdir(parents=True)
+    (tmp_path / "usgs_01197000").mkdir()
+    (tmp_path / "usgs_notanid").mkdir()
+    assert conv._already_run_ids(tmp_path) == {"02363000", "01197000"}

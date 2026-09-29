@@ -214,6 +214,7 @@ def fetch_gridmet(
     data_by_grid_cell: dict[tuple[int, int], pd.DataFrame] = {}
     imputation_records: list[dict[str, Any]] = []
     calendar_adjustment_records: list[dict[str, Any]] = []
+    temperature_repair_records: list[dict[str, Any]] = []
     started_at = time.monotonic()
     for station_index, station in enumerate(stations_typed, start=1):
         station_started_at = time.monotonic()
@@ -260,10 +261,25 @@ def fetch_gridmet(
                 n_days=n_days,
             )
             data_by_grid_cell[grid_cell] = df
+        station_temperature_repairs: list[dict[str, Any]] = []
         series = _build_series(
-            df=df, station=station, start=start, n_days=n_days, variables=variables
+            df=df,
+            station=station,
+            start=start,
+            n_days=n_days,
+            variables=variables,
+            temperature_repairs_out=station_temperature_repairs,
         )
         series_list.append(series)
+        for record in station_temperature_repairs:
+            temperature_repair_records.append(
+                {
+                    **record,
+                    "station": station.name,
+                    "grid_cell": list(grid_cell),
+                    "reused_grid_cell": reused_grid_cell,
+                }
+            )
         for record in df.attrs.get("imputations", []):
             if isinstance(record, dict):
                 imputation_records.append(
@@ -319,13 +335,19 @@ def fetch_gridmet(
             "imputations": imputation_records,
             "calendar_adjustment_count": len(calendar_adjustment_records),
             "calendar_adjustments": calendar_adjustment_records,
+            "temperature_repair_count": len(temperature_repair_records),
+            "temperature_repairs": temperature_repair_records,
             "claim_impact": (
                 "weather_forcing_contains_declared_imputation"
                 if imputation_records
                 else (
                     "gridmet_noleap_calendar_normalized"
                     if calendar_adjustment_records
-                    else "none"
+                    else (
+                        "gridmet_temperature_inversion_repaired"
+                        if temperature_repair_records
+                        else "none"
+                    )
                 )
             ),
         },
@@ -745,8 +767,13 @@ def _build_series(
     start: str,
     n_days: int,
     variables: Sequence[WeatherVar],
+    temperature_repairs_out: list[dict[str, Any]] | None = None,
 ) -> StationSeries:
-    """Assemble a :class:`StationSeries` from the per-station dataframe."""
+    """Assemble a :class:`StationSeries` from the per-station dataframe.
+
+    Bounded tmin/tmax inversions are repaired and appended to
+    ``temperature_repairs_out``; see :func:`_repair_bounded_temperature_inversions`.
+    """
     normalized = _normalize_columns(df)
 
     pcp = tmax = tmin = hmd = wnd = slr = None
@@ -757,11 +784,13 @@ def _build_series(
     if "tmp" in variables:
         tmmx = _validated_raw_values(normalized, "tmmx", station, minimum=150.0, maximum=350.0)
         tmmn = _validated_raw_values(normalized, "tmmn", station, minimum=150.0, maximum=350.0)
-        if any(low >= high for high, low in zip(tmmx, tmmn)):
-            raise SwatBuilderPipelineError(
-                f"GridMET minimum temperature is not below maximum temperature for station {station.name!r}",
-                station=station.name,
-            )
+        tmmn = _repair_bounded_temperature_inversions(
+            tmmx,
+            tmmn,
+            station=station,
+            start=start,
+            repairs_out=temperature_repairs_out,
+        )
         tmax = [round(v - 273.15, 2) for v in tmmx]
         tmin = [round(v - 273.15, 2) for v in tmmn]
     if "hmd" in variables:
@@ -866,6 +895,67 @@ def _validated_raw_values(
                 value=value,
             )
     return values
+
+
+# GridMET interpolates tmmn and tmmx as independent fields, so on rare
+# near-isothermal days the cell values can tie or invert by a few tenths of a
+# kelvin. Such days are repaired and disclosed. Larger or more frequent
+# inversions indicate a bad cell and still fail the station.
+_TEMP_INVERSION_MAX_K = 1.0
+_TEMP_INVERSION_MAX_FRACTION = 0.002
+_TEMP_INVERSION_MARGIN_K = 0.1
+
+
+def _repair_bounded_temperature_inversions(
+    tmmx: Sequence[float],
+    tmmn: Sequence[float],
+    *,
+    station: WeatherStation,
+    start: str,
+    repairs_out: list[dict[str, Any]] | None,
+) -> list[float]:
+    """Return tmmn with bounded inversions clamped to ``tmmx - 0.1 K``.
+
+    Raises when any day inverts by more than ``_TEMP_INVERSION_MAX_K`` or
+    when inverted days exceed ``_TEMP_INVERSION_MAX_FRACTION`` of the record
+    (minimum allowance: one day). Every repaired day is recorded.
+    """
+    inverted = [i for i, (high, low) in enumerate(zip(tmmx, tmmn)) if low >= high]
+    if not inverted:
+        return list(tmmn)
+    allowed = max(1, math.ceil(_TEMP_INVERSION_MAX_FRACTION * len(tmmx)))
+    worst = max(tmmn[i] - tmmx[i] for i in inverted)
+    if len(inverted) > allowed or worst > _TEMP_INVERSION_MAX_K:
+        raise SwatBuilderPipelineError(
+            f"GridMET minimum temperature is not below maximum temperature for station {station.name!r} "
+            f"on {len(inverted)} day(s) (allowed {allowed}); worst inversion {worst:.2f} K "
+            f"(allowed {_TEMP_INVERSION_MAX_K:.2f} K)",
+            station=station.name,
+        )
+    first_day = _dt.date.fromisoformat(start)
+    repaired = list(tmmn)
+    for i in inverted:
+        repaired[i] = tmmx[i] - _TEMP_INVERSION_MARGIN_K
+        if repairs_out is not None:
+            repairs_out.append(
+                {
+                    "date": str(first_day + _dt.timedelta(days=i)),
+                    "kind": "gridmet_temperature_inversion_repair",
+                    "method": "clamp_tmin_to_tmax_minus_0.1K",
+                    "tmmx_raw_k": round(float(tmmx[i]), 3),
+                    "tmmn_raw_k": round(float(tmmn[i]), 3),
+                    "inversion_k": round(float(tmmn[i] - tmmx[i]), 3),
+                }
+            )
+    log.warning(
+        "GridMET station %r: repaired %d tmin>=tmax day(s) (worst %.2f K) by "
+        "clamping tmin to tmax - %.1f K; disclosed in weather provenance.",
+        station.name,
+        len(inverted),
+        worst,
+        _TEMP_INVERSION_MARGIN_K,
+    )
+    return repaired
 
 
 def _ensure_tmax_gt_tmin(

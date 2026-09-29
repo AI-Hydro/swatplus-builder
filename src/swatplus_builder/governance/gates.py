@@ -243,11 +243,31 @@ def weather_fidelity_gate(values: dict[str, Any]) -> dict[str, Any]:
                 "passed": False,
                 "reason": "unsupported weather calendar adjustment",
             }
+    repairs = flags.get("temperature_repairs", [])
+    repair_count = flags.get("temperature_repair_count", len(repairs) if isinstance(repairs, list) else -1)
+    if (
+        type(repair_count) is not int
+        or repair_count < 0
+        or not isinstance(repairs, list)
+        or len(repairs) != repair_count
+    ):
+        return {"passed": False, "reason": "weather temperature-repair evidence is invalid"}
+    for repair in repairs:
+        inversion = _as_float(repair.get("inversion_k")) if isinstance(repair, dict) else None
+        if (
+            not isinstance(repair, dict)
+            or repair.get("kind") != "gridmet_temperature_inversion_repair"
+            or repair.get("method") != "clamp_tmin_to_tmax_minus_0.1K"
+            or inversion is None
+            or not (0.0 <= inversion <= 1.0)
+        ):
+            return {"passed": False, "reason": "unsupported weather temperature repair"}
     return {
         "passed": True,
         "reason": (
             "weather calendar and raw values validated; no data-gap imputation; "
-            f"{adjustment_count} documented GridMET no-leap adjustment(s)"
+            f"{adjustment_count} documented GridMET no-leap adjustment(s); "
+            f"{repair_count} documented GridMET temperature-inversion repair(s)"
         ),
     }
 

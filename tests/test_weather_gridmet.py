@@ -1095,3 +1095,69 @@ def test_real_gridmet_tiny_window(tmp_path):
     write_observed(bundle, out_dir)
     assert (out_dir / "pcp.cli").is_file()
     assert (out_dir / f"{s.station.name}.pcp").is_file()
+
+
+class TestRepairBoundedTemperatureInversions:
+    """GridMET tmmn/tmmx are independent fields; rare near-isothermal days tie
+    or invert. A live run (USGS 01197000, station s42422n73121w) was blocked
+    outright by one 0.3 K inversion on 2017-01-23 out of 2,555 days. Bounded
+    inversions are now repaired and disclosed; bad cells still fail."""
+
+    def _station(self) -> WeatherStation:
+        return WeatherStation(name="s42422n73121w", lat=42.422, lon=-73.121, elev=300.0)
+
+    def test_no_inversion_returns_values_unchanged_and_records_nothing(self):
+        from swatplus_builder.weather.gridmet import _repair_bounded_temperature_inversions
+        repairs: list = []
+        out = _repair_bounded_temperature_inversions(
+            [280.0, 281.0], [270.0, 271.0], station=self._station(),
+            start="2017-01-22", repairs_out=repairs,
+        )
+        assert out == [270.0, 271.0]
+        assert repairs == []
+
+    def test_single_small_inversion_is_clamped_and_disclosed(self):
+        from swatplus_builder.weather.gridmet import _repair_bounded_temperature_inversions
+        repairs: list = []
+        tmmx = [280.0] * 999 + [272.0]
+        tmmn = [270.0] * 999 + [272.3]
+        out = _repair_bounded_temperature_inversions(
+            tmmx, tmmn, station=self._station(), start="2015-01-01", repairs_out=repairs,
+        )
+        assert out[-1] == pytest.approx(271.9)
+        assert all(low < high for high, low in zip(tmmx, out))
+        assert len(repairs) == 1
+        rec = repairs[0]
+        assert rec["kind"] == "gridmet_temperature_inversion_repair"
+        assert rec["date"] == "2017-09-26"  # day index 999 from 2015-01-01
+        assert rec["inversion_k"] == pytest.approx(0.3)
+        assert rec["tmmn_raw_k"] == pytest.approx(272.3)
+
+    def test_exact_tie_is_repaired(self):
+        from swatplus_builder.weather.gridmet import _repair_bounded_temperature_inversions
+        repairs: list = []
+        out = _repair_bounded_temperature_inversions(
+            [272.0], [272.0], station=self._station(), start="2017-01-23", repairs_out=repairs,
+        )
+        assert out[0] < 272.0
+        assert repairs[0]["inversion_k"] == 0.0
+
+    def test_large_inversion_still_fails(self):
+        from swatplus_builder.errors import SwatBuilderPipelineError
+        from swatplus_builder.weather.gridmet import _repair_bounded_temperature_inversions
+        with pytest.raises(SwatBuilderPipelineError, match="worst inversion"):
+            _repair_bounded_temperature_inversions(
+                [280.0] * 999 + [270.0], [270.0] * 999 + [272.0],
+                station=self._station(), start="2015-01-01", repairs_out=[],
+            )
+
+    def test_frequent_inversions_still_fail(self):
+        from swatplus_builder.errors import SwatBuilderPipelineError
+        from swatplus_builder.weather.gridmet import _repair_bounded_temperature_inversions
+        n = 1000  # allowance = ceil(0.002 * 1000) = 2 days
+        tmmx = [280.0] * n
+        tmmn = [270.0] * (n - 3) + [280.1] * 3
+        with pytest.raises(SwatBuilderPipelineError, match="allowed 2"):
+            _repair_bounded_temperature_inversions(
+                tmmx, tmmn, station=self._station(), start="2015-01-01", repairs_out=[],
+            )

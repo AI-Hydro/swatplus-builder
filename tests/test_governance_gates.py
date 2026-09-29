@@ -426,3 +426,34 @@ def test_sensitivity_gate_fails_unaccounted_dead_params() -> None:
     )
     assert result["passed"] is False
     assert "ESCO" in result["reason"]
+
+
+def test_weather_fidelity_gate_accepts_bounded_disclosed_temperature_repairs() -> None:
+    flags = {
+        "calendar_validated": True,
+        "raw_values_validated": True,
+        "imputation_count": 0,
+        "temperature_repair_count": 1,
+        "temperature_repairs": [
+            {
+                "date": "2017-01-23",
+                "kind": "gridmet_temperature_inversion_repair",
+                "method": "clamp_tmin_to_tmax_minus_0.1K",
+                "tmmx_raw_k": 272.0,
+                "tmmn_raw_k": 272.3,
+                "inversion_k": 0.3,
+            }
+        ],
+    }
+    result = weather_fidelity_gate({"weather_coverage_flags": flags})
+    assert result["passed"] is True
+    assert "1 documented GridMET temperature-inversion repair" in result["reason"]
+
+    flags["temperature_repairs"][0]["inversion_k"] = 2.5
+    assert weather_fidelity_gate({"weather_coverage_flags": flags})["passed"] is False
+
+    flags["temperature_repairs"][0]["inversion_k"] = 0.3
+    flags["temperature_repair_count"] = 2  # count/record mismatch
+    result = weather_fidelity_gate({"weather_coverage_flags": flags})
+    assert result["passed"] is False
+    assert "invalid" in result["reason"]

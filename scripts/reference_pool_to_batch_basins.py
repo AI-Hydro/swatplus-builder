@@ -47,6 +47,42 @@ def _sample_key(usgs_id: str, salt: str) -> str:
     return hashlib.sha256(f"{salt}:{usgs_id}".encode()).hexdigest()
 
 
+def _already_run_ids(runs_root: Path) -> set[str]:
+    if not runs_root.is_dir():
+        return set()
+    return {
+        p.name.split("_", 1)[1]
+        for p in runs_root.rglob("usgs_*")
+        if p.is_dir() and p.name.split("_", 1)[1].isdigit()
+    }
+
+
+def _window_discharge_coverage(usgs_id: str, start: str, end: str) -> tuple[float | None, str | None]:
+    """Fraction of days in [start, end] with a finite observed discharge."""
+    import math
+
+    import pandas as pd
+
+    sys.path.insert(0, str(REPO_ROOT / "src"))
+    from swatplus_builder.calibration.nwis import fetch_usgs_daily_q
+
+    try:
+        q = fetch_usgs_daily_q(usgs_id, start, end)
+    except Exception as exc:  # NWIS/pygeohydro raise varied errors for empty sites
+        return 0.0, f"{type(exc).__name__}: {str(exc)[:160]}"
+    # Compare calendar dates, not timestamps: cached series come back with a
+    # datetime64[us] index, and reindexing that against a nanosecond
+    # date_range silently matches nothing (observed: 0.0 coverage for a
+    # basin with a complete record).
+    wanted = {d.date() for d in pd.date_range(start, end, freq="D")}
+    have = {
+        pd.Timestamp(ts).date()
+        for ts, v in q.items()
+        if v is not None and not (isinstance(v, float) and math.isnan(v))
+    }
+    return round(len(wanted & have) / len(wanted), 4), None
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--pool", type=Path, default=REPO_ROOT / "basins" / "reference_pool_v1.json")
@@ -68,6 +104,13 @@ def main() -> int:
     p.add_argument("--run-end", default="2019-12-31")
     p.add_argument("--warmup-years", type=int, default=2)
     p.add_argument("--claim-tier", default="diagnostic")
+    p.add_argument("--exclude-already-run", action="store_true",
+                    help="Skip basins that already have a usgs_<id> run directory anywhere under runs/.")
+    p.add_argument("--verify-window-data", action="store_true",
+                    help="Fetch each candidate's observed discharge for the run window (pipeline's own fetch) "
+                         "and keep only basins meeting --min-window-coverage. Site period-of-record metadata "
+                         "can span multi-decade gaps (docs/BASIN_INCLUSION_PROTOCOL.md Section 8).")
+    p.add_argument("--min-window-coverage", type=float, default=0.95)
     args = p.parse_args()
 
     if args.group == "held_out_final_assessment" and not args.i_understand_this_is_the_held_out_set:
@@ -94,7 +137,29 @@ def main() -> int:
         candidates = [r for r in candidates if r["hcdn_2009"]]
 
     candidates.sort(key=lambda r: _sample_key(r["usgs_id"], args.sample_salt))
-    if args.limit is not None:
+
+    if args.exclude_already_run:
+        already = _already_run_ids(REPO_ROOT / "runs")
+        candidates = [r for r in candidates if r["usgs_id"] not in already]
+
+    preflight_log: list[dict] = []
+    if args.verify_window_data:
+        # Walk candidates in sample order, keeping those whose observed
+        # discharge actually covers the run window, until --limit is met.
+        # Uses the pipeline's own fetch (and its cache) so the check matches
+        # exactly what `swat workflow run` will see.
+        kept = []
+        for r in candidates:
+            if args.limit is not None and len(kept) >= args.limit:
+                break
+            coverage, reason = _window_discharge_coverage(r["usgs_id"], args.run_start, args.run_end)
+            ok = coverage is not None and coverage >= args.min_window_coverage
+            preflight_log.append({"usgs_id": r["usgs_id"], "coverage": coverage, "kept": ok, "reason": reason})
+            print(f"  preflight {r['usgs_id']}: coverage={coverage} {'kept' if ok else 'rejected: ' + (reason or 'below threshold')}")
+            if ok:
+                kept.append(r)
+        candidates = kept
+    elif args.limit is not None:
         candidates = candidates[: args.limit]
 
     specs = [
@@ -121,6 +186,15 @@ def main() -> int:
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(specs, indent=2), encoding="utf-8")
+    if preflight_log:
+        preflight_path = args.out.with_suffix(".preflight.json")
+        preflight_path.write_text(json.dumps({
+            "window": [args.run_start, args.run_end],
+            "min_window_coverage": args.min_window_coverage,
+            "checked": preflight_log,
+        }, indent=2), encoding="utf-8")
+        n_rej = sum(1 for p in preflight_log if not p["kept"])
+        print(f"preflight: {len(preflight_log)} checked, {n_rej} rejected -> {preflight_path}")
     print(f"wrote {len(specs)} basin spec(s) from group={args.group!r} to {args.out}")
     for spec in specs:
         print(f"  {spec['usgs_id']}  {spec['_station_nm']}  ({spec['_drain_area_km2']} km2, hcdn_2009={spec['_hcdn_2009']})")

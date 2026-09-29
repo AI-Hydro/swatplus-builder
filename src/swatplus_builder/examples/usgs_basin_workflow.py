@@ -2344,6 +2344,12 @@ def main(
             "calendar_adjustments": list(
                 weather_bundle.provenance.get("calendar_adjustments", [])
             ),
+            "temperature_repair_count": int(
+                weather_bundle.provenance.get("temperature_repair_count", 0)
+            ),
+            "temperature_repairs": list(
+                weather_bundle.provenance.get("temperature_repairs", [])
+            ),
             "claim_impact": str(weather_bundle.provenance.get("claim_impact", "none")),
         },
         retry_attempts=retry_attempts,
