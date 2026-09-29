@@ -1,0 +1,318 @@
+{
+  "pool": "basins/reference_pool_v1.json",
+  "sources": {
+    "repo": "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev",
+    "extra_roots": [
+      "../swatplus-builder",
+      "../SWATPlus-Builder-paper",
+      "../Swatplus_decision"
+    ],
+    "run_roots": [
+      "/Users/mgalib/swatplus_runs"
+    ],
+    "ignored": [
+      "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/basins",
+      "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/runs/pe1",
+      "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/basins/prospective_eval_v1_basins.json",
+      "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/basins/prospective_eval_v1_basins.preflight.json",
+      "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/runs/decision_data_batch_proof",
+      "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/runs/decision_data_batch_workers2",
+      "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/runs/decision_data_batch_verify_fix",
+      "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/runs/scaleup_24_basins.json",
+      "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/runs/scaleup_24_basins.preflight.json",
+      "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/runs/multibasin_workers2_basins.json",
+      "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/runs/proof_run_basins.json",
+      "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/basins/reference_pool_v1.json",
+      "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/basins/reference_pool_v1.json",
+      "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/basins/reference_pool_v1_1.json"
+    ]
+  },
+  "n_pool_gauges": 4067,
+  "n_hits": 25,
+  "hits": [
+    {
+      "usgs_id": "01031500",
+      "group": "development",
+      "n_sources": 13,
+      "sources": [
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/CHANGELOG.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/DECISIONS.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/PROGRESS.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/PROJECT.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/docs/RUN_ARTIFACT_RETENTION.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/CHANGELOG.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/DECISIONS.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/PROGRESS.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/PROJECT.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/docs/RUN_ARTIFACT_RETENTION.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/docs/SCIENTIFIC_CORRECTNESS_AUDIT_2026-06-15.md",
+        "run directory /Users/mgalib/swatplus_runs/e2e_hardening_20260626/01031500_2010_2018_nocal",
+        "run directory /Users/mgalib/swatplus_runs/recovery_01031500_nldi_mask_20260625"
+      ]
+    },
+    {
+      "usgs_id": "01197000",
+      "group": "development",
+      "n_sources": 10,
+      "sources": [
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/PROGRESS.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/docs/BASIN_INCLUSION_PROTOCOL.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/tests/test_decision_data_batch.py",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/tests/test_reference_pool_to_batch_basins.py",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/tests/test_weather_gridmet.py",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/PROGRESS.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/docs/BASIN_INCLUSION_PROTOCOL.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/tests/test_decision_data_batch.py",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/tests/test_reference_pool_to_batch_basins.py",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/tests/test_weather_gridmet.py"
+      ]
+    },
+    {
+      "usgs_id": "01435000",
+      "group": "held_out_final_assessment",
+      "n_sources": 1,
+      "sources": [
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/docs/POSITIVE_CONTROL_BASIN_SCREENING.md"
+      ]
+    },
+    {
+      "usgs_id": "01592500",
+      "group": "development",
+      "n_sources": 1,
+      "sources": [
+        "/Users/mgalib/Documents/PyQSwatPlus/SWATPlus-Builder-paper/evidence/pe1/pe1_basins.csv"
+      ]
+    },
+    {
+      "usgs_id": "02363000",
+      "group": "development",
+      "n_sources": 6,
+      "sources": [
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/PROGRESS.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/docs/BASIN_INCLUSION_PROTOCOL.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/tests/test_reference_pool_to_batch_basins.py",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/PROGRESS.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/docs/BASIN_INCLUSION_PROTOCOL.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/tests/test_reference_pool_to_batch_basins.py"
+      ]
+    },
+    {
+      "usgs_id": "03042280",
+      "group": "development",
+      "n_sources": 1,
+      "sources": [
+        "/Users/mgalib/Documents/PyQSwatPlus/SWATPlus-Builder-paper/evidence/pe1/pe1_basins.csv"
+      ]
+    },
+    {
+      "usgs_id": "03349000",
+      "group": "held_out_final_assessment",
+      "n_sources": 100,
+      "sources": [
+        "/Users/mgalib/Documents/PyQSwatPlus/SWATPlus-Builder-paper/evidence/claims_ledger.csv",
+        "/Users/mgalib/Documents/PyQSwatPlus/SWATPlus-Builder-paper/evidence/evidence_freeze.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/SWATPlus-Builder-paper/evidence/governance_challenge_matrix.csv",
+        "/Users/mgalib/Documents/PyQSwatPlus/SWATPlus-Builder-paper/evidence/reproducibility_manifest.json",
+        "/Users/mgalib/Documents/PyQSwatPlus/SWATPlus-Builder-paper/main.tex",
+        "/Users/mgalib/Documents/PyQSwatPlus/Swatplus_decision/research/BUILDER_READINESS.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/Swatplus_decision/research/audit_builder.py",
+        "/Users/mgalib/Documents/PyQSwatPlus/Swatplus_decision/research/readiness_snapshot.json",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/BACKLOG.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/CHANGELOG.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/DECISIONS.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/PROGRESS.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/PROJECT.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/ROADMAP.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/docs/PIPELINE_RESEARCH_GRADE_AUDIT.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/docs/PREPRINT_READINESS_REVIEW_2026-09-19.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/docs/ROADMAP0.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/docs_site/project/status.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/scripts/audit_production_objective.py",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/scripts/audit_reference_pool.py"
+      ]
+    },
+    {
+      "usgs_id": "03443000",
+      "group": "held_out_final_assessment",
+      "n_sources": 1,
+      "sources": [
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/docs/POSITIVE_CONTROL_BASIN_SCREENING.md"
+      ]
+    },
+    {
+      "usgs_id": "03576500",
+      "group": "development",
+      "n_sources": 2,
+      "sources": [
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/docs/PROSPECTIVE_EVALUATION_V1.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/docs/PROSPECTIVE_EVALUATION_V1.md"
+      ]
+    },
+    {
+      "usgs_id": "04077400",
+      "group": "development",
+      "n_sources": 7,
+      "sources": [
+        "/Users/mgalib/Documents/PyQSwatPlus/SWATPlus-Builder-paper/evidence/governance_challenge_matrix.csv",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/PROGRESS.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/docs/BASIN_INCLUSION_PROTOCOL.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/tests/test_reference_pool_to_batch_basins.py",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/PROGRESS.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/docs/BASIN_INCLUSION_PROTOCOL.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/tests/test_reference_pool_to_batch_basins.py"
+      ]
+    },
+    {
+      "usgs_id": "04159900",
+      "group": "development",
+      "n_sources": 1,
+      "sources": [
+        "/Users/mgalib/Documents/PyQSwatPlus/SWATPlus-Builder-paper/evidence/pe1/pe1_basins.csv"
+      ]
+    },
+    {
+      "usgs_id": "04282650",
+      "group": "development",
+      "n_sources": 1,
+      "sources": [
+        "/Users/mgalib/Documents/PyQSwatPlus/SWATPlus-Builder-paper/evidence/pe1/pe1_basins.csv"
+      ]
+    },
+    {
+      "usgs_id": "05580000",
+      "group": "development",
+      "n_sources": 1,
+      "sources": [
+        "/Users/mgalib/Documents/PyQSwatPlus/SWATPlus-Builder-paper/evidence/pe1/pe1_basins.csv"
+      ]
+    },
+    {
+      "usgs_id": "06715000",
+      "group": "development",
+      "n_sources": 1,
+      "sources": [
+        "/Users/mgalib/Documents/PyQSwatPlus/SWATPlus-Builder-paper/evidence/pe1/pe1_basins.csv"
+      ]
+    },
+    {
+      "usgs_id": "06718550",
+      "group": "development",
+      "n_sources": 1,
+      "sources": [
+        "/Users/mgalib/Documents/PyQSwatPlus/SWATPlus-Builder-paper/evidence/pe1/pe1_basins.csv"
+      ]
+    },
+    {
+      "usgs_id": "07169800",
+      "group": "development",
+      "n_sources": 4,
+      "sources": [
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/PROGRESS.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/docs/BASIN_INCLUSION_PROTOCOL.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/PROGRESS.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/docs/BASIN_INCLUSION_PROTOCOL.md"
+      ]
+    },
+    {
+      "usgs_id": "07180500",
+      "group": "development",
+      "n_sources": 2,
+      "sources": [
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/PROGRESS.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/PROGRESS.md"
+      ]
+    },
+    {
+      "usgs_id": "08057200",
+      "group": "development",
+      "n_sources": 1,
+      "sources": [
+        "/Users/mgalib/Documents/PyQSwatPlus/SWATPlus-Builder-paper/evidence/pe1/pe1_basins.csv"
+      ]
+    },
+    {
+      "usgs_id": "08155240",
+      "group": "development",
+      "n_sources": 4,
+      "sources": [
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/PROGRESS.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/tests/test_decision_data_batch.py",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/PROGRESS.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/tests/test_decision_data_batch.py"
+      ]
+    },
+    {
+      "usgs_id": "09217900",
+      "group": "development",
+      "n_sources": 1,
+      "sources": [
+        "/Users/mgalib/Documents/PyQSwatPlus/SWATPlus-Builder-paper/evidence/pe1/pe1_basins.csv"
+      ]
+    },
+    {
+      "usgs_id": "12031000",
+      "group": "development",
+      "n_sources": 32,
+      "sources": [
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/PROGRESS.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/PROJECT.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/ROADMAP.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/docs/PIPELINE_RESEARCH_GRADE_AUDIT.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/scripts/audit_production_objective.py",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/scripts/run_objective_10basin.py",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/tests/test_script_policy.py",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/PROGRESS.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/PROJECT.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/ROADMAP.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/Research_article/artifact_availability_report.json",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/Research_article/artifact_availability_report.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/Research_article/data/objective_map_coordinates.json",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/Research_article/visuals/conference/c10_objective_suite_usa_map_positions.json",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/Research_article/visuals/conference/objective_suite_sites_11.json",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/Research_article/visuals/data/objective_suite_snapshot.csv",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/Research_article/visuals/data/objective_suite_visual_table.json",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/docs/BENCHMARK_10_BASIN_FINAL_2026-05-12.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/docs/MASTER_PLAN_2026H2.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/docs/OBJECTIVE_BASIN_VALIDATION_REPORT.md"
+      ]
+    },
+    {
+      "usgs_id": "12054000",
+      "group": "development",
+      "n_sources": 1,
+      "sources": [
+        "/Users/mgalib/Documents/PyQSwatPlus/SWATPlus-Builder-paper/evidence/pe1/pe1_basins.csv"
+      ]
+    },
+    {
+      "usgs_id": "13185000",
+      "group": "development",
+      "n_sources": 7,
+      "sources": [
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/BACKLOG.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder-dev/PROGRESS.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/.claude/worktrees/agent-ab365567a95b26bb3/BACKLOG.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/.claude/worktrees/agent-ab365567a95b26bb3/PROGRESS.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/.claude/worktrees/agent-ab365567a95b26bb3/docs/SWATPLUS_MODELING_PLAYBOOK.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/BACKLOG.md",
+        "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/PROGRESS.md"
+      ]
+    },
+    {
+      "usgs_id": "14216000",
+      "group": "development",
+      "n_sources": 1,
+      "sources": [
+        "/Users/mgalib/Documents/PyQSwatPlus/SWATPlus-Builder-paper/evidence/pe1/pe1_basins.csv"
+      ]
+    },
+    {
+      "usgs_id": "14354200",
+      "group": "development",
+      "n_sources": 1,
+      "sources": [
+        "/Users/mgalib/Documents/PyQSwatPlus/SWATPlus-Builder-paper/evidence/pe1/pe1_basins.csv"
+      ]
+    }
+  ]
+}

@@ -96,3 +96,15 @@ def test_assign_group_respects_development_fraction():
     # Should land near 30% with a large enough sample; generous tolerance
     # since this is a hash-based split, not exact stratified sampling.
     assert 0.2 < n_dev / len(ids) < 0.4
+
+
+def test_find_contaminated_usgs_ids_catches_docs_only_references(tmp_path):
+    """Regression: v1 missed 03349000, the manuscript's negative-control basin,
+    because it was referenced only in docs and manuscript materials."""
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "FOCUSED.md").write_text("Negative control: usgs_03349000 (USGS 03349000).\n", encoding="utf-8")
+    (tmp_path / "Research_article").mkdir()
+    (tmp_path / "Research_article" / "claims.csv").write_text("C09,USGS 01435000 screened\n", encoding="utf-8")
+    hits = bip.find_contaminated_usgs_ids(tmp_path)
+    assert "03349000" in hits
+    assert "01435000" in hits

@@ -176,17 +176,18 @@ def log_kge_v2(obs: Sequence[float], sim: Sequence[float], epsilon_fraction: flo
     dependence and other pitfalls of logarithmic KGE/NSE).
 
     ``log_kge_v2`` instead sets epsilon to ``epsilon_fraction`` of the mean
-    *observed* flow (default 1%, the convention used by Pushpalatha et al.
-    2012), so a small headwater stream and a large river each get an offset
+    *observed* flow (default 1%; this package's choice), so a small
+    headwater stream and a large river each get an offset
     sized to their own flow scale, instead of sharing one arbitrary global
     constant. This removes the dependence on that fixed constant and
     substantially reduces (but, being a property of the KGE bias-ratio term
     under a log transform, does not make exactly zero) the swing seen under
     a pure unit relabeling of the same data. It also does **not** remove the
     well-documented numerical instability of log-transformed efficiency
-    metrics on very small, low-flow-dominated samples — that instability is
-    inherent to the log transform itself, not an epsilon-choice artifact
-    (Santos et al. 2018). Falls back to ``log_kge``'s fixed 0.01 when the
+    metrics on very small, low-flow-dominated samples. Santos et al. (2018)
+    show that KGE on log-transformed flows has numerical issues beyond the
+    offset choice and recommend avoiding it; this function is a mitigation,
+    and replacing the term with one of their alternatives is planned. Falls back to ``log_kge``'s fixed 0.01 when the
     mean observed flow is zero or non-finite (e.g. an all-dry gauge), since
     no basin-relative scale exists in that case.
 

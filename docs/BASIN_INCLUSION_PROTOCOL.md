@@ -192,3 +192,33 @@ counterfactuals, only a couple of contract/claim-tier decisions. Anyone
 consuming a batch's output must check `workflow_success` per basin, not
 just admission status. See `scripts/decision_data_batch.py`'s
 `BasinResult.workflow_success` docstring.
+
+## 9. Contamination audit and pool v1.1 (2026-09-29)
+
+The §4 scan was a floor, and it proved too low. A wider audit
+(`scripts/audit_reference_pool.py`) searched docs, markdown notes, the
+manuscript repository, the decision-model workspace, and run trees outside
+the repository (`~/swatplus_runs`). It found six pool gauges that had been
+used before the pool was generated. Each was dated from git history or file
+metadata:
+
+| Gauge | v1 group | Prior use |
+|---|---|---|
+| 03349000 | held-out | manuscript focused negative control (git since 2026-05-05) |
+| 01435000 | held-out | screened as a positive-control candidate (local doc, 2026-06-12) |
+| 03443000 | held-out | screened as a positive-control candidate (local doc, 2026-06-12) |
+| 01031500 | development | development use (git since 2026-06-14) |
+| 12031000 | development | development use (git since 2026-05-12) |
+| 13185000 | development | soil-fallback development runs (git since 2026-05-05) |
+
+`basins/reference_pool_v1_1.json` removes exactly these six and records the
+evidence for each (4,061 gauges: 2,012 development, 2,049 held-out). Group
+assignment is a per-gauge hash, so no other gauge changes group.
+`basin_inclusion_protocol.py` now also scans docs, top-level markdown, and
+manuscript materials.
+
+Effect on PE1: none. None of the six was among the 13 candidates PE1
+checked, and every PE1 basin appears only in PE1's own artifacts
+(`basins/reference_pool_v1_audit.json`). Future selections should use v1.1.
+The v1 held-out group contained three used gauges, so v1 should not be used
+as a clean final-assessment set.
