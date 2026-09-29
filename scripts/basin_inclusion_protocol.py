@@ -79,10 +79,20 @@ def find_contaminated_usgs_ids(repo_root: Path) -> dict[str, list[str]]:
         except (json.JSONDecodeError, OSError):
             pass
 
+    # v1 scanned only tests/ and scripts/ and missed gauges referenced solely
+    # in docs, manuscript materials, or backlog notes (including the
+    # manuscript's own negative-control basin). See
+    # scripts/audit_reference_pool.py and docs/BASIN_INCLUSION_PROTOCOL.md §9.
     scan_globs = [
         "tests/**/*.py",
         "scripts/**/*.py",
         "scripts/**/*.json",
+        "docs/**/*.md",
+        "docs/**/*.json",
+        "*.md",
+        "Research_article/**/*.md",
+        "Research_article/**/*.csv",
+        "Research_article/**/*.json",
     ]
     context_pattern = re.compile(r'usgs[_-]id["\']?\s*[:=]\s*["\']?(\d{8,15})|usgs_(\d{8,15})', re.IGNORECASE)
     for pattern in scan_globs:

@@ -152,6 +152,8 @@ basins/*
 !basins/reference_pool_v1.json
 !basins/prospective_eval_v1_basins.json
 !basins/prospective_eval_v1_basins.preflight.json
+!basins/reference_pool_v1_1.json
+!basins/reference_pool_v1_audit.json
 examples/build_real_basin.py
 examples/real_basin_marsh_creek.py
 PROGRESS.md

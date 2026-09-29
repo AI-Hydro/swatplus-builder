@@ -752,6 +752,10 @@ def test_calibrate_against_lock_writes_staged_protocol(monkeypatch, tmp_path: Pa
     ]
     assert "calibration process gates" in best["kge_nse_finetune_gate"]
     assert "calibration process gates pass" in best["calibration_protocol"][-1]["gate"]
+    # The DDS seed is part of the run's own provenance, not only the source.
+    assert best["dds_seed"] == 42
+    assert best["dds_rng"] == "python.random.Random"
+    assert best["dds_secondary_seeds"] == []
 
     decisions = json.loads((Path(evidence.history_csv).parent / "phase_decisions.json").read_text(encoding="utf-8"))
     assert decisions["schema"] == "swatplus_builder.calibration_phase_decisions/v1"

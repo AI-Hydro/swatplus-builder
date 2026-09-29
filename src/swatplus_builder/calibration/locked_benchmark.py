@@ -37,6 +37,15 @@ from ..errors import SwatBuilderInputError, SwatBuilderPipelineError
 from ..output.eval import evaluate_run
 from ..output.metadata import try_git_sha
 
+# DDS is stochastic; the seeds that drive it are recorded in each run's
+# calibration provenance so the search can be replayed from the run itself.
+PRIMARY_DDS_SEED = 42
+
+
+def secondary_dds_seed(index: int) -> int:
+    """Seed for the ``index``-th (1-based) secondary DDS ensemble member."""
+    return PRIMARY_DDS_SEED + index * 13
+
 # ---------------------------------------------------------------------------
 # Data models
 # ---------------------------------------------------------------------------
@@ -521,7 +530,7 @@ def calibrate_against_lock(
     param_bounds = {p: (get_parameter(p).range[0], get_parameter(p).range[1]) for p in parameters}
     import random
 
-    rng = random.Random(42)
+    rng = random.Random(PRIMARY_DDS_SEED)
     active_phases = _diagnostic_calibration_phases(
         parameters,
         calibration_phases,
@@ -983,7 +992,7 @@ def calibrate_against_lock(
         seed_budget = max(4, int(n_evaluations) // max(1, dds_n_seeds))
 
         for seed_idx in range(1, max(2, dds_n_seeds)):
-            seed_rng = random.Random(42 + seed_idx * 13)
+            seed_rng = random.Random(secondary_dds_seed(seed_idx))
             seed_active_phases = _diagnostic_calibration_phases(
                 parameters,
                 calibration_phases,
@@ -1095,6 +1104,10 @@ def calibrate_against_lock(
             "skill-only claim gates remain final locked-rerun gates"
         ),
         "calibration_protocol": active_phases,
+        "dds_seed": PRIMARY_DDS_SEED,
+        "dds_rng": "python.random.Random",
+        "dds_n_seeds": int(dds_n_seeds),
+        "dds_secondary_seeds": [secondary_dds_seed(i) for i in range(1, max(1, int(dds_n_seeds)))],
     }
     screening_window = {
         key: value
