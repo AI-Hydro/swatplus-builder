@@ -106,3 +106,18 @@ inferred.
 ## 6. Deviation log
 
 (Empty at protocol commit.)
+
+**2026-09-29, run completed, no deviations.** All 12 selected basins ran to
+completion under `--workers 2`. None was dropped, retried, or excluded
+after launch; no gate threshold was changed before or after results were
+seen. Every basin's ledger verified. One basin (14354200) exercised the
+new bounded GridMET temperature-inversion repair added in the same commit
+this protocol was fixed at; that is an intended part of the fixed
+workflow, not a deviation. Full results: 4/12 `research_grade`, 8/12
+`exploratory` (1 blocked before any engine run, 3 completed the workflow
+but never reached locked verification, 4 reached verification but were
+not promoted). Of 8 basins reaching locked verification, 7 improved on
+benchmark, 4 were promoted, 3 improved but were not promoted (blocked by
+the research-skill threshold), and 0 were promoted without improvement.
+See `runs/pe1/typed_decisions.jsonl` (72 items across all 12 basins) and
+the paper repository's `evidence/pe1_final/` for the full analysis.

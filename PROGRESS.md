@@ -11006,3 +11006,46 @@ pipeline's governance working as intended, not new bugs -- but they show
 sufficient: recorded in `docs/BASIN_INCLUSION_PROTOCOL.md` §8.
 
 Full suite: ruff clean; pytest 1212 passed, 5 skipped, 0 failed.
+
+## 2026-09-29 — PE1 complete: 12/12 basins, 4 research_grade
+
+PE1 (docs/PROSPECTIVE_EVALUATION_V1.md, protocol fixed at 0e40463 before
+any run) finished. All 12 selected basins ran to completion under
+`--workers 2`, none dropped or retried, all 12 hash-chained ledgers
+verified. 13.07h wall-clock across 2 workers, 593 engine candidate
+evaluations, 72 typed decisions written to runs/pe1/typed_decisions.jsonl.
+
+Result: 4/12 promoted to research_grade (09217900, 14216000, 12054000,
+03042280); 8/12 remained exploratory. Of those 8: 1 was blocked before any
+engine run (full_model_build_topology_failed, USGS 08057200), 3 completed
+the workflow but their calibration search never reached locked verification
+(a specific reason recorded for each), and 4 reached locked verification
+without being promoted. Of the 8 basins reaching locked verification: 7
+improved on their locked benchmark, 4 were promoted, 3 improved
+substantially but did not clear the package's research-skill threshold
+(the exact reason quoted verbatim from each basin's physical_gates.json),
+1 did not improve, and 0 were promoted without a recorded improvement --
+the specific behaviour the governance mechanism is designed to produce,
+now confirmed outside the two hand-selected focused cases used in the
+manuscript's earlier evidence.
+
+One basin (14354200) needed the new bounded GridMET temperature-inversion
+repair added earlier in this session -- validates that fix mattered for a
+real run, not just a synthetic test.
+
+Wrote the full results into the manuscript (paper repo commit 868cdbf):
+new Results subsection 6.4, Table 6, Figures 6-7, updated RQ4/abstract/
+highlights, claims ledger C30-C34. While building the figures/table caught
+and fixed two more real defects (not in this pipeline -- in my own
+analysis tooling): two nearby basins were rendering as one overlapping map
+marker, and a table generator was reading an overloaded evidence field as
+"calibration failed" for basins that had actually verified successfully.
+Both fixed and verified against the raw evidence before the numbers went
+into the manuscript.
+
+Merged docs/PROSPECTIVE_EVALUATION_V1.md's deviation log: empty, run was
+clean throughout.
+
+Next: merge dev/pe1-followups (DDS seed provenance, reference pool v1.1
+contamination-audit fix) into main now that PE1 no longer needs the
+software commit held fixed.
