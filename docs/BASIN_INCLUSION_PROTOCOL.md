@@ -163,3 +163,32 @@ not just dropped silently.
 
 This is deliberately a v1: it replaces "picked by convenience" with a
 documented, reproducible, inspectable rule, not a finished research design.
+
+## 8. Empirical follow-up (2026-09-29): period-of-record coverage is not sufficient
+
+A first live 4-basin sample from the `development` group (02363000,
+07169800, 04077400, 01197000) found 2/4 hit a real build blocker despite
+passing every filter in §2:
+
+- `01197000`: `weather_provider_data_gap` — GridMET returned a station
+  reading with minimum temperature not below maximum temperature
+  (`s42422n73121w`), correctly rejected by the existing weather-fidelity
+  gate rather than silently used.
+- `04077400`: `full_model_build_failed` — "Discharge is not available for
+  the requested query," despite this basin's NWIS site metadata advertising
+  period-of-record coverage for the full requested window.
+
+Both are the existing pipeline's governance working as intended (rejecting
+bad or missing data rather than silently proceeding) — this is not a
+failure of that governance. It is a limitation of §2's inclusion filters:
+NWIS site-level period-of-record metadata (`begin_date`/`end_date` on the
+site) does not guarantee the actual discharge query returns usable data for
+every day in that window, and provider-side data-quality problems (GridMET
+station artifacts) aren't visible at the metadata-screening stage at all.
+`scripts/decision_data_batch.py` handles this correctly — such a basin is
+still `status="ok"` (ledger verified, decisions exported) but
+`workflow_success=False`, and contributes 0 calibration-phase
+counterfactuals, only a couple of contract/claim-tier decisions. Anyone
+consuming a batch's output must check `workflow_success` per basin, not
+just admission status. See `scripts/decision_data_batch.py`'s
+`BasinResult.workflow_success` docstring.

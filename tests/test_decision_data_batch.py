@@ -75,6 +75,28 @@ def test_extract_json_object_matches_real_workflow_run_shape():
     assert payload["blocker_class"] is None
     assert (payload.get("values") or {}).get("effective_claim_tier") == "exploratory"
     assert payload.get("effective_claim_tier") is None  # NOT at top level
+    assert payload["success"] is True  # top-level, same level as blocker_class
+
+
+def test_basin_result_distinguishes_status_ok_from_workflow_success():
+    """Regression: a live 4-basin run (2026-09-29) had status="ok" (ledger
+    verified, decisions exported) for all 4 basins, but only 2/4 actually
+    had workflow success=true -- the other 2 hit blocker_class values
+    (weather_provider_data_gap, full_model_build_failed) and contributed 0
+    calibration-phase decisions. BasinResult must carry workflow_success as
+    a field distinct from status, so a caller can't read "N admitted" as
+    "N successfully calibrated"."""
+    import dataclasses
+
+    fields_by_name = {f.name: f for f in dataclasses.fields(batch.BasinResult)}
+    assert "workflow_success" in fields_by_name
+    result = batch.BasinResult(
+        usgs_id="01197000", status="ok", out_dir="/tmp/x", stage="audit_typed",
+        wall_clock_s=1.0, started_at="2026-01-01T00:00:00Z",
+        workflow_success=False, blocker_class="weather_provider_data_gap",
+    )
+    assert result.status == "ok"
+    assert result.workflow_success is False
 
 
 def test_extract_json_object_pure_json():

@@ -114,6 +114,20 @@ class BasinResult:
     # busy time specifically.
     wall_clock_s: float
     started_at: str
+    # Whether `swat workflow run` itself reports success=true -- distinct
+    # from `status=="ok"` on this dataclass, which only means the
+    # orchestration steps (subprocess exit code, ledger verify, typed
+    # export) all completed without erroring. A basin can be status="ok"
+    # (nothing crashed, its ledger verifies, decisions were exported) while
+    # workflow_success=False (the model build itself failed or was blocked,
+    # e.g. blocker_class="weather_provider_data_gap" or
+    # "full_model_build_failed") -- that basin contributes 0 calibration-
+    # phase counterfactuals (no calibration ran) but may still contribute a
+    # handful of contract/claim-tier decisions. Report both numbers
+    # separately; never collapse "N basins admitted" into an implied "N
+    # basins successfully calibrated" (a live 4-basin run caught exactly
+    # this: 4/4 admitted, but only 2/4 actually calibrated).
+    workflow_success: bool | None = None
     effective_claim_tier: str | None = None
     blocker_class: str | None = None
     engine_candidate_evaluations: int | None = None
@@ -199,6 +213,7 @@ def _run_one_basin(
         except (json.JSONDecodeError, OSError):
             payload = {}
         effective_tier = payload.get("effective_claim_tier")
+        workflow_success = payload.get("success")
         blocker = payload.get("blocker_class")
         candidate_evals = _count_engine_candidate_evaluations(out_dir)
     else:
@@ -250,10 +265,11 @@ def _run_one_basin(
         payload = _extract_json_object(proc.stdout) or {}
         # `swat workflow run --json`'s top-level object is RunUSGSWorkflowResult:
         # {success, run_id, artifact_dir, evidence_summary_path, blocker_class,
-        # values: {...effective_claim_tier, ...}}. blocker_class is top-level;
-        # effective_claim_tier is only inside "values".
+        # values: {...effective_claim_tier, ...}}. success and blocker_class
+        # are top-level; effective_claim_tier is only inside "values".
         effective_tier = (payload.get("values") or {}).get("effective_claim_tier")
         blocker = payload.get("blocker_class")
+        workflow_success = payload.get("success")
         candidate_evals = _count_engine_candidate_evaluations(out_dir)
 
     # Never admit an unverified run's decisions as training data.
@@ -272,6 +288,7 @@ def _run_one_basin(
             wall_clock_s=_elapsed_s(),
             started_at=started_at,
             effective_claim_tier=effective_tier,
+            workflow_success=workflow_success,
             blocker_class=blocker,
             engine_candidate_evaluations=candidate_evals,
             error_tail=(verify.stderr or verify.stdout)[-2000:],
@@ -301,6 +318,7 @@ def _run_one_basin(
             wall_clock_s=_elapsed_s(),
             started_at=started_at,
             effective_claim_tier=effective_tier,
+            workflow_success=workflow_success,
             blocker_class=blocker,
             engine_candidate_evaluations=candidate_evals,
             error_tail=(typed.stderr or typed.stdout)[-2000:],
@@ -316,6 +334,7 @@ def _run_one_basin(
         wall_clock_s=_elapsed_s(),
         started_at=started_at,
         effective_claim_tier=effective_tier,
+        workflow_success=workflow_success,
         blocker_class=blocker,
         engine_candidate_evaluations=candidate_evals,
         typed_decision_count=typed_count,
@@ -397,7 +416,8 @@ def main() -> int:
         manifest_fh.write(json.dumps(asdict(result)) + "\n")
         manifest_fh.flush()
         print(f"[{now_utc()}] usgs_id={result.usgs_id} status={result.status} stage={result.stage} "
-              f"wall_clock_s={result.wall_clock_s:.0f} tier={result.effective_claim_tier}")
+              f"wall_clock_s={result.wall_clock_s:.0f} tier={result.effective_claim_tier} "
+              f"workflow_success={result.workflow_success} blocker={result.blocker_class}")
 
     run_kwargs = dict(
         out_root=out_root,
@@ -432,11 +452,21 @@ def main() -> int:
             if src.is_file():
                 out_fh.write(src.read_text(encoding="utf-8"))
 
+    # n_ok/admitted means "orchestration completed and the ledger verified" --
+    # it does NOT mean the model build succeeded. Report workflow success
+    # separately so "N basins admitted" is never read as "N basins
+    # successfully calibrated" (a live run caught exactly this gap: 4/4
+    # admitted, only 2/4 actually built/calibrated a model).
+    n_workflow_success = sum(1 for r in admitted if r.workflow_success is True)
+    n_workflow_blocked = sum(1 for r in admitted if r.workflow_success is False)
     summary = {
         "generated_at": now_utc(),
         "n_basins_requested": len(specs),
         "n_ok": len(admitted),
         "n_failed": len(results) - len(admitted),
+        "n_admitted_workflow_success": n_workflow_success,
+        "n_admitted_workflow_blocked": n_workflow_blocked,
+        "admitted_blocker_classes": sorted({r.blocker_class for r in admitted if r.blocker_class}),
         "by_status": {status: sum(1 for r in results if r.status == status) for status in sorted({r.status for r in results})},
         "total_wall_clock_s": sum(r.wall_clock_s for r in results),
         "total_engine_candidate_evaluations": sum(r.engine_candidate_evaluations or 0 for r in results),
@@ -452,7 +482,9 @@ def main() -> int:
             for r in results:
                 writer.writerow(asdict(r))
 
-    print(f"[{now_utc()}] done: {summary['n_ok']}/{summary['n_basins_requested']} basins admitted, "
+    print(f"[{now_utc()}] done: {summary['n_ok']}/{summary['n_basins_requested']} basins admitted "
+          f"({summary['n_admitted_workflow_success']} workflow-success, "
+          f"{summary['n_admitted_workflow_blocked']} workflow-blocked but ledger-verified), "
           f"{summary['total_typed_decisions']} typed decisions -> {typed_out}")
     print(f"cost: {summary['total_wall_clock_s']:.0f}s wall-clock, "
           f"{summary['total_engine_candidate_evaluations']} engine candidate evaluations")

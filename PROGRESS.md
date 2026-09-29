@@ -10971,3 +10971,38 @@ figure (previous PROGRESS.md entry) understated the true cost -- the real
 total across both basins was closer to 330s + ~51min = ~56 minutes, not
 9 minutes. Both basins' actual results (7 typed decisions total, ledgers
 verified) are unaffected; only the cost metric was wrong.
+
+## 2026-09-29 — Multi-basin batch (--workers 2) and a real reporting gap found
+
+Ran 4 fresh development-group basins (02363000 AL, 07169800 KS, 04077400
+WI, 01197000 MA — none previously touched by this repo) through
+decision_data_batch.py with `--workers 2` and `--default-sensitivity-workers
+2 --default-anchor-workers 2` (to keep concurrent engine processes within
+this machine's 8 cores). Confirmed real 2-way concurrency from
+started_at/finished_at timestamps: basins 1&2 started simultaneously, 3&4
+each started the instant a worker freed up. 4/4 ran without crashing;
+1498s total wall-clock, 95 engine candidate evaluations, 15 typed decisions.
+
+But: only 2/4 basins actually had `success=true` in their own
+evidence_summary.json. The batch driver's `status="ok"` (orchestration
+completed, ledger verified) doesn't mean the model build succeeded, and the
+driver wasn't reporting that distinction at all — a real, disclosed-late
+gap. Fixed: added `workflow_success` to BasinResult, captured from the
+workflow's own `success`/`blocker_class` fields, surfaced in per-basin
+prints and in `batch_summary.json` as `n_admitted_workflow_success` /
+`n_admitted_workflow_blocked` / `admitted_blocker_classes`, so "N admitted"
+can never again be silently read as "N successfully calibrated." Added a
+regression test. Re-ran (via --skip-existing) to confirm: now correctly
+reports 4/4 admitted, **2/4 workflow-success**, 2 workflow-blocked.
+
+Investigated both blockers (not just cited the class name):
+`01197000` → `weather_provider_data_gap`: GridMET returned a station
+reading with min temp not below max temp, correctly rejected by the
+existing weather-fidelity gate. `04077400` → `full_model_build_failed`:
+"Discharge is not available for the requested query" despite NWIS site
+metadata advertising full period-of-record coverage. Both are the
+pipeline's governance working as intended, not new bugs -- but they show
+`basin_inclusion_protocol.py`'s period-of-record filter is necessary, not
+sufficient: recorded in `docs/BASIN_INCLUSION_PROTOCOL.md` §8.
+
+Full suite: ruff clean; pytest 1212 passed, 5 skipped, 0 failed.
