@@ -5,6 +5,11 @@ physical plausibility bounds.  Each check maps to a named condition that
 blocks specific tier claims.
 
 Gate hierarchy (most fundamental → least):
+  NON_FINITE_WATER_BALANCE — precip, wateryld, perc or ET is missing or not finite
+                         Blocks: diagnostic, research_grade
+                         Cause: engine wrote NaN/unparsable values, so the ET/P
+                         and mass-closure checks cannot be evaluated; the gate
+                         fails closed instead of passing them vacuously
   ZERO_SURFACE_RUNOFF  — surq_gen == 0 (or < 0.001 mm) on a basin with P > 0
                          Blocks: diagnostic, research_grade
                          Cause: CN too low, converter defect undetected, ET anomaly
@@ -86,6 +91,24 @@ def _parse_basin_wb_aa(tio: Path) -> dict[str, float]:
 
 
 # ── Individual checks ──────────────────────────────────────────────────────────
+
+_REQUIRED_WB_FIELDS = (("precip", ("precip",)), ("wateryld", ("wateryld",)),
+                       ("perc", ("perc",)), ("et", ("et", "et_act")))
+
+
+def _check_finite_inputs(wb: dict[str, float]) -> list[str]:
+    bad = []
+    for label, keys in _REQUIRED_WB_FIELDS:
+        value = next((wb[k] for k in keys if k in wb), None)
+        if value is None or not math.isfinite(value):
+            bad.append(f"{label}={'missing' if value is None else value}")
+    if not bad:
+        return []
+    return [
+        "NON_FINITE_WATER_BALANCE: " + ", ".join(bad) + " in basin_wb_aa.txt; "
+        "ET/P and mass closure cannot be evaluated. Blocks: diagnostic, research_grade."
+    ]
+
 
 def _check_zero_surq(wb: dict[str, float]) -> list[str]:
     surq = wb.get("surq_gen", wb.get("surq"))
@@ -195,6 +218,7 @@ def _check_pbias(pbias: float | None) -> list[str]:
 # ── Tier classification ────────────────────────────────────────────────────────
 
 _TIER_BLOCKS: dict[str, list[str]] = {
+    "NON_FINITE_WATER_BALANCE": ["diagnostic", "research_grade"],
     "ZERO_SURFACE_RUNOFF": ["diagnostic", "research_grade"],
     "ET_DOMINATED": ["diagnostic", "research_grade"],
     "MASS_IMBALANCE": ["research_grade"],
@@ -209,6 +233,7 @@ def _condition_key(msg: str) -> str:
 
 
 _RECOMMENDED_ACTIONS: dict[str, str] = {
+    "NON_FINITE_WATER_BALANCE": "Find the HRUs with NaN ET/soil water in hru_wb_aa.txt and audit their soil and land-use inputs before calibration.",
     "ZERO_SURFACE_RUNOFF": "Inspect curve-number assignment, landuse mapping, and runoff generation before calibration.",
     "ET_DOMINATED": "Audit PET/ET controls and evapotranspiration partitioning before calibration.",
     "MASS_IMBALANCE": "Audit basin water-balance accounting and routing connectivity before calibration.",
@@ -219,6 +244,7 @@ _RECOMMENDED_ACTIONS: dict[str, str] = {
 
 
 _CONDITION_PRIORITY: tuple[str, ...] = (
+    "NON_FINITE_WATER_BALANCE",
     "ZERO_SURFACE_RUNOFF",
     "MASS_IMBALANCE",
     "VOLUME_BIAS",
@@ -280,7 +306,7 @@ def check_water_balance(
             f"engine may not have run successfully"
         )
 
-    conditions: list[str] = []
+    conditions: list[str] = _check_finite_inputs(wb)
     if strict_surq:
         conditions += _check_zero_surq(wb)
     conditions += _check_et_dominated(wb)

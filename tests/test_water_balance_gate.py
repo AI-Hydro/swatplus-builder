@@ -105,3 +105,47 @@ def test_negative_nse_requires_documented_timing_limitation_even_when_kge_passes
     assert allowed["pass"] is True
     assert "NEGATIVE_SKILL" not in allowed["condition_codes"]
     assert allowed["timing_limitation_documented"] is True
+
+
+def _write_wb_row(txt: Path, et: str) -> None:
+    txt.mkdir(parents=True, exist_ok=True)
+    (txt / "basin_wb_aa.txt").write_text(
+        "basin_wb_aa\n"
+        "jday mon day yr unit gis_id name precip et pet surq_gen latq perc wateryld\n"
+        "mm mm mm mm mm mm mm mm mm mm mm mm mm mm\n"
+        f"0 0 0 0 0 0 basin 1000 {et} 0 100 100 200 500\n",
+        encoding="utf-8",
+    )
+
+
+def test_nan_et_fails_closed(tmp_path: Path) -> None:
+    txt = tmp_path / "TxtInOut"
+    _write_wb_row(txt, "NaN")
+
+    result = check_water_balance(txt, nse=0.4, kge=0.5, pbias=5.0)
+
+    assert result["pass"] is False
+    assert "NON_FINITE_WATER_BALANCE" in result["condition_codes"]
+    assert result["dominant_blocker"] == "NON_FINITE_WATER_BALANCE"
+    assert "diagnostic" in result["blocked_tiers"]
+    assert "research_grade" in result["blocked_tiers"]
+    assert result["allowed_tiers"] == ["exploratory"]
+
+
+def test_unparsable_et_fails_closed(tmp_path: Path) -> None:
+    txt = tmp_path / "TxtInOut"
+    _write_wb_row(txt, "**********")
+
+    result = check_water_balance(txt, nse=0.4, kge=0.5, pbias=5.0)
+
+    assert "NON_FINITE_WATER_BALANCE" in result["condition_codes"]
+    assert "research_grade" in result["blocked_tiers"]
+
+
+def test_finite_inputs_do_not_trigger_non_finite_condition(tmp_path: Path) -> None:
+    txt = tmp_path / "TxtInOut"
+    _write_wb_row(txt, "300")
+
+    result = check_water_balance(txt, nse=0.4, kge=0.5, pbias=5.0)
+
+    assert "NON_FINITE_WATER_BALANCE" not in result["condition_codes"]
