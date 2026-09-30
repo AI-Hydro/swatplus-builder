@@ -4,6 +4,19 @@ All notable changes to swatplus-builder are documented here.
 
 ## [Unreleased]
 
+### Added
+- `output/dashboard.py`: an **Audit** tab, so the dashboard every run writes
+  serves as the modeller's interface to the headless pipeline. It re-verifies
+  the events and decisions ledgers against the heads sealed in
+  `run_manifest.json` (or, for the dashboard written during the run, checks
+  that each chain is intact and says the heads are sealed afterwards),
+  re-hashes the sealed evidence files so post-run edits show as *changed*, and
+  lists package/engine provenance, the benchmark input lock, the locked
+  verification receipt, the full pipeline trail (per-station weather events
+  folded into one row) and every typed decision with its outcome. Reads only
+  files the pipeline already writes; rebuilding writes only `dashboard.html`.
+  Documented in `docs_site/guide/reading-evidence.md` §6.
+
 ### Changed
 - `output/dashboard.py`: `dashboard.html` now works offline. Plotly and
   Leaflet were loaded from `cdn.plot.ly` and `unpkg.com`, so without a
