@@ -346,6 +346,13 @@ def _collect_all_data(run_dir: Path) -> dict[str, Any]:
     if spatial:
         data["spatial_map"] = spatial
 
+    # ── Pipeline audit trail (ledgers, integrity, provenance) ────────────
+    try:
+        data["audit"] = _collect_audit(run_dir)
+    except Exception as exc:  # the dashboard must never fail a run
+        log.debug("Audit trail unavailable for %s: %s", run_dir, exc)
+        data["audit"] = {"error": str(exc)[:300]}
+
     return data
 
 
@@ -860,7 +867,7 @@ def _javascript() -> str:
 
   // ── View navigation ──────────────────────────────────────────────────
   html += '<nav class="tabs" aria-label="Dashboard views">';
-  for (const [key, label] of [['overview','Overview'],['hydrology','Hydrology'],['calibration','Calibration'],['spatial','Spatial'],['evidence','Evidence']]) {
+  for (const [key, label] of [['overview','Overview'],['hydrology','Hydrology'],['calibration','Calibration'],['spatial','Spatial'],['evidence','Evidence'],['audit','Audit']]) {
     html += '<button type="button" class="tab-button' + (key === 'overview' ? ' active' : '') + '" data-tab="' + key + '">' + label + '</button>';
   }
   html += '</nav>';
@@ -1066,6 +1073,81 @@ def _javascript() -> str:
   html += '<div class="section-title">Run and artifact details</div>';
   html += _renderRunDetails(D);
   html += '</div>';
+  html += '</section>';
+
+  // ── Audit ────────────────────────────────────────────────────────────
+  // The modeller's view of the headless pipeline: every recorded stage, every
+  // typed decision, and whether the evidence still matches what was sealed.
+  html += '<section class="tab-panel" data-panel="audit">';
+  const A = D.audit || {};
+  const short = h => h ? '<code title="' + esc(h) + '">' + esc(String(h).slice(0, 12)) + '…</code>' : '—';
+  const okBadge = (ok, yes, no) => '<span class="badge ' + (ok ? 'badge-success' : 'badge-danger') + '">' + esc(ok ? yes : no) + '</span>';
+  if (A.error) {
+    html += '<div class="card"><div class="section-title">Audit trail</div><p style="color:var(--danger);">Audit trail could not be read: ' + esc(A.error) + '</p></div>';
+  } else {
+    const V = A.verification || {};
+    html += '<div class="card" style="margin-bottom:20px;"><div class="section-title">Integrity</div>';
+    html += '<p style="color:var(--text-muted);font-size:0.85rem;margin:0 0 12px;">' + (V.mode === 'sealed'
+      ? 'Each hash-chained ledger was re-verified when this dashboard was built and compared with the head sealed in run_manifest.json.'
+      : 'Ledger heads are sealed after this dashboard is first written, so this view confirms each chain is intact up to that point. Run <code>swat audit verify</code> on the run directory, or rebuild the dashboard, for the sealed-head check.') + '</p>';
+    html += '<div class="table-wrap"><table class="data-table"><thead><tr><th>Check</th><th>Result</th><th>Detail</th></tr></thead><tbody>';
+    for (const [name, L] of Object.entries(V.ledgers || {})) {
+      const probs = (L.problems || []).join('; ');
+      html += '<tr><td>' + esc(humanize(name)) + ' ledger</td><td>' + okBadge(L.ok, V.mode === 'sealed' ? 'verified' : 'chain intact', 'failed') + '</td><td>' + esc(L.record_count) + ' records · head ' + short(L.head_sha256) + (probs ? ' · <span style="color:var(--danger);">' + esc(probs) + '</span>' : '') + '</td></tr>';
+    }
+    for (const f of (A.sealed_artifacts || [])) {
+      html += '<tr><td>' + esc(f.file) + '</td><td>' + okBadge(f.matches, 'unchanged', 'changed') + '</td><td>sealed ' + short(f.sealed_sha256) + (f.matches ? '' : ' · now ' + short(f.current_sha256)) + '</td></tr>';
+    }
+    if (!(A.sealed_artifacts || []).length) {
+      html += '<tr><td>Sealed evidence files</td><td><span class="badge badge-info">pending</span></td><td>The ledger hashes the evidence files as its final record.</td></tr>';
+    }
+    html += '</tbody></table></div></div>';
+
+    const E = A.environment || {}, K = A.input_lock || {}, R = A.receipt || null, M = A.manifest || {};
+    html += '<div class="card" style="margin-bottom:20px;"><div class="section-title">Provenance</div><div class="table-wrap"><table class="data-table"><tbody>';
+    const prow = (k, v) => { html += '<tr><td style="width:34%;">' + esc(k) + '</td><td>' + v + '</td></tr>'; };
+    prow('SWATPlus-Builder', esc(E.package_version || '—') + ' · git ' + short(E.git_sha || M.git_sha));
+    prow('SWAT+ engine', 'revision ' + esc(E.engine_revision || '—') + ' · sha256 ' + short(E.engine_sha256));
+    prow('Python / platform', esc(E.python || '—') + ' · ' + esc(E.platform || '—'));
+    if (E.dependency_versions) prow('Dependencies', esc(Object.entries(E.dependency_versions).map(([n, v]) => n + ' ' + v).join(' · ')));
+    if (K.input_configuration_sha256) prow('Benchmark input lock (pre-calibration)', esc(K.input_configuration_file_count) + ' files · ' + short(K.input_configuration_sha256) + ' · locked ' + esc(String(K.locked_at_utc || '').slice(0, 19).replace('T', ' ')) + ' UTC · outlet GIS ' + esc(K.outlet_gis_id ?? '—'));
+    if (R) prow('Locked verification run receipt', esc(R.input_configuration_file_count) + ' input files ' + short(R.input_configuration_sha256) + ' · engine exit ' + esc(R.returncode) + ' · ' + esc(R.output_files) + ' output files hashed · sealed ' + esc(String(R.sealed_at_utc || '').slice(0, 19).replace('T', ' ')) + ' UTC');
+    prow('Run manifest', esc(M.artifact_count ?? 0) + ' artifacts registered');
+    html += '</tbody></table></div></div>';
+
+    const trail = A.trail || [];
+    if (trail.length) {
+      html += '<div class="card" style="margin-bottom:20px;"><div class="section-title">Pipeline trail</div>';
+      html += '<p style="color:var(--text-muted);font-size:0.85rem;margin:0 0 12px;">Every stage the headless pipeline recorded, in ledger order. Elapsed time is measured from the previous recorded event.</p>';
+      html += '<div class="table-wrap"><table class="data-table"><thead><tr><th>#</th><th>Time (UTC)</th><th>Elapsed</th><th>Stage</th><th>Status</th><th>Detail</th></tr></thead><tbody>';
+      let prev = null;
+      for (const r of trail) {
+        const t = r.time ? Date.parse(r.time) : NaN;
+        let el = '';
+        if (prev !== null && !isNaN(t)) { const sec = Math.max(0, Math.round((t - prev) / 1000)); el = sec >= 3600 ? Math.floor(sec / 3600) + ' h ' + Math.round((sec % 3600) / 60) + ' min' : sec >= 60 ? Math.round(sec / 60) + ' min' : sec + ' s'; }
+        if (!isNaN(t)) prev = Date.parse(r.time_end || r.time);
+        const st = String(r.status || '');
+        const cls = /fail|error|block/.test(st) ? 'badge-danger' : /warn|skip/.test(st) ? 'badge-warning' : /pass|complet|captured|evaluated|stations/.test(st) ? 'badge-success' : 'badge-info';
+        html += '<tr><td>' + esc(r.seq) + '</td><td style="white-space:nowrap;">' + esc(String(r.time || '').replace('T', ' ').replace('Z', '')) + '</td><td style="white-space:nowrap;">' + esc(el) + '</td><td>' + esc(humanize(r.stage || '')) + '</td><td><span class="badge ' + cls + '">' + esc(humanize(st)) + '</span></td><td style="font-size:0.78rem;color:var(--text-muted);min-width:280px;overflow-wrap:anywhere;">' + esc(r.detail || '') + '</td></tr>';
+      }
+      html += '</tbody></table></div></div>';
+    }
+
+    const dec = A.decisions || [];
+    if (dec.length) {
+      html += '<div class="card"><div class="section-title">Decision ledger</div>';
+      html += '<p style="color:var(--text-muted);font-size:0.85rem;margin:0 0 12px;">Typed decisions the package made, who made them, and the recorded outcome of each.</p>';
+      html += '<div class="table-wrap"><table class="data-table"><thead><tr><th>#</th><th>Decision point</th><th>Chosen</th><th>Decided by</th><th>Rationale or outcome</th></tr></thead><tbody>';
+      for (const r of dec) {
+        if (r.kind === 'decision') {
+          html += '<tr><td>' + esc(r.seq) + '</td><td>' + esc(humanize(r.point || '')) + '</td><td><strong>' + esc(r.chosen ?? '') + '</strong>' + (r.options ? ' <span style="color:var(--text-muted);font-size:0.75rem;">of ' + esc(r.options) + '</span>' : '') + '</td><td>' + esc(humanize(r.decided_by || '')) + '</td><td style="font-size:0.8rem;min-width:200px;">' + esc(humanize(r.rationale || '')) + '</td></tr>';
+        } else {
+          html += '<tr style="background:#f8fafc;"><td>' + esc(r.seq) + '</td><td style="color:var(--text-muted);">↳ outcome' + (r.point ? ' of ' + esc(humanize(r.point)) : '') + '</td><td colspan="3" style="font-size:0.78rem;color:var(--text-muted);min-width:280px;overflow-wrap:anywhere;">' + esc(r.summary || '') + '</td></tr>';
+        }
+      }
+      html += '</tbody></table></div></div>';
+    }
+  }
   html += '</section>';
 
   // ── Footer ───────────────────────────────────────────────────────────
@@ -1723,6 +1805,146 @@ def _extract_station_name(
         if value:
             return value
     return None
+
+
+# Fields every ledger record carries; the trail shows only what is specific.
+_LEDGER_KEYS = frozenset({
+    "attempt_id", "run_id", "usgs_id", "model_family", "prev_sha256", "sha256", "seq",
+    "stage", "status", "time", "kind", "basin_id",
+})
+
+
+def _compact(value: Any, limit: int = 240) -> str:
+    """Render a record's extra fields as readable ``key: value`` pairs."""
+    if isinstance(value, dict):
+        parts = []
+        for k, v in value.items():
+            shown = v if isinstance(v, (str, int, float, bool)) or v is None else json.dumps(
+                v, default=str, separators=(", ", ": "))
+            parts.append(f"{k}: {shown}")
+        text = " · ".join(parts)
+    else:
+        text = json.dumps(value, default=str, separators=(", ", ": "))
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _collect_audit(run_dir: Path) -> dict[str, Any]:
+    """Read the run's hash-chained ledgers and integrity records for the Audit view.
+
+    Everything shown is read from files the pipeline already writes; nothing is
+    recomputed except SHA-256 digests, which are compared with the digests the
+    ledger sealed so that post-run edits to evidence files are visible.
+    """
+    from ..audit.decisions import DECISIONS_FILENAME, EVENTS_FILENAME, file_sha256, verify_run_audit
+    from ..audit.ledger import iter_records, verify_ledger
+
+    audit: dict[str, Any] = {}
+
+    # Ledger verification. Heads are sealed into run_manifest.json after the
+    # dashboard is first written, so a dashboard built during the run can only
+    # confirm that each chain is intact up to that point.
+    sealed = verify_run_audit(run_dir)
+    if sealed.get("sealed_heads_found"):
+        audit["verification"] = {"mode": "sealed", **sealed}
+    else:
+        chains = {
+            name: verify_ledger(run_dir / fn).to_dict()
+            for name, fn in (("events", EVENTS_FILENAME), ("decisions", DECISIONS_FILENAME))
+            if (run_dir / fn).is_file()
+        }
+        audit["verification"] = {
+            "mode": "chain_only",
+            "ok": bool(chains) and all(c["ok"] for c in chains.values()),
+            "ledgers": chains,
+        }
+
+    # Pipeline trail. Per-station weather events are folded into one row.
+    events_path = run_dir / EVENTS_FILENAME
+    trail: list[dict[str, Any]] = []
+    environment: dict[str, Any] = {}
+    sealed_artifacts: dict[str, str] = {}
+    group: dict[str, Any] | None = None
+    if events_path.is_file():
+        for rec in iter_records(events_path):
+            stage, status = str(rec.get("stage", "")), str(rec.get("status", ""))
+            if status.startswith("station_"):
+                if group is None or group["stage"] != stage:
+                    group = {"seq": rec.get("seq"), "time": rec.get("time"), "stage": stage,
+                             "status": "stations", "counts": {}}
+                    trail.append(group)
+                group["counts"][status] = group["counts"].get(status, 0) + 1
+                group["time_end"] = rec.get("time")
+                continue
+            group = None
+            if stage == "environment":
+                environment = {k: v for k, v in rec.items() if k not in _LEDGER_KEYS}
+                detail = "package {} · engine rev {}".format(
+                    environment.get("package_version", "?"), environment.get("engine_revision", "?"))
+            elif stage == "evidence_sealed":
+                sealed_artifacts = dict(rec.get("artifacts_sha256") or {})
+                detail = f"{len(sealed_artifacts)} evidence files hashed into the ledger"
+            else:
+                extra = {k: v for k, v in rec.items() if k not in _LEDGER_KEYS}
+                detail = _compact(extra) if extra else ""
+            trail.append({"seq": rec.get("seq"), "time": rec.get("time"), "stage": stage,
+                          "status": status, "detail": detail})
+    for row in trail:
+        if row.get("status") == "stations":
+            row["detail"] = ", ".join(f"{n} {k.removeprefix('station_')}"
+                                      for k, n in sorted(row.pop("counts").items()))
+    audit["trail"] = trail
+    audit["environment"] = environment
+
+    # Sealed evidence files, re-hashed now.
+    audit["sealed_artifacts"] = [
+        {"file": name, "sealed_sha256": digest, "current_sha256": file_sha256(run_dir / name),
+         "matches": file_sha256(run_dir / name) == digest}
+        for name, digest in sorted(sealed_artifacts.items())
+    ]
+
+    # Typed decisions and their recorded outcomes.
+    decisions_path = run_dir / DECISIONS_FILENAME
+    rows: list[dict[str, Any]] = []
+    points: dict[str, str] = {}
+    if decisions_path.is_file():
+        for rec in iter_records(decisions_path):
+            if rec.get("kind") == "decision":
+                points[str(rec.get("decision_id"))] = str(rec.get("decision_point", ""))
+                rows.append({"seq": rec.get("seq"), "time": rec.get("time"), "kind": "decision",
+                             "point": rec.get("decision_point"), "chosen": rec.get("chosen"),
+                             "decided_by": rec.get("decided_by"), "rationale": rec.get("rationale"),
+                             "options": len(rec.get("options") or [])})
+            elif rec.get("kind") == "outcome":
+                out = rec.get("outcome") or {}
+                cands = out.get("candidate_outcomes")
+                if isinstance(cands, dict):
+                    feasible = sum(1 for c in cands.values() if isinstance(c, dict) and c.get("feasible"))
+                    summary = f"{len(cands)} candidates evaluated, {feasible} feasible"
+                else:
+                    summary = _compact(out)
+                rows.append({"seq": rec.get("seq"), "time": rec.get("time"), "kind": "outcome",
+                             "point": points.get(str(rec.get("decision_id")), ""), "summary": summary})
+    audit["decisions"] = rows
+
+    # Input lock and execution receipt.
+    lock = _load_json(run_dir / "benchmark" / "benchmark_lock.json") or {}
+    audit["input_lock"] = {k: lock.get(k) for k in (
+        "locked_at_utc", "input_configuration_file_count", "input_configuration_sha256",
+        "outlet_gis_id", "outlet_scope", "git_sha") if k in lock}
+    receipt = _load_json(run_dir / "calibration" / "locked_calibrated_TxtInOut" / "engine_run_receipt.json")
+    if receipt:
+        audit["receipt"] = {
+            "sealed_at_utc": receipt.get("sealed_at_utc"),
+            "returncode": receipt.get("returncode"),
+            "input_configuration_file_count": receipt.get("input_configuration_file_count"),
+            "input_configuration_sha256": receipt.get("input_configuration_sha256"),
+            "engine": receipt.get("engine"),
+            "output_files": len(receipt.get("files") or {}),
+        }
+    manifest = _load_json(run_dir / "run_manifest.json") or {}
+    audit["manifest"] = {"git_sha": manifest.get("git_sha"), "generated_at": manifest.get("generated_at"),
+                         "artifact_count": len(manifest.get("artifacts") or {})}
+    return audit
 
 
 def _load_json(path: Path) -> dict[str, Any] | None:

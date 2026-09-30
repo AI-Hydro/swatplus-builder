@@ -67,6 +67,42 @@ mass closure. When a claim is blocked, this is where the justification lives.
 `evidence_summary.json` carries provenance hashes. Cite the repository and the
 run's provenance hash when reporting.
 
+## 6. Audit the whole run in `dashboard.html`
+
+Every workflow run writes `dashboard.html` into its run directory, including
+runs that were blocked before the engine ran. It is the modeller's interface to
+the headless pipeline: one self-contained file that opens in any browser,
+offline, with no server. Plotly and Leaflet are embedded; only the map's
+background tiles need a network.
+
+| Tab | What it answers |
+|---|---|
+| Overview | Which gates passed; benchmark, verified and withheld metrics side by side; known limitations; model inventory |
+| Hydrology | Hydrograph, flow-duration curve, observed vs simulated, baseflow index, seasonal flow, water balance |
+| Calibration | Method, search history and convergence, calibrated parameter positions |
+| Spatial | Basin, subbasins, channels, outlet, HRUs and DEM on a map; land-use and soil sources |
+| Evidence | Allowed and blocked claims with their basis or reason; run and artifact details |
+| Audit | Every recorded pipeline stage, every typed decision, and whether the evidence still matches what was sealed |
+
+The **Audit** tab re-verifies both hash-chained ledgers against the heads
+sealed in `run_manifest.json` and re-hashes the sealed evidence files, so a
+file edited after the run shows as *changed*. It also lists the package and
+engine versions, the benchmark input lock, and the locked verification run's
+execution receipt. A blocked run's trail shows the stage that stopped it and
+the typed reason every later stage records.
+
+The dashboard written during a run is built just before the ledgers are
+sealed, so its Audit tab can only confirm that each chain is intact at that
+point and says so. For the sealed-head check, run `swat audit verify <run_dir>`
+or rebuild the dashboard after the run:
+
+```python
+from swatplus_builder.output.dashboard import build_dashboard
+build_dashboard("runs/usgs_01547700")
+```
+
+Rebuilding writes only `dashboard.html`; it never touches the sealed evidence.
+
 ## A reading checklist
 
 - [ ] read `blocked_claims` — is my target claim blocked, and why?

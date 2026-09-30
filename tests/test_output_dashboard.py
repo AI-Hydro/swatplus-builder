@@ -303,3 +303,86 @@ def test_vendored_assets_match_recorded_hashes() -> None:
     assert set(recorded) == {"plotly.min.js", "leaflet.js", "leaflet.css"}
     for name, digest in recorded.items():
         assert hashlib.sha256((vendor_dir / name).read_bytes()).hexdigest() == digest, name
+
+
+def _audited_run(tmp_path: Path) -> Path:
+    """A minimal run directory with hash-chained ledgers, sealed like the workflow seals them."""
+    from swatplus_builder.audit.decisions import file_sha256
+    from swatplus_builder.audit.ledger import HashChainedLedger
+
+    (tmp_path / "evidence_summary.json").write_text('{"success": true}\n', encoding="utf-8")
+    events = HashChainedLedger(tmp_path / "events.jsonl")
+    events.append({"stage": "workflow", "status": "started", "time": "2026-01-01T00:00:00Z"})
+    events.append({"stage": "environment", "status": "captured", "time": "2026-01-01T00:00:01Z",
+                   "package_version": "9.9.9", "engine_revision": "61.0.2.61"})
+    for i in range(3):
+        events.append({"stage": "weather_gridmet", "status": "station_started", "station": i})
+        events.append({"stage": "weather_gridmet", "status": "station_completed", "station": i})
+    events.append({"stage": "pipeline", "status": "blocked", "time": "2026-01-01T00:01:00Z",
+                   "blocker_class": "full_model_build_topology_failed"})
+    events.append({"stage": "evidence_sealed", "status": "completed",
+                   "artifacts_sha256": {"evidence_summary.json": file_sha256(tmp_path / "evidence_summary.json")}})
+    decisions = HashChainedLedger(tmp_path / "decisions.jsonl")
+    decisions.append({"kind": "decision", "decision_id": "d1", "decision_point": "effective_claim_tier",
+                      "chosen": "exploratory", "decided_by": "package_rule", "rationale": "blocked",
+                      "options": ["exploratory", "research_grade"]})
+    decisions.append({"kind": "outcome", "decision_id": "d1", "outcome": {"blocked_claims": 13}})
+    manifest = {"audit_ledgers": {
+        "events": {"head_sha256": events.head, "records": events.count},
+        "decisions": {"head_sha256": decisions.head, "records": decisions.count},
+    }}
+    (tmp_path / "run_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    return tmp_path
+
+
+def test_audit_view_verifies_ledgers_and_sealed_evidence(tmp_path: Path) -> None:
+    from swatplus_builder.output.dashboard import _collect_audit
+
+    audit = _collect_audit(_audited_run(tmp_path))
+
+    assert audit["verification"]["mode"] == "sealed"
+    assert audit["verification"]["ok"] is True
+    assert [a["matches"] for a in audit["sealed_artifacts"]] == [True]
+    stages = [(r["stage"], r["status"]) for r in audit["trail"]]
+    # The six per-station events fold into one row.
+    assert stages.count(("weather_gridmet", "stations")) == 1
+    assert ("pipeline", "blocked") in stages
+    row = next(r for r in audit["trail"] if r["status"] == "stations")
+    assert row["detail"] == "3 completed, 3 started"
+    assert "blocker_class: full_model_build_topology_failed" in next(
+        r["detail"] for r in audit["trail"] if r["stage"] == "pipeline")
+    assert audit["environment"]["package_version"] == "9.9.9"
+    assert [d["kind"] for d in audit["decisions"]] == ["decision", "outcome"]
+    assert audit["decisions"][1]["point"] == "effective_claim_tier"
+
+
+def test_audit_view_flags_post_run_edits(tmp_path: Path) -> None:
+    from swatplus_builder.output.dashboard import _collect_audit
+
+    run = _audited_run(tmp_path)
+    (run / "evidence_summary.json").write_text('{"success": true, "edited": 1}\n', encoding="utf-8")
+    lines = (run / "decisions.jsonl").read_text(encoding="utf-8").splitlines()
+    lines[0] = lines[0].replace('"exploratory"', '"research_grade"', 1)
+    (run / "decisions.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    audit = _collect_audit(run)
+
+    assert audit["verification"]["ok"] is False
+    assert audit["verification"]["ledgers"]["decisions"]["ok"] is False
+    assert audit["verification"]["ledgers"]["events"]["ok"] is True
+    assert [a["matches"] for a in audit["sealed_artifacts"]] == [False]
+
+
+def test_audit_view_before_heads_are_sealed_checks_chains_only(tmp_path: Path) -> None:
+    from swatplus_builder.output.dashboard import _collect_audit, _render_html
+
+    run = _audited_run(tmp_path)
+    (run / "run_manifest.json").unlink()
+
+    audit = _collect_audit(run)
+
+    assert audit["verification"]["mode"] == "chain_only"
+    assert audit["verification"]["ok"] is True
+    html = _render_html({"usgs_id": "x", "audit": audit})
+    assert "['audit','Audit']" in html
+    assert "swat audit verify" in html  # the chain-only view tells the modeller how to finish the check
