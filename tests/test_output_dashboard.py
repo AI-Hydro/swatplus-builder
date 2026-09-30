@@ -9,6 +9,7 @@ from swatplus_builder.output.dashboard import (
     _collect_all_data,
     _dashboard_masthead_data_uri,
     _render_html,
+    _vendor_assets,
     build_dashboard,
 )
 
@@ -63,7 +64,11 @@ def test_dashboard_embeds_brand_masthead_and_accurate_license_attribution() -> N
     assert "© ' + esc(copyrightYears) + ' Mohammad Galib" in html
     assert "MIT License" in html
     assert "respective owners and terms" in html
-    assert "all rights reserved" not in html.lower()
+    # Third-party notices in the inlined libraries are theirs, not ours.
+    own = html
+    for text in _vendor_assets().values():
+        own = own.replace(text, "")
+    assert "all rights reserved" not in own.lower()
     assert 'name="theme-color"' in html
     assert "Auditable SWAT+ model evidence" in html
 
@@ -269,3 +274,32 @@ def test_dashboard_prefers_locked_benchmark_metrics_and_alignment(tmp_path: Path
     assert data["alignment"]["sim"] == [0.8]
     assert data["metrics_source"].endswith("benchmark/metrics.json")
     assert data["alignment_source"].endswith("benchmark/alignment.csv")
+
+
+def test_dashboard_is_self_contained_for_offline_use() -> None:
+    html = _render_html({"usgs_id": "01234567"})
+    vendor = _vendor_assets()
+
+    # Plotly and Leaflet are inlined; nothing is fetched from a CDN.
+    assert "<script src=" not in html
+    assert '<link rel="stylesheet" href="http' not in html
+    for text in vendor.values():
+        assert text in html
+    assert "plotly.js v3" in vendor["plotly.min.js"][:200]
+    assert "Leaflet 1.9.4" in vendor["leaflet.js"][:200]
+    # Plotly 3 rejects string axis titles; every title uses the object form.
+    assert "title: '" not in html
+    # Offline, the basemap is the only missing piece and the page says so.
+    assert "basemap-offline-note" in html
+
+
+def test_vendored_assets_match_recorded_hashes() -> None:
+    import hashlib
+    import re
+
+    vendor_dir = Path(__file__).resolve().parents[1] / "src/swatplus_builder/output/vendor"
+    table = (vendor_dir / "VENDORED.md").read_text(encoding="utf-8")
+    recorded = dict(re.findall(r"\| `([\w.]+)` \|.*\| `([0-9a-f]{64})` \|", table))
+    assert set(recorded) == {"plotly.min.js", "leaflet.js", "leaflet.css"}
+    for name, digest in recorded.items():
+        assert hashlib.sha256((vendor_dir / name).read_bytes()).hexdigest() == digest, name
