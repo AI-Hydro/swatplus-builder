@@ -4,6 +4,18 @@ All notable changes to swatplus-builder are documented here.
 
 ## [Unreleased]
 
+### Changed
+- `output/dashboard.py`: `dashboard.html` now works offline. Plotly and
+  Leaflet were loaded from `cdn.plot.ly` and `unpkg.com`, so without a
+  network the charts and map did not render. Both libraries are now vendored
+  in `output/vendor/` (plotly.js 3.0.1, Leaflet 1.9.4; versions, sources,
+  licenses and SHA-256 hashes in `vendor/VENDORED.md`) and inlined into every
+  dashboard, adding about 4.8 MB per file. Only the OpenStreetMap basemap
+  tiles still need a network; offline, the map draws the embedded model
+  layers on a blank background and shows a notice. Axis titles use the
+  `{ text: ... }` form that Plotly 3 requires. Dashboards already written
+  are unchanged; rebuild one with `build_dashboard(run_dir)`.
+
 ### Added
 - `scripts/decision_data_batch.py`: batch driver for generating decision-
   model training data across many basins (`docs/AGENT_HANDOFF.md` §3 item 2,

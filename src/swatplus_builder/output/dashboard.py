@@ -390,6 +390,26 @@ def _build_seasonal(alignment: dict[str, Any]) -> dict[str, Any] | None:
 # ── HTML rendering ────────────────────────────────────────────────────────────
 
 
+_VENDOR_DIR = Path(__file__).resolve().parent / "vendor"
+_VENDOR_FILES = ("plotly.min.js", "leaflet.js", "leaflet.css")
+
+
+@lru_cache(maxsize=1)
+def _vendor_assets() -> dict[str, str]:
+    """Return the vendored Plotly and Leaflet sources for inlining.
+
+    Inlining makes every dashboard self-contained, so it opens offline and
+    never depends on a CDN being reachable. Versions, sources and hashes are
+    recorded in ``vendor/VENDORED.md``.
+    """
+    assets = {}
+    for name in _VENDOR_FILES:
+        text = (_VENDOR_DIR / name).read_text(encoding="utf-8")
+        # A closing tag inside inlined code would end the element early.
+        assets[name] = text.replace("</script", "<\\/script").replace("</style", "<\\/style")
+    return assets
+
+
 def _render_html(data: dict[str, Any]) -> str:
     """Render the complete self-contained dashboard HTML."""
     # Prevent artifact text containing ``</script>`` from terminating the JSON
@@ -401,6 +421,7 @@ def _render_html(data: dict[str, Any]) -> str:
         f'.hero {{ background-image: url("{masthead_uri}"); }}' if masthead_uri else ""
     )
     # HTML-escape the title text
+    vendor = _vendor_assets()
     title_text = usgs_id.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -411,9 +432,15 @@ def _render_html(data: dict[str, Any]) -> str:
 <meta name="generator" content="swatplus-builder">
 <meta name="description" content="Auditable SWAT+ model evidence dashboard for USGS {title_text}">
 <title>SWAT+ Dashboard — USGS {title_text}</title>
-<script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+{vendor['plotly.min.js']}
+</script>
+<style>
+{vendor['leaflet.css']}
+</style>
+<script>
+{vendor['leaflet.js']}
+</script>
 <style>
 {_css()}
 {masthead_css}
@@ -544,6 +571,15 @@ body {
 .map-legend {
   background: rgba(255,255,255,.96); padding: 8px 10px; border-radius: 4px;
   box-shadow: var(--shadow); font-size: 0.75rem; line-height: 1.45;
+}
+.basemap-offline-note {
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  max-width: 260px;
 }
 .north-arrow {
   background: rgba(255,255,255,.92); padding: 5px 9px; border-radius: 4px;
@@ -1077,10 +1113,24 @@ def _javascript() -> str:
 
   if (D.spatial_map && D.spatial_map.layers && D.spatial_map.layers.length > 0 && window.L) {
     modelMap = L.map('model-map', { preferCanvas: true });
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    const basemap = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(modelMap);
+    // Offline, only the basemap tiles are missing: every model layer below is
+    // embedded in this file. Say so once instead of showing a blank grid.
+    let basemapNoticeShown = false;
+    basemap.on('tileerror', () => {
+      if (basemapNoticeShown) return;
+      basemapNoticeShown = true;
+      const note = L.control({ position: 'bottomleft' });
+      note.onAdd = function() {
+        const div = L.DomUtil.create('div', 'basemap-offline-note');
+        div.textContent = 'Basemap tiles unavailable (offline); model layers are embedded and complete.';
+        return div;
+      };
+      note.addTo(modelMap);
+    });
     const overlays = {};
     const styleByKind = {
       basin: { color: '#111827', weight: 3, fillColor: '#bfdbfe', fillOpacity: 0.12 },
@@ -1153,8 +1203,8 @@ def _javascript() -> str:
     }));
     Plotly.newPlot('chart-hydrograph', hydroTraces, {
       margin: { t: 44, r: 16, b: 44, l: 54 },
-      xaxis: { title: '', type: 'date' },
-      yaxis: { title: 'Discharge (m\u00B3/s)', rangemode: 'tozero' },
+      xaxis: { title: { text: '' }, type: 'date' },
+      yaxis: { title: { text: 'Discharge (m\u00B3/s)' }, rangemode: 'tozero' },
       legend: { orientation: 'h', x: 0, y: 1.15 },
       hovermode: 'x unified',
       paper_bgcolor: '#fff', plot_bgcolor: '#fafbfc'
@@ -1207,8 +1257,8 @@ def _javascript() -> str:
     }
     Plotly.newPlot('chart-fdc', fdcTraces, {
       margin: { t: 10, r: 20, b: 40, l: 50 },
-      xaxis: { title: 'Exceedance Probability (%)' },
-      yaxis: { title: 'Discharge (m\u00B3/s)', type: 'log', tickformat: '~g', automargin: true },
+      xaxis: { title: { text: 'Exceedance Probability (%)' } },
+      yaxis: { title: { text: 'Discharge (m\u00B3/s)' }, type: 'log', tickformat: '~g', automargin: true },
       legend: { orientation: 'h', y: 1.15 },
       paper_bgcolor: '#fff', plot_bgcolor: '#fafbfc'
     }, { responsive: true, displayModeBar: true, modeBarButtonsToRemove: ['lasso2d', 'select2d'] });
@@ -1231,8 +1281,8 @@ def _javascript() -> str:
     }
     Plotly.newPlot('chart-scatter', scatterTraces, {
       margin: { t: 10, r: 20, b: 40, l: 50 },
-      xaxis: { title: 'Observed (m\u00B3/s)', range: [0, maxVal] },
-      yaxis: { title: 'Simulated (m\u00B3/s)', range: [0, maxVal], scaleanchor: 'x', scaleratio: 1 },
+      xaxis: { title: { text: 'Observed (m\u00B3/s)' }, range: [0, maxVal] },
+      yaxis: { title: { text: 'Simulated (m\u00B3/s)' }, range: [0, maxVal], scaleanchor: 'x', scaleratio: 1 },
       legend: { orientation: 'h', y: 1.15 },
       paper_bgcolor: '#fff', plot_bgcolor: '#fafbfc'
     }, { responsive: true, displayModeBar: true, modeBarButtonsToRemove: ['lasso2d', 'select2d'] });
@@ -1250,7 +1300,7 @@ def _javascript() -> str:
           text: bfiBars.map(v => v.toFixed(3)), textposition: 'outside' }
       ], {
         margin: { t: 10, r: 20, b: 40, l: 50 },
-        yaxis: { title: 'Baseflow Index', range: [0, Math.max(...bfiBars, 0.1) * 1.25] },
+        yaxis: { title: { text: 'Baseflow Index' }, range: [0, Math.max(...bfiBars, 0.1) * 1.25] },
         paper_bgcolor: '#fff', plot_bgcolor: '#fafbfc'
       }, { responsive: true, displayModeBar: false });
     }
@@ -1269,7 +1319,7 @@ def _javascript() -> str:
       }
       Plotly.newPlot('chart-seasonal', seasonalTraces, {
         margin: { t: 10, r: 20, b: 40, l: 50 },
-        xaxis: { title: '' }, yaxis: { title: 'Mean daily discharge (m\u00B3/s)', rangemode: 'tozero' },
+        xaxis: { title: { text: '' } }, yaxis: { title: { text: 'Mean daily discharge (m\u00B3/s)' }, rangemode: 'tozero' },
         legend: { orientation: 'h', y: 1.15 },
         paper_bgcolor: '#fff', plot_bgcolor: '#fafbfc'
       }, { responsive: true, displayModeBar: true });
@@ -1341,8 +1391,8 @@ def _javascript() -> str:
           line: { width: 2.0, color: '#2563eb', dash: 'dot' }, name: 'Best KGE observed' }
       ], {
         margin: { t: 10, r: 20, b: 40, l: 50 },
-        xaxis: { title: 'Evaluation' }, yaxis: { title: 'NSE' },
-        yaxis2: { title: 'KGE', overlaying: 'y', side: 'right', showgrid: false },
+        xaxis: { title: { text: 'Evaluation' } }, yaxis: { title: { text: 'NSE' } },
+        yaxis2: { title: { text: 'KGE' }, overlaying: 'y', side: 'right', showgrid: false },
         legend: { orientation: 'h', y: 1.14 },
         paper_bgcolor: '#fff', plot_bgcolor: '#fafbfc'
       }, { responsive: true, displayModeBar: false });
@@ -1359,7 +1409,7 @@ def _javascript() -> str:
         text: details.map(row => row.boundary ? row.boundary + ' bound' : ''), textposition: 'auto', name: 'Range position' }
     ], {
       margin: { t: 10, r: 24, b: 44, l: 90 },
-      xaxis: { title: 'Position within governed range (%)', range: [0, 100] }, yaxis: { title: '', automargin: true },
+      xaxis: { title: { text: 'Position within governed range (%)' }, range: [0, 100] }, yaxis: { title: { text: '' }, automargin: true },
       paper_bgcolor: '#fff', plot_bgcolor: '#fafbfc'
     }, { responsive: true, displayModeBar: false });
   }
@@ -1381,7 +1431,7 @@ def _javascript() -> str:
           text: values.map(value => value.toFixed(1) + '%'), textposition: 'outside', cliponaxis: false }
       ], {
         margin: { t: 10, r: 48, b: 40, l: 190 },
-        xaxis: { title: 'Basin raster share (%)', rangemode: 'tozero' }, yaxis: { automargin: true },
+        xaxis: { title: { text: 'Basin raster share (%)' }, rangemode: 'tozero' }, yaxis: { automargin: true },
         paper_bgcolor: '#fff', plot_bgcolor: '#fafbfc'
       }, { responsive: true, displayModeBar: false });
     }
