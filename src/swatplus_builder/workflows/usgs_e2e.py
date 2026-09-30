@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import subprocess
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -2133,6 +2134,19 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
     manifest_payload["events_recorded"] = len(events)
     manifest_payload["audit_ledgers"] = audit.heads()
     _write_json(run_manifest_path, manifest_payload)
+
+    # Rebuild the dashboard now that the heads are sealed so its Audit tab
+    # carries the sealed-head check. No event is emitted here: a new event
+    # would move the sealed head. Only dashboard.html is rewritten.
+    if values.get("dashboard_html"):
+        try:
+            from ..output.dashboard import build_dashboard
+
+            build_dashboard(out)
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "post-seal dashboard rebuild failed; the in-run dashboard is kept", exc_info=True
+            )
 
     return RunUSGSWorkflowResult(
         success=bool(success),

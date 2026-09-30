@@ -534,6 +534,11 @@ def test_contract_policy_blocks_research_without_acceptance(tmp_path: Path):
     assert Path(data["values"]["dashboard_html"]).is_file()
     assert manifest["artifacts"]["dashboard_html"] == data["values"]["dashboard_html"]
     assert "Dashboard HTML" in evidence_md_text
+    # The dashboard is rebuilt after sealing, so its Audit tab carries the sealed-head check.
+    import re
+
+    dashboard_html = Path(data["values"]["dashboard_html"]).read_text(encoding="utf-8")
+    assert re.search(r'"mode":\s*"sealed"', dashboard_html)
     events_path = Path(res.artifact_dir, "events.jsonl")
     assert events_path.exists()
     events = [json.loads(line) for line in events_path.read_text(encoding="utf-8").splitlines()]

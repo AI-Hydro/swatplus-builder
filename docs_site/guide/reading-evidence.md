@@ -91,10 +91,12 @@ engine versions, the benchmark input lock, and the locked verification run's
 execution receipt. A blocked run's trail shows the stage that stopped it and
 the typed reason every later stage records.
 
-The dashboard written during a run is built just before the ledgers are
-sealed, so its Audit tab can only confirm that each chain is intact at that
-point and says so. For the sealed-head check, run `swat audit verify <run_dir>`
-or rebuild the dashboard after the run:
+The workflow builds the dashboard once during the run and again after the
+ledger heads are sealed, so the `dashboard.html` a finished run leaves behind
+already carries the sealed-head check. If the second build fails, the
+dashboard from the run is kept; its Audit tab then confirms only that each
+chain is intact and says so. To re-check a run later, run
+`swat audit verify <run_dir>` or rebuild the dashboard:
 
 ```python
 from swatplus_builder.output.dashboard import build_dashboard

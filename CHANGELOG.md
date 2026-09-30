@@ -18,6 +18,11 @@ All notable changes to swatplus-builder are documented here.
   Documented in `docs_site/guide/reading-evidence.md` §6.
 
 ### Changed
+- `workflows/usgs_e2e.py`: the run rebuilds `dashboard.html` once more after
+  the ledger heads are sealed, so the file every run leaves behind carries the
+  sealed-head check in its Audit tab instead of the chain-only view. The
+  rebuild emits no event (that would move the sealed head), rewrites only
+  `dashboard.html`, and a failure is logged and keeps the in-run dashboard.
 - `output/dashboard.py`: `dashboard.html` now works offline. Plotly and
   Leaflet were loaded from `cdn.plot.ly` and `unpkg.com`, so without a
   network the charts and map did not render. Both libraries are now vendored
