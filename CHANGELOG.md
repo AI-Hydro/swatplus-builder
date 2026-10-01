@@ -4,6 +4,16 @@ All notable changes to swatplus-builder are documented here.
 
 ## [Unreleased]
 
+### Changed
+- The dashboard labels the `research_grade` tier **Gate verified**, and the docs
+  state that it is a package tier and not a published performance class. The
+  identifier `research_grade` is unchanged, so recorded evidence stays valid.
+
+### Fixed
+- `full_mode/water_balance_gate.py`: the gate fails closed (`NON_FINITE_WATER_BALANCE`)
+  when precipitation, water yield, percolation or ET is missing or non-finite;
+  previously a NaN ET let the ET/P and mass-closure checks pass unevaluated.
+
 ### Added
 - `output/dashboard.py`: an **Audit** tab, so the dashboard every run writes
   serves as the modeller's interface to the headless pipeline. It re-verifies

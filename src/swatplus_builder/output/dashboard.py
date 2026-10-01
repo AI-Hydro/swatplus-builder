@@ -733,7 +733,7 @@ def _javascript() -> str:
   }
   function tierBadge(tier) {
     const t = String(tier || '').toLowerCase();
-    if (t === 'research_grade') return '<span class="badge badge-success">Research Grade</span>';
+    if (t === 'research_grade') return '<span class="badge badge-success" title="Identifier research_grade: every package gate passed. This is a package tier, not a published performance class.">Gate verified</span>';
     if (t === 'publication_grade') return '<span class="badge badge-info">Publication Grade</span>';
     if (t === 'diagnostic') return '<span class="badge badge-warning">Diagnostic</span>';
     if (t === 'exploratory') return '<span class="badge badge-neutral">Exploratory</span>';

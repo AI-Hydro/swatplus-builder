@@ -15,7 +15,7 @@ tier you are *granted* is computed from evidence.
 |---|---|
 | `exploratory` | the run executed and produced outputs; no skill/quality claim is supported |
 | `diagnostic` | outputs are usable for diagnosis; specific gated sub-claims may hold |
-| `research_grade` | gates for provenance, physical sensibility, verified skill, and outlet scope pass |
+| `research_grade` | gates for provenance, physical sensibility, verified skill, and outlet scope pass (shown as **Gate verified** in the dashboard) |
 | `publication_grade` | research-grade **plus** full-coverage sensitivity and the strictest preconditions |
 
 !!! note "The default request is conservative"
@@ -23,6 +23,12 @@ tier you are *granted* is computed from evidence.
     `research_grade` is a *policy-gated* request with preconditions (e.g. a
     ≥10-year window) — and even when accepted, the tier is only *granted* if
     the evidence gates pass.
+
+!!! note "`research_grade` is a package tier, not a performance class"
+    The identifier is kept for compatibility with recorded evidence. It means
+    that every gate configured in the package passed; the thresholds (for
+    example KGE ≥ 0.40, NSE ≥ 0, |PBIAS| ≤ 30 %) are more lenient than published
+    streamflow ratings. The dashboard therefore labels it **Gate verified**.
 
 ## Gates
 
