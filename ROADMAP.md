@@ -87,6 +87,19 @@ Acceptance criteria:
   fresh locked verification and withheld-period transfer may authorize a
   calibrated claim.
 
+Next calibration efficiency phase (research completed 2026-10-02):
+
+- Completed foundation: opt-in objective policy, per-call stage timings,
+  secondary-seed journals, semantic cache identity, in-process single-flight
+  and a hard search-request cap. Default objective replacement and confirmed
+  subprocess counting remains open. Whole-workflow request ledgers and exact-output policy adapters now pass a bounded live integration check; three full-rank development designs are prepared. The paired full-vector trial now completes 19 engine runs with fresh parity and 939 artifact checks; one adaptive request per arm cannot establish optimizer superiority. Repeated-seed performance benchmarks remain pending.
+- Completed development pilot: two parameters, one basin/seed, DDS and GP;
+  eleven successful runs, fresh reproduction and 193 audit checks. No GP win.
+- Benchmark DDS against optional constrained GP and rank-sufficient RBF-DYCORS
+  with identical scientific policies, charged screening costs and fresh verification.
+- Treat concurrency, revised process policies and multifidelity as separate experiments.
+- Protocol and evidence: `docs/research/calibration_2026-10-02/README.md`.
+
 ## Phase 5 — Runtime Claim Governance
 
 Goal:

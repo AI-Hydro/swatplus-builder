@@ -1339,19 +1339,19 @@ def _routing_flow_next_action(
         return "No routing-flow action required."
     flag_set = set(flags)
     if "multiple_terminal_outlets_present" in flag_set:
-        return "Review terminal outlet inventory and gauge-to-terminal selection before research-grade routing claims."
+        return "Review terminal outlet inventory and gauge-to-terminal selection before Gate-verified routing claims."
     if "channel_inflow_exceeds_basin_wateryld" in flag_set:
         if terminal_failure_class == "single_terminal_scope_valid":
             return (
                 "Selected terminal scope is supported by terminal inventory; audit SWAT+ channel-rate "
-                "versus basin-yield output semantics before promoting a research-grade routing claim."
+                "versus basin-yield output semantics before promoting a Gate-verified routing claim."
             )
         return (
             "Inspect routing-unit to channel transfer and SWAT+ output unit interpretation; "
             "selected-channel inflow exceeds basin water yield."
         )
     if not calibration_blocking:
-        return "Mass-closure mismatch is retained as a research-grade blocker; diagnostic calibration may proceed."
+        return "Mass-closure mismatch is retained as a Gate-verified blocker; diagnostic calibration may proceed."
     return "Inspect HRU-to-channel transfer, terminal outlet selection, and channel routing before calibration."
 
 

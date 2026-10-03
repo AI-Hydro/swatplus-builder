@@ -7,18 +7,19 @@ run.
 
 ## negotiate first
 
-For `research_grade` / `publication_grade` work, start by negotiating a
+For Gate-verified or Calibration verified requests (legacy identifiers
+`research_grade` and `publication_grade`), start by negotiating a
 contract. This validates policy preconditions *before* you spend compute.
 
 ```bash
-swat workflow negotiate --task "research-grade model for USGS 02177000, 2000-2019"
+swat workflow negotiate --task "Gate-verified workflow for USGS 02177000, 2000-2019"
 ```
 
 Behavior:
 
 1. parses the USGS ID and date range from the task;
 2. parses the requested claim tier;
-3. validates policy preconditions for research/publication requests (e.g. a
+3. validates policy preconditions for these stronger workflow requests (e.g. a
    ≥10-year window);
 4. emits `workflow_contract.json` and `WORKFLOW_CONTRACT.md`.
 
@@ -43,14 +44,14 @@ swat workflow run \
 ```
 
 Passing the accepted `--contract` (optionally with `--contract-status` and
-`--accepted-by`) lets a research-grade run carry its accepted contract metadata
+`--accepted-by`) lets a run requesting Gate-verified status carry its accepted contract metadata
 directly. Without it, a high-tier *request* still only yields a high-tier
 *grant* if the gates pass.
 
 `--hru-mode full_overlay` is the claim-conservative land-use fidelity path for
-research-grade probes. The default `dominant_only` mode remains useful for
+Gate-verified workflow probes. The default `dominant_only` mode remains useful for
 first-pass builds, but the land-use fidelity gate will not promote a
-research-grade land-use claim from dominant-only HRUs.
+verified land-use fidelity claim from dominant-only HRUs.
 
 ### The stages a run executes
 

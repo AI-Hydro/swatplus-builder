@@ -1,0 +1,74 @@
+{
+  "schema": "calibration_invocation_v1",
+  "invocation_id": "bfdb43e62874458191091196b8b367eb",
+  "started_at_utc": "2026-10-02T14:17:34.076996+00:00",
+  "cache_signature": "b9681b1d8b4e46bcd75f8ab44228393f507509ced9f557b7711d37d3b2fde73d",
+  "cache_status": "miss",
+  "engine_invoked": true,
+  "engine_invocation_basis": "run_swat_call",
+  "threads": 1,
+  "status": "completed",
+  "stage_seconds": {
+    "lock_wait": 8.674990385770798e-05,
+    "staging": 0.05007966700941324,
+    "parameter_preparation": 0.03651433298364282,
+    "engine_and_receipt": 16.03301570797339,
+    "evaluation": 1.359349625185132,
+    "physical_gate": 0.0002766251564025879
+  },
+  "budget_stage": "design",
+  "params": {
+    "ALPHA_BF": 0.9707789211917117,
+    "CN2": 55.28349958986258,
+    "CN3_SWF": 0.03712998291830975,
+    "EPCO": 0.6376287353826465,
+    "ESCO": 0.2197910241149887,
+    "GW_REVAP": 0.44398338818315786,
+    "LATQ_CO": 0.1386888618521465,
+    "LAT_TTIME": 113.53272057713323,
+    "PERCO": 0.9528264491104967,
+    "PET_CO": 0.9665657426076967,
+    "RCHG_DP": 0.4396951688804337,
+    "SFTMP": 2.0895229648727964,
+    "SMTMP": 2.1867441612476295,
+    "SURLAG": 2.2195297653677213
+  },
+  "params_sha256": "e400b5e33f66e5f0b189bff626076ae3096545280d9acbda299f19869c5b256b",
+  "policy_evidence": {
+    "status": "valid",
+    "utility": 0.5004908786555257,
+    "feasible": true,
+    "components": {
+      "kge": 0.5004908786555257
+    },
+    "reasons": [],
+    "constraints": [
+      {
+        "name": "reported_calibration_process_gate_proxy",
+        "residual": -1.0,
+        "kind": "process_policy"
+      }
+    ],
+    "context": {
+      "policy_sha256": "44b8881bcfa68a898a83dfad13252e70e383eae60bb0ee77e6c003009d9bbfd7",
+      "training_observation_sha256": "6edc8852e781484d2c11a8caa858c8f9cff6b6a86ecfd188a501e93eefff0163",
+      "epsilon": null
+    },
+    "provenance": {
+      "adapter_sha256": "253040ce669cf5aa8e834e5cc159419da9be9cf9aead8fa5ba51fad3e9e9e0cc",
+      "training_calendar_sha256": "cd184a49637e8db760df005d8cbb205f23e83383a4b9c8d4f9c6d55693397e3b",
+      "source_file": "channel_sd_day.txt",
+      "scored_calendar_sha256": "cd184a49637e8db760df005d8cbb205f23e83383a4b9c8d4f9c6d55693397e3b",
+      "scored_sample_count": 2191,
+      "scored_observation_sha256": "6edc8852e781484d2c11a8caa858c8f9cff6b6a86ecfd188a501e93eefff0163",
+      "scored_simulation_sha256": "a4a9cc7ea408fb04c079f7d38e4eeaa72d8b693d32098cc98f1c545f98d19112",
+      "source_sha256": "c6dd9541ad074d3fab9f0674b48f6082d0965bc7c256d08bcd98a2f2d5487a72",
+      "engine_receipt_sha256": "c966ad1a3f58809832b140ab3e023c1889d3c11c2fba6612c2f935f2a2cbcdb3",
+      "engine_run_id": "d987c7d53339408f8cab6be67dbe98da",
+      "receipt_input_configuration_sha256": "ec9861c7e17ed0e46daa370dd3743b272225442fbbcce68454ab0b81c3cf6b53",
+      "receipt_engine_sha256": "5c1936b04f4065f196aaa297d8b43ec3d4450c93d85923e33c3fba25419d2c1d"
+    }
+  },
+  "total_seconds": 17.528513999888673,
+  "finished_at_utc": "2026-10-02T14:17:51.605725+00:00"
+}

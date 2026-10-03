@@ -29,6 +29,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import pandas as pd
 from pydantic import BaseModel, Field
@@ -45,6 +46,7 @@ PRIMARY_DDS_SEED = 42
 def secondary_dds_seed(index: int) -> int:
     """Seed for the ``index``-th (1-based) secondary DDS ensemble member."""
     return PRIMARY_DDS_SEED + index * 13
+
 
 # ---------------------------------------------------------------------------
 # Data models
@@ -346,12 +348,15 @@ def lock_benchmark(
                 "terminal_outlet_ids": diag2.get("terminal_outlet_ids", []),
             },
             indent=2,
-        ) + "\n",
+        )
+        + "\n",
         encoding="utf-8",
     )
 
     sha_git = git_sha or try_git_sha(Path(__file__).resolve().parents[3]) or "unknown"
-    input_configuration_sha256, input_configuration_file_count = _input_configuration_fingerprint(txt)
+    input_configuration_sha256, input_configuration_file_count = _input_configuration_fingerprint(
+        txt
+    )
     lock = BenchmarkLock(
         basin_id=basin_id,
         locked_at_utc=datetime.now(timezone.utc).isoformat(),
@@ -364,7 +369,9 @@ def lock_benchmark(
         outlet_policy=lock_outlet_policy,
         outlet_scope=outlet_scope,
         selected_outlet_gis_ids=selected_outlet_gis_ids,
-        virtual_outlet_authority=virtual_outlet_authority if virtual_policy == "all_terminal_sum" else None,
+        virtual_outlet_authority=virtual_outlet_authority
+        if virtual_policy == "all_terminal_sum"
+        else None,
         virtual_outlet_claim_authority=virtual_policy == "all_terminal_sum",
         sim_source_file=sim_source_file,
         git_sha=sha_git,
@@ -405,6 +412,7 @@ def calibrate_against_lock(
     score_end: str | None = None,
     anchor_workers: int = 1,
     warm_start_json: Path | str | None = None,
+    hard_search_budget: bool = False,
 ) -> CalibrationEvidence:
     """Run real-engine DDS calibration against a locked benchmark.
 
@@ -418,7 +426,9 @@ def calibrate_against_lock(
         base_txtinout:   Source TxtInOut (fresh copy per evaluation).
         out_dir:         Root for calibration artifacts.
         parameters:      Parameter names; defaults to ``["CN2", "ALPHA_BF"]``.
-        n_evaluations:   Total real-engine evaluations (budget).
+        n_evaluations:   Legacy phase allocation; with hard_search_budget,
+                         maximum search objective requests including anchors
+                         and seed points (screening/verification are separate).
         binary:          Override SWAT+ binary path.
         timeout_s:       Per-evaluation engine timeout.
 
@@ -427,6 +437,17 @@ def calibrate_against_lock(
     """
     if parameters is None:
         parameters = ["CN2", "ALPHA_BF"]
+    if hard_search_budget and (int(n_evaluations) < 1 or dds_n_seeds != 1):
+        raise ValueError("hard_search_budget requires a positive budget and exactly one seed")
+    if hard_search_budget:
+        if isinstance(n_evaluations, bool) or int(n_evaluations) != n_evaluations:
+            raise ValueError("Hard search request budget must be an integer")
+        for configured_phase in calibration_phases or []:
+            value = configured_phase.get("budget")
+            if value is not None and (
+                isinstance(value, bool) or int(value) != value or int(value) < 1
+            ):
+                raise ValueError("Phase budgets must be positive integers")
 
     lock_source_is_artifact = not isinstance(lock, BenchmarkLock)
     lock = _resolve_lock(lock)
@@ -476,17 +497,17 @@ def calibrate_against_lock(
 
     cal_dir = out / "calibration_reports_locked"
     cal_dir.mkdir(parents=True, exist_ok=True)
+    search_attempt_id = uuid4().hex
     workers = max(1, int(anchor_workers))
     resolved_warm_start = (
-        Path(warm_start_json).expanduser().resolve()
-        if warm_start_json is not None
-        else None
+        Path(warm_start_json).expanduser().resolve() if warm_start_json is not None else None
     )
 
     objective = make_real_objective(
         base_txtinout=base_txtinout,
         observed_series=obs_train,
         work_root=cal_dir / "objective_runs",
+        telemetry_dir=cal_dir / "objective_invocations",
         outlet_gis_id=lock.outlet_gis_id,
         binary=binary,
         timeout_s=timeout_s,
@@ -536,6 +557,11 @@ def calibrate_against_lock(
         calibration_phases,
         n_evaluations=n_evaluations,
     )
+    if hard_search_budget and (
+        any(int(p["budget"]) < 1 for p in active_phases)
+        or sum(int(p["budget"]) for p in active_phases) > int(n_evaluations)
+    ):
+        raise ValueError("Phase budgets must be positive and within hard search request budget")
     # Full-mode calibration parameters are direct TxtInOut edits, not
     # guaranteed deltas from the basin's already-built values. Preserve a true
     # no-edit baseline candidate so the volume gate cannot exclude an otherwise
@@ -586,7 +612,9 @@ def calibrate_against_lock(
             "updated_at_utc": datetime.now(timezone.utc).isoformat(),
         }
         tmp_progress_path = progress_path.with_suffix(".json.tmp")
-        tmp_progress_path.write_text(json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8")
+        tmp_progress_path.write_text(
+            json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8"
+        )
         tmp_progress_path.replace(progress_path)
 
     # One record per phase describing the promotion decision actually taken
@@ -621,7 +649,11 @@ def calibrate_against_lock(
                         "phase_parameters": phase_parameters,
                         "phase_objective": phase["objective"],
                         "parameters": dict(current_params),
-                        "metrics": {"nse": float("nan"), "kge": float("nan"), "pbias": float("nan")},
+                        "metrics": {
+                            "nse": float("nan"),
+                            "kge": float("nan"),
+                            "pbias": float("nan"),
+                        },
                         "volume_gate_passed": False,
                         "physical_gate_passed": False,
                         "calibration_process_gate_passed": False,
@@ -686,7 +718,12 @@ def calibrate_against_lock(
             try:
                 metrics = objective(point)
             except Exception as e:
-                metrics = {"nse": float("nan"), "kge": float("nan"), "pbias": float("nan"), "error": str(e)}
+                metrics = {
+                    "nse": float("nan"),
+                    "kge": float("nan"),
+                    "pbias": float("nan"),
+                    "error": str(e),
+                }
                 failure_reason = f"objective_error: {e}"
             if failure_reason is None:
                 missing = _nonfinite_required_objective_metrics(metrics)
@@ -738,7 +775,9 @@ def calibrate_against_lock(
                 metrics=metrics,
                 error=failure_reason,
             )
-            return metrics
+            # Preserve failure evidence, but prohibit score fallbacks from
+            # turning an invalid required metric into a selectable candidate.
+            return {} if failure_reason else metrics
 
         def _evaluate_and_record(
             point: dict[str, float],
@@ -788,6 +827,8 @@ def calibrate_against_lock(
                 max_points=min(8, max(4, phase_budget)),
             )
 
+        if hard_search_budget:
+            phase_anchor_points = phase_anchor_points[:phase_budget]
         anchor_results: list[tuple[dict[str, Any], str | None]] = []
         if workers == 1 or len(phase_anchor_points) <= 1:
             anchor_results = [_evaluate_metrics(point) for point in phase_anchor_points]
@@ -820,7 +861,9 @@ def calibrate_against_lock(
                 continue
             if score > phase_best_score:
                 phase_best_score = score
-                phase_best_metrics = {k: float(v) for k, v in metrics.items() if isinstance(v, (int, float))}
+                phase_best_metrics = {
+                    k: float(v) for k, v in metrics.items() if isinstance(v, (int, float))
+                }
                 phase_best_params = dict(anchor_point)
 
         if search_method == "dds":
@@ -831,7 +874,12 @@ def calibrate_against_lock(
                 phase_parameters=phase_parameters,
                 param_bounds=param_bounds,
                 start_params=phase_best_params or current_params,
-                budget=max(1, phase_budget - len(phase_anchor_points)),
+                budget=(
+                    max(0, phase_budget - len(phase_anchor_points))
+                    if hard_search_budget
+                    else max(1, phase_budget - len(phase_anchor_points))
+                ),
+                budget_is_total=hard_search_budget,
                 rng=rng,
                 r=dds_r,
                 initial_best=(
@@ -846,8 +894,14 @@ def calibrate_against_lock(
                 phase_parameters=phase_parameters,
                 param_bounds=param_bounds,
                 rng=rng,
-                n_evaluations=phase_budget,
+                n_evaluations=(
+                    max(0, phase_budget - len(phase_anchor_points))
+                    if hard_search_budget
+                    else phase_budget
+                ),
             )
+            if hard_search_budget:
+                points = points[: max(0, phase_budget - len(phase_anchor_points))]
             for point in points:
                 metrics = _evaluate_and_record(point)
                 volume_gate_passed = _volume_gate_passed(metrics)
@@ -856,7 +910,9 @@ def calibrate_against_lock(
                     continue
                 if score > phase_best_score:
                     phase_best_score = score
-                    phase_best_metrics = {k: float(v) for k, v in metrics.items() if isinstance(v, (int, float))}
+                    phase_best_metrics = {
+                        k: float(v) for k, v in metrics.items() if isinstance(v, (int, float))
+                    }
                     phase_best_params = dict(point)
 
         if phase_best_params is None:
@@ -902,7 +958,14 @@ def calibrate_against_lock(
     with history_csv.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(
             f,
-            fieldnames=["eval_idx", "phase", "phase_order", "phase_parameters", "phase_objective", "status"]
+            fieldnames=[
+                "eval_idx",
+                "phase",
+                "phase_order",
+                "phase_parameters",
+                "phase_objective",
+                "status",
+            ]
             + [f"param_{p}" for p in param_names]
             + [
                 "metric_nse",
@@ -958,7 +1021,9 @@ def calibrate_against_lock(
             row["calibration_process_condition_codes"] = ",".join(
                 ev.get("calibration_process_condition_codes") or []
             )
-            row["physical_gate_condition_codes"] = ",".join(ev.get("physical_gate_condition_codes") or [])
+            row["physical_gate_condition_codes"] = ",".join(
+                ev.get("physical_gate_condition_codes") or []
+            )
             row["physical_gate_dominant_blocker"] = ev.get("physical_gate_dominant_blocker")
             row["failure_reason"] = ev.get("failure_reason")
             writer.writerow(row)
@@ -978,17 +1043,15 @@ def calibrate_against_lock(
     # equifinality landscape: different random seeds may converge to different
     # local optima with comparable skill but different parameter profiles.
     # The primary seed's evaluations are already recorded in ``evaluations``;
-    # secondary-seed evaluations are not recorded in the history CSV (they are
-    # refinement runs that inform uncertainty, not protocol trace).
+    # Secondary-seed requests are journaled separately with their seed/phase
+    # and status; history.csv remains the primary phased protocol trace.
     import math as _math
 
     ensemble_nse_per_seed: list[float] = [float(best_metrics.get("nse", float("nan")))]
     ensemble_kge_per_seed: list[float] = [float(best_metrics.get("kge", float("nan")))]
 
     if search_method == "dds" and dds_n_seeds > 1:
-        # Per-seed budget: divide the primary budget across seeds.
-        # Secondary seeds use a condensed budget so the ensemble remains
-        # computationally tractable while still exploring distinct basins.
+        # Additional per-seed allocation, not a split of the primary budget.
         seed_budget = max(4, int(n_evaluations) // max(1, dds_n_seeds))
 
         for seed_idx in range(1, max(2, dds_n_seeds)):
@@ -1009,8 +1072,44 @@ def calibrate_against_lock(
                 phase_objective = str(phase["objective"])
                 phase_budget = max(1, int(phase["budget"]))
 
+                def _secondary_evaluate(
+                    point: dict[str, float],
+                    _seed_idx: int = seed_idx,
+                    _phase_name: str = str(phase["phase"]),
+                ) -> dict[str, Any]:
+                    record: dict[str, Any] = {
+                        "search_attempt_id": search_attempt_id,
+                        "seed_index": _seed_idx,
+                        "seed": secondary_dds_seed(_seed_idx),
+                        "phase": _phase_name,
+                        "parameters": dict(point),
+                        "status": "failed",
+                        "metrics": None,
+                    }
+                    try:
+                        result = objective(point)
+                        record["metrics"] = {
+                            k: _finite_or_none(v)
+                            for k, v in result.items()
+                            if isinstance(v, (int, float))
+                        }
+                        record["status"] = (
+                            "invalid_objective_metrics"
+                            if _nonfinite_required_objective_metrics(result)
+                            else "evaluated"
+                        )
+                        return {} if record["status"] == "invalid_objective_metrics" else result
+                    except Exception as error:
+                        record["error"] = str(error)
+                        raise
+                    finally:
+                        with (cal_dir / "secondary_evaluations.jsonl").open(
+                            "a", encoding="utf-8"
+                        ) as journal:
+                            journal.write(json.dumps(record, allow_nan=False) + "\n")
+
                 refine_params, refine_metrics, _s = _dds_search(
-                    evaluate=objective,
+                    evaluate=_secondary_evaluate,
                     score_fn=lambda m, _obj=phase_objective: _score_candidate(m, objective=_obj),
                     feasible_fn=_volume_gate_passed,
                     phase_parameters=phase_parameters,
@@ -1024,7 +1123,9 @@ def calibrate_against_lock(
                     seed_failure = True
                     break
                 seed_params = dict(refine_params)
-                seed_metrics = {k: float(v) for k, v in refine_metrics.items() if isinstance(v, (int, float))}
+                seed_metrics = {
+                    k: float(v) for k, v in refine_metrics.items() if isinstance(v, (int, float))
+                }
 
             if not seed_failure and seed_metrics:
                 seed_nse = float(seed_metrics.get("nse", float("nan")))
@@ -1055,6 +1156,7 @@ def calibrate_against_lock(
                 base_txtinout=base_txtinout,
                 observed_series=obs_val,
                 work_root=cal_dir / "validation_eval",
+                telemetry_dir=cal_dir / "validation_invocations",
                 outlet_gis_id=lock.outlet_gis_id,
                 binary=binary,
                 timeout_s=timeout_s,
@@ -1107,6 +1209,12 @@ def calibrate_against_lock(
         "dds_seed": PRIMARY_DDS_SEED,
         "dds_rng": "python.random.Random",
         "dds_n_seeds": int(dds_n_seeds),
+        "search_attempt_id": search_attempt_id,
+        "search_budget_policy": "hard_objective_requests_v1"
+        if hard_search_budget
+        else "legacy_phase_allocation",
+        "search_budget_excludes": ["sensitivity_screen", "validation", "locked_verification"],
+        "secondary_evaluation_journal": "secondary_evaluations.jsonl" if dds_n_seeds > 1 else None,
         "dds_secondary_seeds": [secondary_dds_seed(i) for i in range(1, max(1, int(dds_n_seeds)))],
     }
     screening_window = {
@@ -1232,7 +1340,7 @@ def screen_parameters_against_lock(
     """Run a basin-specific one-at-a-time sensitivity screen against a lock.
 
     Each parameter perturbation uses the same fresh real-engine objective path
-    as calibration candidates, so this artifact can govern research-grade
+    as calibration candidates, so this artifact can govern Gate-verified
     calibration eligibility without relying on static/global activity labels.
     Bound perturbations are independent and may run concurrently; each worker
     receives an isolated objective directory and uses the objective's
@@ -1266,6 +1374,7 @@ def screen_parameters_against_lock(
         base_txtinout=base_txtinout,
         observed_series=obs_series,
         work_root=screen_dir / "objective_runs",
+        telemetry_dir=screen_dir / "objective_invocations",
         outlet_gis_id=lock.outlet_gis_id,
         binary=binary,
         timeout_s=timeout_s,
@@ -1321,7 +1430,9 @@ def screen_parameters_against_lock(
             "warnings": warnings,
             "updated_at_utc": datetime.now(timezone.utc).isoformat(),
         }
-        progress_path.write_text(json.dumps(progress, indent=2, default=str) + "\n", encoding="utf-8")
+        progress_path.write_text(
+            json.dumps(progress, indent=2, default=str) + "\n", encoding="utf-8"
+        )
 
     _write_progress(status="running")
     parameter_bounds: dict[str, list[tuple[str, float]]] = {}
@@ -1338,18 +1449,16 @@ def screen_parameters_against_lock(
             bound_values.append(("default", default))
         parameter_bounds[name] = bound_values
 
-    def _evaluate_bound(name: str, bound: str, value: float) -> tuple[str, str, float, dict[str, Any]]:
+    def _evaluate_bound(
+        name: str, bound: str, value: float
+    ) -> tuple[str, str, float, dict[str, Any]]:
         return name, bound, value, objective({name: value})
 
     bound_results_by_parameter: dict[str, list[tuple[str, float, dict[str, Any]]]] = {
         name: [] for name in parameters
     }
     bound_errors: dict[str, str] = {}
-    tasks = [
-        (name, bound, value)
-        for name in parameters
-        for bound, value in parameter_bounds[name]
-    ]
+    tasks = [(name, bound, value) for name in parameters for bound, value in parameter_bounds[name]]
     total_bounds = len(tasks)
     if workers == 1 or len(tasks) <= 1:
         for name, bound, value in tasks:
@@ -1400,8 +1509,12 @@ def screen_parameters_against_lock(
                 base_nse = _optional_float(baseline_metrics.get("nse"))
                 metric_kge = _optional_float(metrics.get("kge"))
                 base_kge = _optional_float(baseline_metrics.get("kge"))
-                nse_effect = None if metric_nse is None or base_nse is None else metric_nse - base_nse
-                kge_effect = None if metric_kge is None or base_kge is None else metric_kge - base_kge
+                nse_effect = (
+                    None if metric_nse is None or base_nse is None else metric_nse - base_nse
+                )
+                kge_effect = (
+                    None if metric_kge is None or base_kge is None else metric_kge - base_kge
+                )
                 score = _score_candidate(
                     metrics,
                     objective="maintain_volume_gate_then_rank_nse_kge",
@@ -1552,7 +1665,9 @@ def write_diagnostic_warm_start(
         "basis": "basin_specific_locked_sensitivity",
         "authority": "exploratory_warm_start_only",
         "source_sensitivity_json": str(source),
-        "source_sensitivity_sha256": hashlib.sha256(source.read_bytes()).hexdigest() if source.is_file() else None,
+        "source_sensitivity_sha256": hashlib.sha256(source.read_bytes()).hexdigest()
+        if source.is_file()
+        else None,
         "claim_rule": (
             "Directions require fresh real-engine evaluation, locked verification, "
             "and withheld-period validation before any calibrated claim."
@@ -1574,7 +1689,9 @@ def write_diagnostic_warm_start(
     ]
     for row in directions:
         lines.append(
-            "| `{parameter}` | `{value:.6g}` | `{abs_pbias:.6g}` | `{score_delta:+.6g}` |".format(**row)
+            "| `{parameter}` | `{value:.6g}` | `{abs_pbias:.6g}` | `{score_delta:+.6g}` |".format(
+                **row
+            )
         )
     if not directions:
         lines.append("| _none_ | - | - | - |")
@@ -1652,15 +1769,24 @@ def _write_phase_decisions(
         promoted_eval_idx: int | None = None
         promoted = record.get("promoted_parameters")
         for ev in evaluations:
-            if ev.get("phase_order") != order or ev.get("status") not in {"evaluated", "invalid_objective_metrics"}:
+            if ev.get("phase_order") != order or ev.get("status") not in {
+                "evaluated",
+                "invalid_objective_metrics",
+            }:
                 continue
             metrics = ev.get("metrics") or {}
-            score = _score_candidate(metrics, objective=objective) if ev.get("status") == "evaluated" else float("-inf")
+            score = (
+                _score_candidate(metrics, objective=objective)
+                if ev.get("status") == "evaluated"
+                else float("-inf")
+            )
             feasible = bool(ev.get("volume_gate_passed")) and score != float("-inf")
             candidates.append(
                 {
                     "eval_idx": ev.get("eval_idx"),
-                    "parameters": {k: _finite_or_none(v) for k, v in (ev.get("parameters") or {}).items()},
+                    "parameters": {
+                        k: _finite_or_none(v) for k, v in (ev.get("parameters") or {}).items()
+                    },
                     "metrics": {k: _finite_or_none(metrics.get(k)) for k in _CANDIDATE_METRIC_KEYS},
                     "volume_gate_passed": ev.get("volume_gate_passed"),
                     "physical_gate_passed": ev.get("physical_gate_passed"),
@@ -1672,9 +1798,15 @@ def _write_phase_decisions(
                     "feasible": feasible,
                 }
             )
-            if promoted_eval_idx is None and promoted is not None and ev.get("parameters") == promoted:
+            if (
+                promoted_eval_idx is None
+                and promoted is not None
+                and ev.get("parameters") == promoted
+            ):
                 promoted_eval_idx = ev.get("eval_idx")
-        clean = {k: v for k, v in record.items() if k not in {"promoted_parameters", "first_eval_idx"}}
+        clean = {
+            k: v for k, v in record.items() if k not in {"promoted_parameters", "first_eval_idx"}
+        }
         for key in ("incoming_parameters", "incoming_metrics"):
             if isinstance(clean.get(key), dict):
                 clean[key] = {k: _finite_or_none(v) for k, v in clean[key].items()}
@@ -1693,7 +1825,7 @@ def _write_phase_decisions(
         "schema": PHASE_DECISIONS_SCHEMA,
         # Multi-seed DDS refinement (dds_n_seeds > 1) runs after this phased
         # search and may change the final parameters; its evaluations are in
-        # history.csv, not here.
+        # secondary_evaluations.jsonl, not here or in history.csv.
         "scope": "primary_phased_search",
         "phases": phases_out,
     }
@@ -1836,6 +1968,7 @@ def _dds_search(
     rng: Any,
     r: float = 0.2,
     initial_best: tuple[dict[str, float], dict[str, float], float] | None = None,
+    budget_is_total: bool = False,
 ) -> tuple[dict[str, float] | None, dict[str, float], float]:
     """Run DDS over ``phase_parameters``, seeded from ``start_params``.
 
@@ -1854,6 +1987,14 @@ def _dds_search(
     or ``(None, {}, -inf)`` when no feasible candidate is found.
     """
     import math
+
+    if budget_is_total and int(budget) < 0:
+        raise ValueError("Total DDS request budget cannot be negative")
+    iterations = max(int(budget), 1)
+    if budget_is_total:
+        iterations = int(budget) - (1 if initial_best is None and budget > 0 else 0)
+        if int(budget) == 0:
+            return initial_best if initial_best is not None else (None, {}, float("-inf"))
 
     def _walk_score(metrics: dict[str, Any]) -> float:
         base = score_fn(metrics)
@@ -1892,7 +2033,7 @@ def _dds_search(
                 }
                 best_feasible_score = s
 
-    for i in range(1, max(int(budget), 1) + 1):
+    for i in range(1, iterations + 1):
         candidate = _dds_propose(
             walk_best_point,
             phase_parameters=phase_parameters,
@@ -2058,7 +2199,11 @@ def _rank_sensitivity_warm_start_directions(payload: dict[str, Any]) -> list[dic
         )
     return sorted(
         directions,
-        key=lambda row: (float(row["abs_pbias"]), -float(row["score_delta"]), str(row["parameter"])),
+        key=lambda row: (
+            float(row["abs_pbias"]),
+            -float(row["score_delta"]),
+            str(row["parameter"]),
+        ),
     )
 
 
@@ -2271,7 +2416,9 @@ def _current_params_process_gate_valid(
     )
 
 
-def _candidate_physical_gate_context(objective_runs_dir: Path, params: dict[str, float]) -> dict[str, Any]:
+def _candidate_physical_gate_context(
+    objective_runs_dir: Path, params: dict[str, float]
+) -> dict[str, Any]:
     try:
         from .real_engine import params_hash
 
@@ -2393,6 +2540,7 @@ def verify_calibration(
         base_txtinout=base_txtinout,
         observed_series=obs_series,
         work_root=verify_dir,
+        telemetry_dir=verify_dir.parent / "verification_invocations",
         outlet_gis_id=lock.outlet_gis_id,
         binary=binary,
         timeout_s=timeout_s,
@@ -2437,15 +2585,33 @@ def verify_calibration(
     with comparison_csv.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=["metric", "benchmark", "calibrated", "delta"])
         writer.writeheader()
-        writer.writerow({"metric": "nse", "benchmark": lock.baseline_nse, "calibrated": verified_nse, "delta": delta_nse})
-        writer.writerow({"metric": "kge", "benchmark": lock.baseline_kge, "calibrated": verified_kge, "delta": delta_kge})
+        writer.writerow(
+            {
+                "metric": "nse",
+                "benchmark": lock.baseline_nse,
+                "calibrated": verified_nse,
+                "delta": delta_nse,
+            }
+        )
+        writer.writerow(
+            {
+                "metric": "kge",
+                "benchmark": lock.baseline_kge,
+                "calibrated": verified_kge,
+                "delta": delta_kge,
+            }
+        )
         if benchmark_pbias is not None or verified_pbias is not None:
-            writer.writerow({
-                "metric": "pbias",
-                "benchmark": benchmark_pbias,
-                "calibrated": verified_pbias,
-                "delta": None if benchmark_pbias is None or verified_pbias is None else verified_pbias - benchmark_pbias,
-            })
+            writer.writerow(
+                {
+                    "metric": "pbias",
+                    "benchmark": benchmark_pbias,
+                    "calibrated": verified_pbias,
+                    "delta": None
+                    if benchmark_pbias is None or verified_pbias is None
+                    else verified_pbias - benchmark_pbias,
+                }
+            )
 
     report_md = out / "CALIBRATION_VERIFICATION.md"
     status = "IMPROVED" if result.improved else "NO IMPROVEMENT"
@@ -2463,7 +2629,8 @@ def verify_calibration(
                 f"| NSE | `{lock.baseline_nse:.6f}` | `{verified_nse:.6f}` | `{delta_nse:+.6f}` |",
                 f"| KGE | `{lock.baseline_kge:.6f}` | `{verified_kge:.6f}` | `{delta_kge:+.6f}` |",
             ]
-        ) + "\n",
+        )
+        + "\n",
         encoding="utf-8",
     )
 
@@ -2541,9 +2708,12 @@ def build_readiness_table(
             delta_nse=vr.delta_nse if vr else None,
             delta_kge=vr.delta_kge if vr else None,
             improved=vr.improved if vr else None,
-            verification_status="verified_improved" if (vr and vr.improved)
-            else "verified_no_improvement" if (vr and not vr.improved)
-            else "locked_no_verification" if lock
+            verification_status="verified_improved"
+            if (vr and vr.improved)
+            else "verified_no_improvement"
+            if (vr and not vr.improved)
+            else "locked_no_verification"
+            if lock
             else "unknown",
         )
         rows.append(row)
@@ -2717,8 +2887,9 @@ def _assert_benchmark_integrity(
     try:
         verify_benchmark_artifacts(benchmark_dir / "benchmark_lock.json")
     except (OSError, ValueError, TypeError) as exc:
-        raise SwatBuilderInputError("Benchmark lock integrity check failed; relock before calibration.",
-                                    reason=str(exc)) from exc
+        raise SwatBuilderInputError(
+            "Benchmark lock integrity check failed; relock before calibration.", reason=str(exc)
+        ) from exc
     expected = {
         "alignment.csv": lock.alignment_sha256,
         "metrics.json": lock.metrics_sha256,
@@ -2732,7 +2903,10 @@ def _assert_benchmark_integrity(
     actual_hash, actual_count = _input_configuration_fingerprint(base_txtinout)
     if actual_hash != lock.input_configuration_sha256:
         mismatches.append("TxtInOut input configuration")
-    if lock.input_configuration_file_count is not None and actual_count != lock.input_configuration_file_count:
+    if (
+        lock.input_configuration_file_count is not None
+        and actual_count != lock.input_configuration_file_count
+    ):
         mismatches.append("TxtInOut input file inventory")
     if mismatches:
         raise SwatBuilderInputError(

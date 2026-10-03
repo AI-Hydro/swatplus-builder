@@ -128,7 +128,7 @@ fastest way to bring a cold agent up to competence on the pipeline.
 
 ## Then ask in natural language
 
-> "Negotiate a research-grade contract for USGS 02177000 over 2000–2019, run
+> "Negotiate a Gate-verified workflow contract for USGS 02177000 over 2000–2019, run
 > the canonical workflow, then summarize only from the evidence bundle —
 > report allowed and blocked claims."
 

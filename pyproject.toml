@@ -94,6 +94,12 @@ viz = [
     # Install with: pip install 'swatplus-builder[viz]'
     "matplotlib>=3.7,<4.0",
 ]
+surrogate = [
+    # Experimental constrained-GP backend; this extra requires Python >=3.11.
+    # Keep it separate from default/all installs because of PyTorch's footprint.
+    "botorch==0.17.0",
+    "gpytorch==1.15.2",
+]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",

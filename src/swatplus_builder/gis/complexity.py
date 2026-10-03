@@ -14,7 +14,7 @@ from typing import Any
 
 @dataclass(frozen=True)
 class DiscretizationPolicy:
-    """Practical limits for research-grade automated delineation.
+    """Practical limits for Gate-verified automated delineation.
 
     The defaults intentionally target streamflow modeling, not fine-scale BMP
     siting.  Users can still override them for diagnostic or management-scale

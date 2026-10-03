@@ -39,7 +39,8 @@ result is allowed to claim**.
 -   :material-shield-check: **Claims you can audit**
 
     Runtime gates decide a result's tier —
-    `exploratory → diagnostic → research_grade → publication_grade`. A strong
+    Exploratory → Diagnostic → Calibration verified → Gate-verified
+    (stored as `exploratory → diagnostic → publication_grade → research_grade`). A strong
     metric never promotes itself past a failed gate.
 
 -   :material-file-document-multiple: **A complete evidence bundle**
@@ -74,7 +75,7 @@ clean rerun, and writes the evidence bundle. Start with the
 
 !!! warning "This is research software — read the status page"
     The dated 2026-07-02 objective-suite snapshot promoted **0 of 11 complete
-    workflows** to the package-defined `research_grade` tier; a later focused
+    workflows** to the Gate-verified tier (stored as `research_grade`); a later focused
     positive case is reported separately and does not revise that snapshot.
     The value is an *auditable* workflow that makes both successes and
     limitations inspectable — not a claim that automated SWAT+ calibration is a

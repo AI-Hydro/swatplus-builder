@@ -37,7 +37,7 @@ swat workflow run \
 | `--contract` | — | path to an accepted `workflow_contract.json` (see below) |
 | `--json` | off | emit a machine-readable summary to stdout |
 
-!!! warning "Requesting research-grade requires a contract"
+!!! warning "Requesting Gate-verified status requires a contract"
     Requesting `research_grade` / `publication_grade` is a *policy-gated*
     request. The toolchain checks preconditions (e.g. a ≥10-year window) and
     expects accepted contract metadata. The clean way to do this is to
@@ -66,8 +66,8 @@ and [Reading the evidence](../guide/reading-evidence.md) for a worked walk-throu
 ## What to expect honestly
 
 Most basins **build and run** cleanly and many **calibrate with real, verified
-improvement** — and still do not earn a `research_grade` claim under the strict
-gates. That is the system working as designed: a blocked claim is *classified
+improvement** — and still do not earn Gate-verified workflow status (`research_grade`) under the
+applicable gates. That is the system working as designed: a blocked claim is *classified
 evidence*, not a crash. See [Honest status](../project/status.md).
 
 Next: [Why claims are governed →](../concepts/overview.md)

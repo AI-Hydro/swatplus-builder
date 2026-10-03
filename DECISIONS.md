@@ -1369,3 +1369,62 @@ Why:
 - A manuscript checkout may continue to change while figures and release notes
   are reconciled. Binding the run, source archive, and tested wheel prevents
   those editorial changes from silently becoming a different evaluated system.
+
+## 2026-10-02 — Calibration efficiency research direction
+
+Research recommendation: retain DDS as the production reference and test an
+optional constrained GP challenger after objective, cache and accounting
+contracts are repaired. RBF-DYCORS is a second comparator when initialization
+has sufficient rank; existing bootstrap linear surrogate predictions cannot
+authorize calibration claims. This records a research direction, not approval
+of a new production default or a completed speedup experiment.
+
+Why: measured calibration cost includes screening and verification; exact solver
+counts are presently unavailable, earlier batch DDS had no measured speedup,
+and unit-sensitive log-KGE would confound an optimizer comparison. Charge all
+initialization/failure/verification costs, keep objective-policy experiments
+separate, and assess withheld data only after development decisions freeze.
+Detailed protocol: `docs/research/calibration_2026-10-02/README.md`.
+
+## 2026-10-02 — Keep DDS default after the first live surrogate pilot
+
+Decision: retain DDS as the production reference. Expose constrained GP and the
+training-bound objective policy as experimental APIs; do not promote either
+selected development model or replace the default scientific objective from
+this pilot. Preserve frozen code/results, including historical method-label
+metadata, and document corrections alongside them.
+
+Why: the audited one-basin/two-parameter pilot reproduces both methods but
+shows no GP advantage or meaningful hydrologic improvement. Initial design is
+rankone and all process constraints pass, limiting what it tests. Parser/cache
+and finite-evaluation fixes have separate direct acceptance evidence. Future
+optimizer claims require repeated multi-basin experiments, complete cost
+accounting, explicit inherited-parameter semantics and untouched validation.
+
+## 2026-10-02 — Whole-workflow accounting and explicit joint calibration domain
+
+Charge every admitted evaluator request, including cache reuse and unfinished
+reservations; protect final-training and temporal slots in a persistent ledger.
+Successful engine receipts, wrapper calls and attributed requests are different
+counts. A trusted runner enforces stage labels and fresh-run authority.
+
+Retained scalar endpoint screens determine active/weak eligibility only; they
+cannot be completed with registry defaults and relabeled joint observations.
+Acquire explicit full-vector designs on separately sealed warm calibrated
+inputs. Historical baseline locks attest observations/outlet configuration,
+not identity equivalence with those calibrated inputs. Preparation and tiny
+adaptive trials are development integration evidence, not optimizer superiority.
+
+## 2026-10-03 — Workflow verification and published performance ratings
+The October 1 label-change history explicitly retained research_grade only for
+compatibility while showing Gate verified to avoid implying a published
+performance class. Keep that public workflow label. A future Moriasi assessment
+must name the reference version, streamflow/time-step/evaluation scope and all
+required measurements; recommend a separate met/not-met/not-evaluated field,
+not research-grade promotion from metric thresholds. Corrected documentation
+that implied publication_grade implements Moriasi compliance or outranks the
+complete-fidelity research_grade tier. No runtime taxonomy or gates changed.
+
+## 2026-10-03 — Separate workflow verification from numerical performance
+
+Use Gate-verified for the highest configured workflow tier, while preserving the `research_grade` storage identifier for contracts and historical evidence. Use Calibration verified for intermediate `publication_grade`; neither label certifies publication readiness. A separately versioned Moriasi 2015 numeric streamflow assessment requires complete metrics and explicit scope. It never changes a claim tier. Missing scope/metrics yields not evaluated, and dashboard recalculation is labelled as derived rather than modifying sealed artifacts. This preserves compatibility without mistaking permissive package skill thresholds for published performance criteria.

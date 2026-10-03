@@ -1628,7 +1628,7 @@ def main(
                     "SDA returned real horizons for some mukeys but not all. "
                     "Missing synthetic-default profiles were replaced with "
                     "SoilGrids v2.0 coarse profiles where available. This is "
-                    "degraded provenance and cannot support research-grade "
+                    "degraded provenance and cannot support Gate-verified "
                     "soil claims."
                 )
         if constant_soil_mukey is not None:
@@ -1641,7 +1641,7 @@ def main(
                     "gNATSGO raster had partial watershed coverage that left too many subbasins without "
                     "valid soil overlay pixels; HRU overlay used one dominant valid representative mukey. "
                     "SDA horizons may be real for that mukey, but spatial soil heterogeneity is degraded "
-                    "and research-grade claims remain blocked by the soil realism gate."
+                    "and Gate-verified claims remain blocked by the soil realism gate."
                 )
             else:
                 soil_report["authority_note"] = (
@@ -1735,7 +1735,7 @@ def main(
                         "Provide SWATPLUS_EXTERNAL_SOILS_JSON with authoritative profiles, "
                         "install soil extras and retry SDA, or set SWATPLUS_ENABLE_SOILGRIDS_LIVE=1 "
                         "for degraded diagnostic SoilGrids fallback. Synthetic soils require "
-                        "SWATPLUS_ALLOW_SYNTHETIC_SOILS=1 and cannot support research-grade claims."
+                        "SWATPLUS_ALLOW_SYNTHETIC_SOILS=1 and cannot support Gate-verified claims."
                     ),
                 }),
             )

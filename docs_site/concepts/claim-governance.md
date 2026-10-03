@@ -1,7 +1,7 @@
 # Claim governance & tiers
 
-A *claim* is a statement about a model result — "this model has research-grade
-skill at the gauge," "the water balance closes," "the calibrated improvement is
+A *claim* is a statement about a model result — "the discharge-skill thresholds
+are met at the gauge," "the water balance closes," "the calibrated improvement is
 real." swatplus-builder never lets a metric promote a claim on its own. A claim
 is granted a **tier** only when the supporting **gates** pass, and every grant
 or refusal is recorded with a typed reason and an artifact pointer.
@@ -15,8 +15,8 @@ tier you are *granted* is computed from evidence.
 |---|---|
 | `exploratory` | the run executed and produced outputs; no skill/quality claim is supported |
 | `diagnostic` | outputs are usable for diagnosis; specific gated sub-claims may hold |
-| `research_grade` | gates for provenance, physical sensibility, verified skill, and outlet scope pass (shown as **Gate verified** in the dashboard) |
-| `publication_grade` | research-grade **plus** full-coverage sensitivity and the strictest preconditions |
+| **Calibration verified** (`publication_grade`) | legacy intermediate tier: calibration and skill checks pass, but the complete sensitivity/soil/land-use fidelity requirements for the highest tier are not established; this name does not signify publication approval |
+| **Gate-verified** (`research_grade`) | applicable workflow gates, including sensitivity, soil and land-use fidelity, pass for the recorded claim and scope |
 
 !!! note "The default request is conservative"
     `swat workflow run` requests `diagnostic` by default. Asking for
@@ -26,9 +26,24 @@ tier you are *granted* is computed from evidence.
 
 !!! note "`research_grade` is a package tier, not a performance class"
     The identifier is kept for compatibility with recorded evidence. It means
-    that every gate configured in the package passed; the thresholds (for
+    that the applicable requirements for the recorded claim and scope passed; the thresholds (for
     example KGE ≥ 0.40, NSE ≥ 0, |PBIAS| ≤ 30 %) are more lenient than published
-    streamflow ratings. The dashboard therefore labels it **Gate verified**.
+    streamflow ratings. The dashboard therefore labels it **Gate-verified**.
+
+    Moriasi performance ratings concern a specified simulated variable, time
+    step and evaluation period. They do not define a **research-grade** class.
+    Any assessment against those criteria must be reported separately from the
+    workflow tier, with the reference year and complete metric requirements.
+
+## Separate streamflow performance assessment
+
+New dashboards display Moriasi 2015 numeric streamflow criteria independently
+of workflow status: **Met**, **Not met**, or **Not evaluated**. They require
+R² > 0.60, NSE > 0.50 and |PBIAS| ≤ 15%, with a named time step, evaluation
+period and role. Missing metrics or scope cannot establish a pass. Calibration
+alignment is labelled separately from reported validation, and all matched
+pairs are assessed before display downsampling. Graphical and contextual
+assessment remain necessary. See the [assessment schema](../reference/evidence-schema.md#separate-numeric-performance-assessment).
 
 ## Gates
 

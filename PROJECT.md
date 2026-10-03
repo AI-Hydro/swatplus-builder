@@ -10,8 +10,8 @@ runtime gates, provenance, diagnostics, and machine-readable evidence.
 
 ## Status
 
-Active hardening toward research-grade production pipeline. Last updated:
-2026-09-21.
+Active hardening of the Gate-verified workflow and calibration research. Last updated:
+2026-10-03.
 
 ## Where To Read Next
 
@@ -31,6 +31,14 @@ Active hardening toward research-grade production pipeline. Last updated:
 - Manage local run storage: `docs/RUN_ARTIFACT_RETENTION.md`.
 
 ## Current State
+
+- **Consistent verification labels, 2026-10-03:** current interfaces, generated summaries, documentation and manuscript use Gate-verified for legacy `research_grade`, and Calibration verified for intermediate `publication_grade`. Stored identifiers, thresholds and historical evidence are preserved. New dashboard assessments report Moriasi 2015 numeric streamflow criteria separately, scoped to calibration alignment or reported validation metrics; incomplete metrics/scope mean not evaluated. No automatic tier promotion or whole-model certification is implied. See `plans/2026-10-03-workflow-performance-terminology.md`.
+
+- **Gate terminology review, 2026-10-03:** the local paper now distinguishes the gate-verified tier (`research_grade` in records) from the discharge-skill gate and individual integrity/rerun checks. Historical dashboard labels and original tier codes remain preserved. The effective-tier requirements table is corrected; the 29-page paper builds and revised pages pass visual review. See `../SWATPlus-Builder-paper/review/GATE_TERMINOLOGY_2026-10-03.md`. The original October 1 rename rationale is confirmed in `../SWATPlus-Builder-paper/review/NAMING_HISTORY_AND_RECOMMENDATION_2026-10-03.md`; Moriasi performance assessment is recommended as a separate field, not a research-grade promotion. GitHub synchronization is authorized for these revisions; Overleaf build remains unverified.
+
+- **Calibration efficiency implementation, 2026-10-02:** team research led to semantic cache/concurrency fixes, per-call timing, an opt-in hard search-request cap, secondary-seed journals, nonfinite-candidate rejection, a frozen objective policy and optional constrained GP. Targeted regression suite: 246 passed/1 optional-backend skip; isolated GP suite passes all 38 focused checks including the actual backend. Parse-once evaluation preserves diagnostics and reduces repeated source reads. A frozen-source DDS/GP live pilot completes eleven successful engine runs and fresh reproduction of both selections; independent artifact audit passes 193 checks. No GP advantage or meaningful hydrologic improvement is established. See `docs/research/calibration_2026-10-02/RESULTS.md`. DDS remains the production default; historical PE1 evidence is unchanged. Whole-workflow request ledgers, exact-output policy adapters and full-rank designs are now implemented; a fresh/cache/fresh integration check passes with protected validation untouched. Three 14-dimensional development designs are prepared. The bounded comparison runner and CLI pass independent review; the frozen 12054000 full-vector integration trial completes 19 successful engine runs and 939 artifact audit checks. Both selections reproduce; GP KGE 0.7170 versus DDS 0.5690 in one adaptive request per arm is development evidence only. See `docs/research/calibration_2026-10-02/FULLVECTOR_RESULTS.md`. Repeated-seed performance evaluation and default objective replacement remain pending. See `docs/research/calibration_2026-10-02/POLICY_BUDGET_INTEGRATION.md`.
+
+- **Paper review revision, 2026-10-02:** the separate manuscript now reports four historical promotions, one invalidated by finite-input replay and three retained. All ten figure images reproduce in a fresh pinned environment with network connections disabled. Fifteen PE1 input digests and twelve ledgers verify; historical run records are unchanged. The 29-page paper and a local reproduction kit are ready for supervisor review. NSF awards 2230092/2118329 follow the poster provisionally; funding applicability, declarations, licensing and public-release consent remain open. See `../SWATPlus-Builder-paper/review/REVIEW_DISPOSITION_2026-10-02.md`.
 
 - **Private manuscript repository, 2026-09-23:** the reviewed `review2`
   manuscript was extracted into a lightweight, standalone LaTeX repository and

@@ -1,0 +1,56 @@
+{
+  "schema": "calibration_invocation_v1",
+  "invocation_id": "03fabf5deb544a43b82018b104e7453a",
+  "started_at_utc": "2026-10-02T14:07:43.460931+00:00",
+  "cache_signature": "8c43df7d09b55564c34c628d59f5109a0a0139c0622b5836fe5abb020e6f4f19",
+  "cache_status": "workdir_hit",
+  "engine_invoked": false,
+  "engine_invocation_basis": "run_swat_call",
+  "threads": 1,
+  "status": "completed",
+  "stage_seconds": {
+    "lock_wait": 4.812516272068024e-05,
+    "evaluation": 1.263431750005111,
+    "physical_gate": 0.00027920911088585854
+  },
+  "budget_stage": "search",
+  "params": {},
+  "params_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+  "policy_evidence": {
+    "status": "valid",
+    "utility": 0.6894085438800555,
+    "feasible": true,
+    "components": {
+      "kge": 0.6894085438800555
+    },
+    "reasons": [],
+    "constraints": [
+      {
+        "name": "reported_calibration_process_gate_proxy",
+        "residual": -1.0,
+        "kind": "process_policy"
+      }
+    ],
+    "context": {
+      "policy_sha256": "44b8881bcfa68a898a83dfad13252e70e383eae60bb0ee77e6c003009d9bbfd7",
+      "training_observation_sha256": "6edc8852e781484d2c11a8caa858c8f9cff6b6a86ecfd188a501e93eefff0163",
+      "epsilon": null
+    },
+    "provenance": {
+      "adapter_sha256": "253040ce669cf5aa8e834e5cc159419da9be9cf9aead8fa5ba51fad3e9e9e0cc",
+      "training_calendar_sha256": "cd184a49637e8db760df005d8cbb205f23e83383a4b9c8d4f9c6d55693397e3b",
+      "source_file": "channel_sd_day.txt",
+      "scored_calendar_sha256": "cd184a49637e8db760df005d8cbb205f23e83383a4b9c8d4f9c6d55693397e3b",
+      "scored_sample_count": 2191,
+      "scored_observation_sha256": "6edc8852e781484d2c11a8caa858c8f9cff6b6a86ecfd188a501e93eefff0163",
+      "scored_simulation_sha256": "9f72df51d51a16ad9af55fe9bf2cbf0e4b949ad99bae9a858679aa9b4a678d70",
+      "source_sha256": "461ce9c369a51f4402a63f20e11bf48a54bc0f7b8f1017182d51b6a486408596",
+      "engine_receipt_sha256": "328c95ecff10c69f8fdd01b8187baf499801c060761bf265b9df706942b6140c",
+      "engine_run_id": "7e0d7b57ac174a9c878e490bee11e6c7",
+      "receipt_input_configuration_sha256": "f6780903b4e018d922777d86bda7c8b91202be6854eda501c845f3467c0796b6",
+      "receipt_engine_sha256": "5c1936b04f4065f196aaa297d8b43ec3d4450c93d85923e33c3fba25419d2c1d"
+    }
+  },
+  "total_seconds": 1.3106758331414312,
+  "finished_at_utc": "2026-10-02T14:07:44.771640+00:00"
+}

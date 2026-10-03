@@ -1,0 +1,33 @@
+{
+  "purpose": "parse refactor only; no engines or optimizer speedup inference",
+  "source": "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/runs/pe1/usgs_12054000/calibration/locked_calibrated_TxtInOut/channel_sd_day.txt",
+  "source_sha256": "7d93191b8f8adb4d90bc02df82df9b9c7933699b7d33e48f2f6cbf54c3335e43",
+  "evaluator_sha256": "571b0954e1e79dbfaaade1ff4463a436225f48926efc472bc9ba257b8cc98b3c",
+  "score_dates": [
+    "2010-01-01",
+    "2015-12-31"
+  ],
+  "equality": "exact",
+  "records": [
+    {
+      "mode": "uncached",
+      "seconds": 5.844809792004526,
+      "source_reads": 2
+    },
+    {
+      "mode": "shared",
+      "seconds": 3.3203755419235677,
+      "source_reads": 1
+    },
+    {
+      "mode": "shared",
+      "seconds": 3.11366870906204,
+      "source_reads": 1
+    },
+    {
+      "mode": "uncached",
+      "seconds": 5.085426667006686,
+      "source_reads": 2
+    }
+  ]
+}

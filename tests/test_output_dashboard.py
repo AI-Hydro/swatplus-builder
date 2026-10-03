@@ -386,3 +386,45 @@ def test_audit_view_before_heads_are_sealed_checks_chains_only(tmp_path: Path) -
     html = _render_html({"usgs_id": "x", "audit": audit})
     assert "['audit','Audit']" in html
     assert "swat audit verify" in html  # the chain-only view tells the modeller how to finish the check
+
+
+def test_performance_uses_full_alignment_not_downsampled_chart(tmp_path):
+    import csv
+    from datetime import date, timedelta
+
+    from swatplus_builder.output.dashboard import _assess_alignment_performance, _read_alignment
+
+    path = tmp_path / 'alignment_calibration.csv'
+    with path.open('w') as stream:
+        writer = csv.writer(stream)
+        writer.writerow(['date', 'obs', 'sim'])
+        for i in range(6002):
+            writer.writerow([(date(2000, 1, 1) + timedelta(days=i)).isoformat(), i + 1,
+                             1e9 if i == 6001 else i + 1])
+    assert len(_read_alignment(path)['obs']) < 6002
+    assessment = _assess_alignment_performance(path)
+    assert assessment['n_pairs'] == 6002
+    assert assessment['status'] == 'not_met'
+    assert assessment['source_sha256']
+    assert 'independent validation not established' in assessment['evaluation_role']
+
+
+def test_workflow_verification_does_not_imply_moriasi_pass(tmp_path):
+    (tmp_path / 'evidence_summary.json').write_text(json.dumps({
+        'effective_claim_tier': 'research_grade', 'claim_tier': 'research_grade',
+    }))
+    data = _collect_all_data(tmp_path)
+    assert data['effective_claim_tier'] == 'research_grade'
+    assert data['streamflow_performance']['status'] == 'not_evaluated'
+    assert data['streamflow_validation_performance']['status'] == 'not_evaluated'
+    html = _render_html(data)
+    assert 'Gate-verified' in html
+    assert 'Moriasi 2015 numeric streamflow criteria' in html
+    assert 'Publication Grade</span>' not in html
+
+
+def test_invalid_alignment_is_not_performance_evidence(tmp_path):
+    from swatplus_builder.output.dashboard import _assess_alignment_performance
+    path = tmp_path / 'alignment_calibration.csv'
+    path.write_text('date,obs,sim\n2000-01-01,1,1\n2000-01-02,nan,2\n')
+    assert _assess_alignment_performance(path)['status'] == 'not_evaluated'

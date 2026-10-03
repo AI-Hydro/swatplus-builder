@@ -1,0 +1,979 @@
+{
+  "passed": true,
+  "checks": [
+    {
+      "check": "frozen_source_manifest_byte_hashes",
+      "passed": true,
+      "detail": {
+        "files": 287,
+        "mismatches": []
+      }
+    },
+    {
+      "check": "audit_imports_frozen_package",
+      "passed": true,
+      "detail": "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/runs/calibration_research_20261002/pilot_source_snapshot_v1/src/swatplus_builder"
+    },
+    {
+      "check": "completed_pilot_required",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "loaded_source_manifest_matches_package",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "pilot_script_sealed",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "historical_input_unchanged",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "snapshot_input_exact_copy",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "observation_alignment_unchanged",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "benchmark_lock_unchanged",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "training_calendar_declaration",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "physical_call_cap_and_unique_ids",
+      "passed": true,
+      "detail": 11
+    },
+    {
+      "check": "reservation_terminal_statuses",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "three_shared_initial_calls",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_call_count_and_unique_ids",
+      "passed": true,
+      "detail": 11
+    },
+    {
+      "check": "no_compact_or_workdir_reuse",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_attempt_census",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_duration:64ca9d0085814c40817e12312c8f7513",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_duration:a9113737353d43e1aafcbbcf9492315a",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_duration:87910a29f07b486c8add8e0c34f2baea",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_duration:818ad54a435947628d62b1faaa3c0801",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_duration:6eb42f10c1684f298caef034b30b7d9d",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_duration:420bc045d1254cd7ae883433dedd3170",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_duration:327792144c6b4bb183ee58eb1bff3966",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_duration:45e941a226974c6683af02a72a99092c",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_duration:380d27c23d65406eb8f8eefcda51fb60",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_duration:13f48af7f8584dfa90ae6aae66e87461",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_duration:76485d677da34a5a9dc91b7f2f2270c9",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "governed_bounds:shared_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "engine_identity:shared_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "receipt_success_and_threads:shared_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "receipt_raw_output_digests:shared_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "receipt_static_inputs:shared_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "trace_parameters_and_digest:shared_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_receipt_pairing:shared_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_trace_signature:shared_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "semantic_cache_identity:shared_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "no_withheld_dates_scored:shared_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "raw_alignment_reproduces:shared_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "raw_required_metrics_reproduce:shared_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "raw_process_admissibility_reproduces:shared_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "utility_and_constraints_match_measurements:shared_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "governed_bounds:shared_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "engine_identity:shared_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "receipt_success_and_threads:shared_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "receipt_raw_output_digests:shared_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "receipt_static_inputs:shared_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "trace_parameters_and_digest:shared_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_receipt_pairing:shared_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_trace_signature:shared_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "semantic_cache_identity:shared_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "no_withheld_dates_scored:shared_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "raw_alignment_reproduces:shared_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "raw_required_metrics_reproduce:shared_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "raw_process_admissibility_reproduces:shared_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "utility_and_constraints_match_measurements:shared_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "governed_bounds:shared_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "engine_identity:shared_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "receipt_success_and_threads:shared_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "receipt_raw_output_digests:shared_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "receipt_static_inputs:shared_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "trace_parameters_and_digest:shared_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_receipt_pairing:shared_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_trace_signature:shared_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "semantic_cache_identity:shared_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "no_withheld_dates_scored:shared_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "raw_alignment_reproduces:shared_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "raw_required_metrics_reproduce:shared_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "raw_process_admissibility_reproduces:shared_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "utility_and_constraints_match_measurements:shared_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "governed_bounds:dds_search_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "engine_identity:dds_search_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "receipt_success_and_threads:dds_search_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "receipt_raw_output_digests:dds_search_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "receipt_static_inputs:dds_search_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "trace_parameters_and_digest:dds_search_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_receipt_pairing:dds_search_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_trace_signature:dds_search_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "semantic_cache_identity:dds_search_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "no_withheld_dates_scored:dds_search_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "raw_alignment_reproduces:dds_search_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "raw_required_metrics_reproduce:dds_search_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "raw_process_admissibility_reproduces:dds_search_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "utility_and_constraints_match_measurements:dds_search_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "governed_bounds:dds_search_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "engine_identity:dds_search_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "receipt_success_and_threads:dds_search_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "receipt_raw_output_digests:dds_search_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "receipt_static_inputs:dds_search_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "trace_parameters_and_digest:dds_search_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_receipt_pairing:dds_search_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_trace_signature:dds_search_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "semantic_cache_identity:dds_search_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "no_withheld_dates_scored:dds_search_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "raw_alignment_reproduces:dds_search_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "raw_required_metrics_reproduce:dds_search_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "raw_process_admissibility_reproduces:dds_search_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "utility_and_constraints_match_measurements:dds_search_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "governed_bounds:dds_search_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "engine_identity:dds_search_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "receipt_success_and_threads:dds_search_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "receipt_raw_output_digests:dds_search_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "receipt_static_inputs:dds_search_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "trace_parameters_and_digest:dds_search_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_receipt_pairing:dds_search_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_trace_signature:dds_search_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "semantic_cache_identity:dds_search_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "no_withheld_dates_scored:dds_search_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "raw_alignment_reproduces:dds_search_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "raw_required_metrics_reproduce:dds_search_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "raw_process_admissibility_reproduces:dds_search_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "utility_and_constraints_match_measurements:dds_search_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "governed_bounds:gp_search_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "engine_identity:gp_search_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "receipt_success_and_threads:gp_search_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "receipt_raw_output_digests:gp_search_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "receipt_static_inputs:gp_search_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "trace_parameters_and_digest:gp_search_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_receipt_pairing:gp_search_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_trace_signature:gp_search_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "semantic_cache_identity:gp_search_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "no_withheld_dates_scored:gp_search_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "raw_alignment_reproduces:gp_search_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "raw_required_metrics_reproduce:gp_search_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "raw_process_admissibility_reproduces:gp_search_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "utility_and_constraints_match_measurements:gp_search_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "governed_bounds:gp_search_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "engine_identity:gp_search_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "receipt_success_and_threads:gp_search_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "receipt_raw_output_digests:gp_search_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "receipt_static_inputs:gp_search_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "trace_parameters_and_digest:gp_search_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_receipt_pairing:gp_search_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_trace_signature:gp_search_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "semantic_cache_identity:gp_search_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "no_withheld_dates_scored:gp_search_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "raw_alignment_reproduces:gp_search_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "raw_required_metrics_reproduce:gp_search_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "raw_process_admissibility_reproduces:gp_search_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "utility_and_constraints_match_measurements:gp_search_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "governed_bounds:gp_search_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "engine_identity:gp_search_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "receipt_success_and_threads:gp_search_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "receipt_raw_output_digests:gp_search_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "receipt_static_inputs:gp_search_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "trace_parameters_and_digest:gp_search_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_receipt_pairing:gp_search_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_trace_signature:gp_search_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "semantic_cache_identity:gp_search_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "no_withheld_dates_scored:gp_search_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "raw_alignment_reproduces:gp_search_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "raw_required_metrics_reproduce:gp_search_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "raw_process_admissibility_reproduces:gp_search_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "utility_and_constraints_match_measurements:gp_search_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "governed_bounds:dds_fresh_final",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "engine_identity:dds_fresh_final",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "receipt_success_and_threads:dds_fresh_final",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "receipt_raw_output_digests:dds_fresh_final",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "receipt_static_inputs:dds_fresh_final",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "trace_parameters_and_digest:dds_fresh_final",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_receipt_pairing:dds_fresh_final",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_trace_signature:dds_fresh_final",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "semantic_cache_identity:dds_fresh_final",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "no_withheld_dates_scored:dds_fresh_final",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "raw_alignment_reproduces:dds_fresh_final",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "raw_required_metrics_reproduce:dds_fresh_final",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "raw_process_admissibility_reproduces:dds_fresh_final",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "utility_and_constraints_match_measurements:dds_fresh_final",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "governed_bounds:gp_fresh_final",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "engine_identity:gp_fresh_final",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "receipt_success_and_threads:gp_fresh_final",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "receipt_raw_output_digests:gp_fresh_final",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "receipt_static_inputs:gp_fresh_final",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "trace_parameters_and_digest:gp_fresh_final",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_receipt_pairing:gp_fresh_final",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "telemetry_trace_signature:gp_fresh_final",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "semantic_cache_identity:gp_fresh_final",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "no_withheld_dates_scored:gp_fresh_final",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "raw_alignment_reproduces:gp_fresh_final",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "raw_required_metrics_reproduce:gp_fresh_final",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "raw_process_admissibility_reproduces:gp_fresh_final",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "utility_and_constraints_match_measurements:gp_fresh_final",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "each_success_has_distinct_invocation",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "six_attributed_search_calls:dds",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "selected_actual_admissible_best:dds",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "fresh_final_reserved_and_selected_point:dds",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "fresh_final_reproduction:dds",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "arm_attribution_count:dds",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "six_attributed_search_calls:gp",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "selected_actual_admissible_best:gp",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "fresh_final_reserved_and_selected_point:gp",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "fresh_final_reproduction:gp",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "arm_attribution_count:gp",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "total_attribution_respects_sharing",
+      "passed": true,
+      "detail": null
+    }
+  ],
+  "physical_attempts": 11,
+  "attributed_calls": 14,
+  "engine_paths": [
+    "/Users/mgalib/.swatplus_builder/bin/swatplus_exe"
+  ],
+  "timing_semantics": "Attempt callback duration includes factory/fingerprinting overhead; telemetry stages exclude factory construction. Engine timing includes receipt generation. Serial arm order prevents speedup inference."
+}

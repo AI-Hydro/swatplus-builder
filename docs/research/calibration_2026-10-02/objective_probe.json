@@ -1,0 +1,234 @@
+{
+  "purpose": "unit invariance only; not calibration or low-flow validation",
+  "engine_calls": 0,
+  "cases": {
+    "synthetic_positive": {
+      "n": 7,
+      "scores_by_unit_factor": {
+        "0.001": {
+          "kge": 0.9181657584390827,
+          "legacy_log_kge": 0.943503200312736,
+          "relative_log_kge": 0.9216645842097765,
+          "sqrt_nse": 0.9922455866629034,
+          "relative_log_nse": 0.9817586488112234
+        },
+        "1.0": {
+          "kge": 0.918165758439083,
+          "legacy_log_kge": -0.25511674052395983,
+          "relative_log_kge": -4.867350123979825,
+          "sqrt_nse": 0.9922455866629034,
+          "relative_log_nse": 0.9817586488112234
+        },
+        "1000.0": {
+          "kge": 0.9181657584390828,
+          "legacy_log_kge": 0.9130649972645706,
+          "relative_log_kge": 0.9216636304877457,
+          "sqrt_nse": 0.9922455866629034,
+          "relative_log_nse": 0.9817586488112234
+        },
+        "1000000.0": {
+          "kge": 0.9181657584390829,
+          "legacy_log_kge": 0.9133142311566373,
+          "relative_log_kge": 0.9218382518928714,
+          "sqrt_nse": 0.9922455866629034,
+          "relative_log_nse": 0.9817586488112234
+        }
+      }
+    },
+    "synthetic_intermittent": {
+      "n": 7,
+      "scores_by_unit_factor": {
+        "0.001": {
+          "kge": 0.934617052713846,
+          "legacy_log_kge": 0.9499213700918734,
+          "relative_log_kge": 0.9292900309149215,
+          "sqrt_nse": 0.9888734493497329,
+          "relative_log_nse": 0.9811044600309509
+        },
+        "1.0": {
+          "kge": 0.9346170527138458,
+          "legacy_log_kge": 0.8870411346918078,
+          "relative_log_kge": 0.8905728670435304,
+          "sqrt_nse": 0.9888734493497329,
+          "relative_log_nse": 0.9811044600309509
+        },
+        "1000.0": {
+          "kge": 0.934617052713846,
+          "legacy_log_kge": 0.62594688683281,
+          "relative_log_kge": 0.9274641860376894,
+          "sqrt_nse": 0.9888734493497329,
+          "relative_log_nse": 0.9811044600309509
+        },
+        "1000000.0": {
+          "kge": 0.9346170527138461,
+          "legacy_log_kge": 0.6211658246754019,
+          "relative_log_kge": 0.930092519196226,
+          "sqrt_nse": 0.9888734493497329,
+          "relative_log_nse": 0.9811044600309509
+        }
+      }
+    },
+    "positive_01547700_daily.csv:benchmark": {
+      "n": 2191,
+      "scores_by_unit_factor": {
+        "0.001": {
+          "kge": 0.3122593774553417,
+          "legacy_log_kge": 0.4600945188089377,
+          "relative_log_kge": 0.43747177421810235,
+          "sqrt_nse": 0.2714460671450504,
+          "relative_log_nse": 0.0888364496014642
+        },
+        "1.0": {
+          "kge": 0.3122593774553418,
+          "legacy_log_kge": -0.7170814378438164,
+          "relative_log_kge": -0.7574860273801842,
+          "sqrt_nse": 0.2714460671450505,
+          "relative_log_nse": 0.0888364496014642
+        },
+        "1000.0": {
+          "kge": 0.3122593774553417,
+          "legacy_log_kge": 0.4252885392625172,
+          "relative_log_kge": 0.43553708055171314,
+          "sqrt_nse": 0.2714460671450505,
+          "relative_log_nse": 0.0888364496014642
+        },
+        "1000000.0": {
+          "kge": 0.31225937745534194,
+          "legacy_log_kge": 0.43320200832990985,
+          "relative_log_kge": 0.44271292601603374,
+          "sqrt_nse": 0.2714460671450505,
+          "relative_log_nse": 0.0888364496014642
+        }
+      },
+      "source": "/Users/mgalib/Documents/PyQSwatPlus/SWATPlus-Builder-paper/evidence/figure_inputs/positive_01547700_daily.csv",
+      "source_sha256": "d45271447788ba0ede2a85ca7a3d29875094626307fc2f52ebf951977aeb6fbe",
+      "start": "2010-01-01",
+      "end": "2015-12-31",
+      "note": "Existing development data; dates after 2015 excluded"
+    },
+    "positive_01547700_daily.csv:verification": {
+      "n": 2191,
+      "scores_by_unit_factor": {
+        "0.001": {
+          "kge": 0.5146310097126232,
+          "legacy_log_kge": 0.6188531357699669,
+          "relative_log_kge": 0.6289466660269034,
+          "sqrt_nse": 0.37234028290319,
+          "relative_log_nse": 0.27419192720981944
+        },
+        "1.0": {
+          "kge": 0.5146310097126232,
+          "legacy_log_kge": 0.6150273722828659,
+          "relative_log_kge": 0.6163178954383519,
+          "sqrt_nse": 0.37234028290319,
+          "relative_log_nse": 0.27419192720981933
+        },
+        "1000.0": {
+          "kge": 0.5146310097126232,
+          "legacy_log_kge": 0.6230367939302119,
+          "relative_log_kge": 0.6289365648247354,
+          "sqrt_nse": 0.37234028290319,
+          "relative_log_nse": 0.27419192720981944
+        },
+        "1000000.0": {
+          "kge": 0.5146310097126232,
+          "legacy_log_kge": 0.6230750758008197,
+          "relative_log_kge": 0.6289738576611128,
+          "sqrt_nse": 0.37234028290319,
+          "relative_log_nse": 0.27419192720981933
+        }
+      },
+      "source": "/Users/mgalib/Documents/PyQSwatPlus/SWATPlus-Builder-paper/evidence/figure_inputs/positive_01547700_daily.csv",
+      "source_sha256": "d45271447788ba0ede2a85ca7a3d29875094626307fc2f52ebf951977aeb6fbe",
+      "start": "2010-01-01",
+      "end": "2015-12-31",
+      "note": "Existing development data; dates after 2015 excluded"
+    },
+    "negative_03349000_daily.csv:benchmark": {
+      "n": 2191,
+      "scores_by_unit_factor": {
+        "0.001": {
+          "kge": 0.08240617519811444,
+          "legacy_log_kge": 0.4170654227473364,
+          "relative_log_kge": 0.08925288525654151,
+          "sqrt_nse": -0.7616160827021832,
+          "relative_log_nse": -3.687074580026418
+        },
+        "1.0": {
+          "kge": 0.08240617519811455,
+          "legacy_log_kge": -0.30264629110699404,
+          "relative_log_kge": 1.478048852288083e-05,
+          "sqrt_nse": -0.7616160827021832,
+          "relative_log_nse": -3.687074580026418
+        },
+        "1000.0": {
+          "kge": 0.08240617519811455,
+          "legacy_log_kge": -0.13955409901992666,
+          "relative_log_kge": 0.1698084925110359,
+          "sqrt_nse": -0.7616160827021834,
+          "relative_log_nse": -3.687074580026418
+        },
+        "1000000.0": {
+          "kge": 0.08240617519811455,
+          "legacy_log_kge": -0.12713790184141516,
+          "relative_log_kge": 0.1814090054631008,
+          "sqrt_nse": -0.7616160827021834,
+          "relative_log_nse": -3.687074580026418
+        }
+      },
+      "source": "/Users/mgalib/Documents/PyQSwatPlus/SWATPlus-Builder-paper/evidence/figure_inputs/negative_03349000_daily.csv",
+      "source_sha256": "72f8b8c3a459b0f649dc4d5e021982a848044372e63243f90f128f0f75ec4dc6",
+      "start": "2010-01-01",
+      "end": "2015-12-31",
+      "note": "Existing development data; dates after 2015 excluded"
+    },
+    "negative_03349000_daily.csv:verification": {
+      "n": 2191,
+      "scores_by_unit_factor": {
+        "0.001": {
+          "kge": 0.37731102699310537,
+          "legacy_log_kge": 0.6463114354662165,
+          "relative_log_kge": 0.45587455071197003,
+          "sqrt_nse": 0.11792670717764231,
+          "relative_log_nse": -0.3628300338745021
+        },
+        "1.0": {
+          "kge": 0.3773110269931055,
+          "legacy_log_kge": 0.3588685046497849,
+          "relative_log_kge": 0.439564699206515,
+          "sqrt_nse": 0.11792670717764231,
+          "relative_log_nse": -0.3628300338745021
+        },
+        "1000.0": {
+          "kge": 0.37731102699310537,
+          "legacy_log_kge": 0.38809144491402814,
+          "relative_log_kge": 0.46966499386009264,
+          "sqrt_nse": 0.1179267071776422,
+          "relative_log_nse": -0.3628300338745021
+        },
+        "1000000.0": {
+          "kge": 0.37731102699310537,
+          "legacy_log_kge": 0.3901841712058365,
+          "relative_log_kge": 0.471573668537419,
+          "sqrt_nse": 0.1179267071776422,
+          "relative_log_nse": -0.3628300338745021
+        }
+      },
+      "source": "/Users/mgalib/Documents/PyQSwatPlus/SWATPlus-Builder-paper/evidence/figure_inputs/negative_03349000_daily.csv",
+      "source_sha256": "72f8b8c3a459b0f649dc4d5e021982a848044372e63243f90f128f0f75ec4dc6",
+      "start": "2010-01-01",
+      "end": "2015-12-31",
+      "note": "Existing development data; dates after 2015 excluded"
+    }
+  },
+  "invalid_cases_rejected": [
+    "all_zero:sqrt",
+    "all_zero:log",
+    "constant:sqrt",
+    "constant:log",
+    "negative:sqrt",
+    "negative:log",
+    "nonfinite:sqrt",
+    "nonfinite:log"
+  ]
+}

@@ -1835,7 +1835,7 @@ def cmd_workflow_run(
     out_dir: str = typer.Option("swatplus_runs/workflow/latest", "--out-dir"),
     warmup_years: int = typer.Option(3, "--warmup-years"),
     calibrate: bool = typer.Option(True, "--calibrate/--no-calibrate"),
-    claim_tier: str = typer.Option("diagnostic", "--claim-tier"),
+    claim_tier: str = typer.Option("diagnostic", "--claim-tier", help="Stored workflow tier identifier; research_grade is displayed as Gate-verified and is separate from Moriasi performance criteria."),
     hru_mode: str = typer.Option(
         "dominant_only",
         "--hru-mode",

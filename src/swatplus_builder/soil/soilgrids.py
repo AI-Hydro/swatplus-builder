@@ -27,7 +27,7 @@ def fetch_soilgrids_profile(lon: float, lat: float, *, mukey: int) -> SoilProfil
 
     Returns ``None`` when live SoilGrids access is disabled or unavailable.  The
     caller must treat any profile returned here as degraded-provenance fallback,
-    not as high-fidelity research-grade soil evidence.
+    not as high-fidelity Gate-verified soil evidence.
     """
     if os.environ.get("SWATPLUS_ENABLE_SOILGRIDS_LIVE") != "1":
         log.info("SoilGrids live fallback disabled; set SWATPLUS_ENABLE_SOILGRIDS_LIVE=1 to enable.")

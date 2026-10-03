@@ -11049,3 +11049,164 @@ clean throughout.
 Next: merge dev/pe1-followups (DDS seed provenance, reference pool v1.1
 contamination-audit fix) into main now that PE1 no longer needs the
 software commit held fixed.
+
+## 2026-10-02 — Critical review of the current paper and figures
+
+Reviewed the separate paper repository at `e732bb32afb4a40256092ef7b55abfef3f4207ce`,
+including its 28-page manuscript, PE1 evidence, figures, scripts, and submission
+materials, against the hydrofigs guidance. Review artifacts are in
+`../SWATPlus-Builder-paper/review/CRITICAL_REVIEW_2026-10-02.md`, with a read-only
+audit script and JSON results. No manuscript, software, or frozen run evidence
+was changed; no remote push was made.
+
+Independent checks: 15/15 PE1 input digests match, 12/12 current ledger
+verifications pass, 16/16 figure files rebuild byte-for-byte in a scratch
+checkout, and three supplementary dashboards match their screenshot source
+digests. Replaying the current finite-input check flags only 03042280 among
+the eight locked runs. Its original promotion is unsupported by evaluable
+water-balance evidence; the paper must visibly distinguish four original
+promotions from three retained under this correction.
+
+The documented seven-value probe also shows the basin-relative log-KGE moving
+from -4.86735 to +0.92166 under unit conversion, so a general mitigation claim
+is unsupported. Other necessary revisions concern the calibration-budget
+lower-bound claim, physical validity versus policy checks, not-reached versus
+failed gate states, closest recent related work, figure print sizes, and a
+current reproducibility/release index. Next: revise the manuscript and figure
+claims while preserving the historical experiment records, then review the
+updated preprint package with the authors.
+
+## 2026-10-02 — Authorized paper and figure revision completed
+Implemented the critical review in the separate paper repository: corrected promotions, metric counterexample, policy/method distinctions and reporting windows; revised ten figures; added fourteen finite-input regressions, digest-bound correction, offline pinned figure environment and current release kit. Verified 15 historical input hashes, 12 ledgers, 75 figure inputs and three dashboard HTML supplements; clean-environment offline figure rebuild matches all ten PNGs. The manuscript compiles to 29 pages without overfull boxes or undefined references. Historical PE1 artifacts remain unchanged and no fresh engine experiment was run. NSF poster awards are provisional pending author applicability review. Public publication, licensing and author consent remain pending.
+
+## 2026-10-02 — Calibration efficiency swarm research
+
+Completed three specialist audits (runtime/integrity, surrogate optimization,
+hydrologic strategy) and an adversarial review. Reports and integrated proposal:
+`docs/research/calibration_2026-10-02/README.md`. PE1 calibration intervals sum
+to 39,071 s, 83.05% of summed workflow time; they are not batch elapsed time.
+Reconciled 593 estimated candidates against 558 trace files without equating
+either to exact solver invocations. Flagged cache semantic/concurrency gaps,
+secondary-seed logging, budget overruns, repeated parsing, screening limitations
+and objective/process-policy issues. Prior four-worker DDS experiment showed
+no speedup; input-only staging improvement is already implemented.
+
+Added a research-only objective probe: six synthetic/development cases across
+four unit factors pass raw KGE/transformed-NSE invariance checks; eight invalid
+transformed-metric cases reject explicitly. Existing training CSVs restricted
+to 2010–2015, with hashes recorded. Zero engine calls, no withheld scoring.
+Research directory explicitly unignored. No production source/default edits,
+installation, live optimizer benchmark, historical-evidence edits or push.
+Next proposed phase: objective and invocation contract, cache/accounting fixes,
+then serial constrained GP and rank-sufficient RBF-DYCORS against DDS under a
+preflighted total budget and independent final verification.
+
+## 2026-10-02 — Calibration foundation implemented by the research team
+
+Implemented semantic cache fingerprints, in-process single-flight and atomic
+publication; wired per-call telemetry into governed calibration/screen/rerun
+paths. Added opt-in objective policy and constrained-GP interfaces, optional
+backend dependencies, hard search-request accounting, and secondary-seed
+journals. Independent review found and fixed selectable nonfinite skill,
+invalid/fractional budgets, late dependency checks and mutable objective evidence.
+The hard search cap excludes screening/verification and is not a solver census.
+
+Two fresh training-only evaluator runs on copied PE1 12054000 calibrated inputs
+match exactly; cache replay matches without an engine wrapper call. Total fresh
+call durations 140.969/116.297 s; scored 2010–2015 with 2007–2015 simulation.
+Source input digest unchanged; no historical artifacts changed. Actual GP test
+passes in an isolated optional-backend environment. Parse-once refactor retains
+all diagnostics; paired retained-output evaluation drops source reads2→1 and
+elapsed5.085–5.845→3.114–3.320s, without a whole-workflow speedup claim.
+
+Next in-flight work: freeze and launch the independently reviewed narrow
+DDS/GP development pilot, six attributed search requests per arm plus fresh
+training-only final checks. Full protocol and limitations:
+`docs/research/calibration_2026-10-02/PILOT_PROTOCOL.md`.
+
+## 2026-10-02 — Frozen-source optimizer pilot completed and independently audited
+
+Completed the predeclared warm-started two-parameter development pilot on
+12054000: three physically shared initial runs, three additional requests per
+DDS/GP arm, and one fresh selected-candidate rerun per arm. Eleven successful
+engine receipts reconcile with fourteen attributed calls; elapsed187.886s.
+DDSKGE0.68962286, GPKGE0.68947949, incumbent0.68940854. Both selections reproduce
+exactly; both slightly worsen NSE/absolute bias against the incumbent. No GP
+advantage or substantive hydrologic gain is demonstrated. All candidates pass
+specified process/volume constraints, so infeasible-region learning is untested.
+Initial design is diagonal/rankone; frozen generic Latin label is documented,
+and future explicit-design labeling corrected without editing historical files.
+
+Independent read-only artifact audit passes193/193 checks: all frozen source,
+input/observation/output hashes, eleven receipts, training-only dates, semantic
+cache identities, selection and fresh metric/process parity. Final targeted
+regressions246passed/1optionalGPskip; isolated backend/pilot suite38passes.
+Implementation/results/reviews and compact evidence saved under
+`docs/research/calibration_2026-10-02/`; raw outputs and frozen source remain in
+`runs/calibration_research_20261002/`. No remote push or historical PE1 changes.
+Next: whole-workflow budgets, engine-policy adapters, compatible full-vector
+representation and rank-sufficient repeated/multi-basin strategy comparisons;
+GP warnings/fit/acquisition costs should be logged explicitly.
+
+## 2026-10-02 — Policy/budget live integration and full-vector preparation
+
+Team implemented durable POSIX whole-workflow request ledgers, exact-output
+calendar/receipt scoring adapters, full-vector designs and GP proposal timing/
+warning/state diagnostics. Focused root regression selection211passed/1optional
+GPskip; isolated backend/design42passed. Independent configuration review found
+and fixed mismatched post-warmup calendars and invalid budget stages before
+engine work/charges;109focused review regressions passed.
+
+Frozen integration check completes two successful engine runs plus one charged
+workdir-cache replay on copied12054000 development inputs. Three of four
+requests consumed; validation reserve untouched. KGE0.6894085438800555 and all
+fresh metrics reproduce; source unchanged. Root audit318checks passes. Three
+basin preflight prepares15points/14dimensions/full affine rank15 each and tests
+all parameter bridge writes without engines;6focused checks pass. Compact
+artifacts and scientific limits are linked from POLICY_BUDGET_INTEGRATION.md.
+Paired full-vector runner/CLI currently in progress; no full-dimensional optimizer
+or temporal comparison completed, no public push or production-default change.
+
+## 2026-10-03 — Full-vector integration completed and artifact-audited
+
+Frozen 12054000 seed-42 trial completed 19 successful engine runs, 34 attributed
+requests and 345.569 seconds. Fifteen shared full-rank design points, one search
+request per arm and two fresh selections. DDS retained shared KGE 0.568995;
+GP selected KGE 0.717039. Both reproduce exactly. Both validation reserves
+remain unspent; historical inputs unchanged. Fourteen of seventeen physical
+search evaluations have negative NSE despite process/volume admissibility;
+claim gates remain separate and no model promotion is made.
+
+Read-only post-run audit passes 939 checks and recomputes all actual output
+scores/gates, hashes, ledgers, winners and fresh parity. Script independently
+authored, executed by the primary agent; a completed second-agent post-run
+review is absent. Final regressions: 275 passed/1 optional-backend skip;
+87 isolated GP/design/runner/CLI tests pass; lint/diff checks pass. Full report:
+`docs/research/calibration_2026-10-02/FULLVECTOR_RESULTS.md`. Warm-source KGE
+comparison also worsens NSE/bias, so no uniform hydrologic improvement or
+optimizer-efficiency claim. No public push or production-default change.
+
+## 2026-10-03 — Paper gate/tier semantics reviewed against software
+Traced historical Research Grade/current Gate verified badges to the same
+research_grade identifier. Local paper now separates the combined tier from
+discharge-skill and individual verification gates. Corrected incomplete
+physical/weather/withheld requirements in its effective-tier table and clarified
+original RG codes after finite replay. Figure/evidence files unchanged; paper
+builds to 29 pages with revised pages visually checked. Detailed disposition in
+../SWATPlus-Builder-paper/review/GATE_TERMINOLOGY_2026-10-03.md. No engine runs,
+new calibration claims, public push or Overleaf synchronization in this review.
+
+## 2026-10-03 — Gate-verified rename rationale confirmed
+Git history identifies paper466603b (September30 threshold concern), builder
+48f57fe and paper e732bb3 (October1 public label change with identifier retained).
+Primary Moriasi2007/2015 guidance defines simulation performance, not a research
+workflow tier. Corrected legacy governance/site descriptions and clarified the
+paper's 2015 streamflow scope. No new performance rating or runtime change;
+recommendation/history saved in the paper review directory.
+
+## 2026-10-03 — Workflow verification and performance terminology implemented
+
+- Standardized current runtime prose, dashboard, CLI/MCP help, generated summaries and public docs to **Gate-verified**; legacy `research_grade` identifiers, hierarchy, gates and historical records remain unchanged. Intermediate `publication_grade` displays **Calibration verified**, with no journal-approval implication. Negotiation accepts new and legacy wording.
+- Added independent Moriasi 2015 numeric streamflow assessment: complete R² > .60, NSE > .50 and |PBIAS| ≤ 15%, with explicit period, timestep and evaluation role. Missing/invalid metrics or scope mean not evaluated. The dashboard computes calibration assessment from full alignment CSV, records source SHA-256, and separates reported validation. These are derived numeric assessments, not sealed claims, graphical judgement or automatic tier promotion.
+- Verification: 186 focused evaluator/dashboard/contract/CLI/workflow/governance tests pass; Ruff, JavaScript syntax and diff checks pass. Broader script-policy run: 24 pass, one existing artifact-dependent failure. Executing unchanged HEAD audit reproduces the same `not_complete` result: retained build diagnostic artifact requirement is missing. No policy weakened to conceal this finding.
+- Paper prose and case-figure badge agree; figure generation retains scientific input checks, and the 30-page PDF builds with no overfull boxes or undefined references/citations. Revised table/figure visually reviewed. Figure regenerated with existing Builder environment (matplotlib 3.10.9, not paper lock 3.10.8); prior full pixel-reproduction statement applies to its dated snapshot only. GitHub/Overleaf and release-kit refresh remain pending.

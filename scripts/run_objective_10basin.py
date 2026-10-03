@@ -2745,7 +2745,7 @@ def _row_action_items(row: Row) -> list[str]:
             actions.append(f"Soil source alternative: {option}; artifacts={artifact_text}; impact={impact}.")
         if row.build_diagnostic_artifacts:
             keys = ", ".join(sorted(row.build_diagnostic_artifacts))
-            actions.append(f"Soil fidelity: review retained build diagnostics ({keys}) before research-grade claims.")
+            actions.append(f"Soil fidelity: review retained build diagnostics ({keys}) before Gate-verified claims.")
         elif row.build_message:
             actions.append(f"Soil fidelity: {row.build_message}")
     if row.primary_blocker == "ET_DOMINATED" or "ET_DOMINATED" in row.physical_condition_codes:
@@ -2861,7 +2861,7 @@ def _target_hypothesis_evaluation(
         "pipeline_improvement_required_domains": improvement_domains,
         "science_blocker_count": scientific_blockers,
         "interpretation": (
-            "Current evidence does not support the >=7 research-grade target; "
+            "Current evidence does not support the >=7 Gate-verified target; "
             "retain exploratory tiers and improve only blocker domains that are "
             "engineering, diagnostics, calibration, provenance, or parameter-support gaps."
             if research_grade_count < target_count

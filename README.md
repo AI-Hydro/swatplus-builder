@@ -22,8 +22,10 @@ and explicit claim tiers.
 
 Most modeling tools will happily report a number. This one reports a number
 **and the evidence that authorizes it** — and refuses to label a result
-"research-grade" until every gate (physical realism, soil provenance, routing
-closure, verified calibration) actually passes. A blocked claim is not a crash;
+"Gate-verified" until the applicable gates (physical realism, soil provenance,
+routing closure, verified calibration and fidelity checks) pass for its recorded scope.
+The legacy machine identifier remains `research_grade`; this workflow status does
+not imply compliance with published streamflow performance criteria. A blocked claim is not a crash;
 it is *classified evidence*. That makes both the successes and the limitations
 of an automated build inspectable — the core property you need when an LLM agent,
 not a hydrologist, is at the controls.
@@ -83,7 +85,7 @@ See:
 
 - **[Documentation site](https://ai-hydro.github.io/swatplus-builder/)** — concepts, user guide, agent/MCP, and full reference
 - [`QUICKSTART.md`](QUICKSTART.md) — install, run, and operate via agents
-- [Honest status](https://ai-hydro.github.io/swatplus-builder/project/status/) — what the system actually claims today (0/11 research-grade)
+- [Honest status](https://ai-hydro.github.io/swatplus-builder/project/status/) — what the dated basin suite establishes (0/11 Gate-verified)
 - [`ROADMAP.md`](ROADMAP.md) — phased plan with checkboxes
 - [`PROGRESS.md`](PROGRESS.md) — running progress journal
 - [`DECISIONS.md`](DECISIONS.md) — architecture decision records

@@ -304,7 +304,7 @@ def _append_static_checks(checks: list[Check]) -> None:
     )
     checks.append(
         Check(
-            "Pipeline research-grade audit doc present",
+            "Pipeline Gate-verified audit doc present",
             "implemented" if _exists("docs/PIPELINE_RESEARCH_GRADE_AUDIT.md") else "missing",
             "docs/PIPELINE_RESEARCH_GRADE_AUDIT.md",
         )
@@ -422,7 +422,7 @@ def build_audit() -> dict[str, Any]:
 
     missing = [c for c in checks if c.status != "implemented"]
     return {
-        "objective": "research-grade, agent-governed full-mode SWAT+ workflow",
+        "objective": "Gate-verified, agent-governed full-mode SWAT+ workflow",
         "objective_report_json": str(OBJECTIVE_REPORT_JSON),
         "implemented": len(checks) - len(missing),
         "total": len(checks),

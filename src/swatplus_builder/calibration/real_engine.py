@@ -3,20 +3,75 @@
 from __future__ import annotations
 
 import json
+import logging
+import math
 import re
 import shutil
 import tempfile
+import threading
+import time
+import weakref
 from collections.abc import Callable
-from datetime import date, datetime
+from contextlib import contextmanager
+from datetime import date, datetime, timezone
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import pandas as pd
 
 from .. import __version__ as _builder_version
 from ..output.eval import evaluate_run
 from ..run import run as run_swat
+from .evaluation_budget import STAGES, EvaluationBudget
+from .policy_engine import ExactOutputPolicyAdapter, calibration_process_proxy
+
+_OBJECTIVE_LOCKS_GUARD = threading.Lock()
+_OBJECTIVE_LOCKS: weakref.WeakValueDictionary[str, Any] = weakref.WeakValueDictionary()
+
+
+def _objective_lock(identity: str) -> Any:
+    """Coordinate identical work paths across objective instances in this process."""
+    with _OBJECTIVE_LOCKS_GUARD:
+        lock = _OBJECTIVE_LOCKS.get(identity)
+        if lock is None:
+            lock = threading.Lock()
+            _OBJECTIVE_LOCKS[identity] = lock
+        return lock
+
+
+@contextmanager
+def _stage_duration(record: dict[str, Any], stage: str):
+    started = time.monotonic()
+    try:
+        yield
+    finally:
+        record["stage_seconds"][stage] = time.monotonic() - started
+
+
+def _atomic_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pending = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    try:
+        pending.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        pending.replace(path)
+    finally:
+        pending.unlink(missing_ok=True)
+
+
+def _finite_budget_metadata(value: Any) -> Any:
+    """Keep invalid diagnostic values explicit while satisfying finite JSON."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return repr(value)
+    if isinstance(value, dict):
+        return {str(k): _finite_budget_metadata(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_finite_budget_metadata(v) for v in value]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return repr(value)
+
 
 RealObjective = Callable[[dict[str, float]], dict[str, Any]]
 
@@ -45,6 +100,10 @@ def make_real_objective(
     score_end: str | date | None = None,
     reuse_compact_traces: bool = False,
     trace_context_sha256: str | None = None,
+    telemetry_dir: Path | str | None = None,
+    objective_policy: ExactOutputPolicyAdapter | None = None,
+    evaluation_budget: EvaluationBudget | None = None,
+    budget_stage: str = "search",
 ) -> RealObjective:
     """Build an objective function that runs SWAT+ per parameter vector.
 
@@ -53,7 +112,30 @@ def make_real_objective(
     ``nyskip_years`` strips the first N years from the observed series before
     scoring to exclude the model warm-up / spin-up period from metric
     calculation (Klemeš 1986, Abbaspour 2015).
+
+    ``telemetry_dir`` optionally retains one atomic JSON record per call,
+    including cache hits and failures. Engine timing includes receipt generation;
+    this is not a solver-only profile. Identical cache paths are serialized
+    within this Python process; no cross-process locking is provided. Inputs
+    are sealed when the objective is constructed and must remain immutable.
+    An optional calendar-bound ``objective_policy`` scores the actual aligned
+    training output and verifies its source receipt. It returns explicit
+    policy_utility/status/feasible/evidence fields; undefined scores have no
+    utility. Its frozen observations/calendar must match the observations after
+    score-window and warm-up trimming; mismatches fail during construction.
+    Compact trace reuse is unsupported with a policy. A shared optional
+    ``evaluation_budget`` charges requests before cache/engine work and retains
+    invalid policy results as failed attempts. Final reruns still require
+    ``force_fresh=True`` and their explicit reserved budget stage.
+    ``engine_invoked`` records a call to the engine wrapper, including calls
+    failing before a subprocess starts; it is not a process-launch receipt.
     """
+    if objective_policy is not None and reuse_compact_traces:
+        raise ValueError("Policy objectives require actual aligned outputs; compact trace reuse is unsupported.")
+    if objective_policy is not None and not isinstance(objective_policy, ExactOutputPolicyAdapter):
+        raise TypeError("objective_policy must be a calendar-bound ExactOutputPolicyAdapter.")
+    if evaluation_budget is not None and (not isinstance(budget_stage, str) or budget_stage not in STAGES):
+        raise ValueError(f"Unknown budget stage: {budget_stage!r}")
     base = Path(base_txtinout).expanduser().resolve()
     root = Path(work_root).expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
@@ -88,6 +170,21 @@ def make_real_objective(
                 f"nyskip_years={warmup_years} removed all observed rows; "
                 "reduce nyskip or extend the observation window."
             )
+    if objective_policy is not None:
+        # Score-window and warm-up trimming must agree with the frozen policy
+        # before creating engine/cache identities or spending a request.
+        try:
+            bound_policy = ExactOutputPolicyAdapter.bind(objective_policy.policy, obs)
+        except (ValueError, TypeError, OverflowError) as exc:
+            raise ValueError(
+                "objective_policy training context does not match observations "
+                "after score-window and nyskip trimming"
+            ) from exc
+        if bound_policy.sha256 != objective_policy.sha256:
+            raise ValueError(
+                "objective_policy training calendar does not match observations "
+                "after score-window and nyskip trimming"
+            )
     requested_file = str(objective_sim_file).strip()
     if not requested_file:
         raise ValueError("objective_sim_file must be a non-empty filename.")
@@ -108,6 +205,9 @@ def make_real_objective(
         raise ValueError("reuse_compact_traces requires trace_context_sha256.")
     if reuse_compact_traces and force_fresh:
         raise ValueError("force_fresh and reuse_compact_traces are mutually exclusive.")
+    static_sha256 = _staged_input_identity(base)
+    observation_sha256 = _observation_identity(obs)
+    telemetry_root = Path(telemetry_dir).expanduser().resolve() if telemetry_dir is not None else None
     cache_signature = _objective_cache_signature(
         parameter_mode,
         binary=binary,
@@ -120,12 +220,20 @@ def make_real_objective(
         outlet_gis_id=int(outlet_gis_id),
         objective_outlet_policy=outlet_policy,
         trace_context_sha256=trace_context_sha256,
+        observation_sha256=observation_sha256,
+        input_configuration_sha256=static_sha256,
+        include_physical_gate=include_physical_gate,
+        strict_objective_file=strict_objective_file,
+        allow_outlet_autodetect=allow_outlet_autodetect,
+        threads=threads,
+        policy_adapter_sha256=objective_policy.sha256 if objective_policy is not None else None,
     )
 
-    def _objective(params: dict[str, float]) -> dict[str, float]:
+    def _evaluate(params: dict[str, float], record: dict[str, Any]) -> dict[str, Any]:
         key = params_hash(params)
         compact_trace = root / f"{key}_objective_trace.json"
         if reuse_compact_traces:
+            lookup_started = time.monotonic()
             cached_metrics = _load_reusable_objective_trace(
                 compact_trace,
                 params=params,
@@ -133,7 +241,9 @@ def make_real_objective(
                 requested_sim_file=requested_file,
                 require_physical_gate=include_physical_gate,
             )
+            record["stage_seconds"]["cache_lookup"] = time.monotonic() - lookup_started
             if cached_metrics is not None:
+                record["cache_status"] = "compact_hit"
                 return cached_metrics
         run_dir = (
             root / key
@@ -149,35 +259,42 @@ def make_real_objective(
                 shutil.rmtree(run_dir)
                 txt = run_dir / "TxtInOut"
             if not txt.exists():
-                _copy_fresh_txtinout(base, txt)
+                with _stage_duration(record, "staging"):
+                    _copy_fresh_txtinout(base, txt)
             if not marker.exists():
-                _prepare_full_mode_txtinout_for_objective(txt, parameter_mode=parameter_mode)
-                _prepare_txtinout_for_objective(
-                    txt,
-                    simulation_start=simulation_start_date,
-                    simulation_end=simulation_end_date,
-                    score_start=score_start_date,
-                    score_end=score_end_date,
-                )
-                _apply_parameters_for_mode(txt, params, parameter_mode=parameter_mode)
-                run_swat(
-                    txt,
-                    threads=threads,
-                    timeout_s=timeout_s,
-                    binary=binary,
-                )
+                with _stage_duration(record, "parameter_preparation"):
+                    _prepare_full_mode_txtinout_for_objective(txt, parameter_mode=parameter_mode)
+                    _prepare_txtinout_for_objective(
+                        txt,
+                        simulation_start=simulation_start_date,
+                        simulation_end=simulation_end_date,
+                        score_start=score_start_date,
+                        score_end=score_end_date,
+                    )
+                    _apply_parameters_for_mode(txt, params, parameter_mode=parameter_mode)
+                record["engine_invoked"] = True
+                with _stage_duration(record, "engine_and_receipt"):
+                    run_swat(
+                        txt,
+                        threads=threads,
+                        timeout_s=timeout_s,
+                        binary=binary,
+                    )
                 marker.write_text(
                     json.dumps({"status": "ok", "cache_signature": cache_signature}, indent=2) + "\n",
                     encoding="utf-8",
                 )
-            _df, metrics, diagnostics = evaluate_run(
-                txt / requested_file,
-                obs,
-                outlet_gis_id=outlet_gis_id,
-                out_alignment_csv=txt / "alignment_calibration.csv",
-                outlet_policy=outlet_policy,
-                return_diagnostics=True,
-            )
+            if not record["engine_invoked"]:
+                record["cache_status"] = "workdir_hit"
+            with _stage_duration(record, "evaluation"):
+                aligned, metrics, diagnostics = evaluate_run(
+                    txt / requested_file,
+                    obs,
+                    outlet_gis_id=outlet_gis_id,
+                    out_alignment_csv=txt / "alignment_calibration.csv",
+                    outlet_policy=outlet_policy,
+                    return_diagnostics=True,
+                )
             diagnostics.setdefault("outlet_policy", outlet_policy)
             actual_file = str(diagnostics.get("sim_source_file"))
             if strict_objective_file and actual_file != requested_file:
@@ -194,7 +311,8 @@ def make_real_objective(
                 )
             metrics = dict(metrics)
             if include_physical_gate:
-                physical_gate = _candidate_physical_gate(txt, metrics)
+                with _stage_duration(record, "physical_gate"):
+                    physical_gate = _candidate_physical_gate(txt, metrics)
                 diagnostics["candidate_physical_gate"] = physical_gate
                 metrics["physical_gate_passed"] = 1.0 if physical_gate.get("pass") else 0.0
                 process_pass = physical_gate.get("calibration_process_gate_pass")
@@ -215,6 +333,23 @@ def make_real_objective(
                     metrics[metric_key] = 1.0 if value else 0.0
                 elif isinstance(value, (int, float)):
                     metrics[metric_key] = float(value)
+            policy_result = None
+            if objective_policy is not None:
+                constraints = ()
+                if include_physical_gate:
+                    constraints = (calibration_process_proxy(
+                        diagnostics.get("candidate_physical_gate", {}).get("calibration_process_gate_pass")
+                    ),)
+                # A source chosen by the evaluator must be a local output filename.
+                if Path(actual_file).name != actual_file:
+                    raise RuntimeError("Policy objective source must be a local output filename.")
+                policy_result = objective_policy.evaluate(
+                    aligned, source_path=txt / actual_file,
+                    receipt_path=txt / "engine_run_receipt.json", constraints=constraints,
+                )
+                metrics.update(policy_result.objective.components)
+                diagnostics["policy_evidence"] = policy_result.to_payload()
+                record["policy_evidence"] = policy_result.to_payload()
             trace_path = run_dir / "objective_trace.json"
             _write_objective_trace(
                 trace_path,
@@ -225,11 +360,65 @@ def make_real_objective(
                 cache_signature=cache_signature,
             )
             if not keep_workdirs:
-                shutil.copy2(trace_path, compact_trace)
-            return {k: float(v) for k, v in metrics.items() if isinstance(v, (int, float))}
+                with _stage_duration(record, "trace_publication"):
+                    _atomic_json(compact_trace, json.loads(trace_path.read_text(encoding="utf-8")))
+            result = {k: float(v) for k, v in metrics.items() if isinstance(v, (int, float))}
+            if policy_result is not None:
+                result.update(policy_utility=policy_result.objective.utility,
+                              policy_status=policy_result.objective.status,
+                              policy_feasible=policy_result.objective.feasible,
+                              policy_evidence=policy_result.to_payload())
+            return result
         finally:
             if not keep_workdirs:
-                shutil.rmtree(run_dir, ignore_errors=True)
+                with _stage_duration(record, "cleanup"):
+                    shutil.rmtree(run_dir, ignore_errors=True)
+
+    def _objective(params: dict[str, float]) -> dict[str, Any]:
+        # Count every admitted request before hashing, cache lookup or engine work.
+        token = evaluation_budget.reserve(budget_stage) if evaluation_budget is not None else None
+        started = time.monotonic()
+        invocation_id = uuid4().hex
+        record: dict[str, Any] = {
+            "schema": "calibration_invocation_v1",
+            "invocation_id": invocation_id,
+            "started_at_utc": datetime.now(timezone.utc).isoformat(),
+            "cache_signature": cache_signature,
+            "cache_status": "miss", "engine_invoked": False,
+            "engine_invocation_basis": "run_swat_call", "threads": int(threads),
+            "status": "running", "stage_seconds": {}, "budget_stage": budget_stage,
+        }
+        try:
+            params = dict(params)
+            record["params"] = params
+            record["params_sha256"] = params_hash(params)
+            # Differing contexts must also serialize on the parameter-named path.
+            lock = _objective_lock(str(root / params_hash(params)))
+            with lock:
+                record["stage_seconds"]["lock_wait"] = time.monotonic() - started
+                result = _evaluate(params, record)
+            record["status"] = "failed" if result.get("policy_status") == "invalid" else "completed"
+            return result
+        except BaseException as exc:
+            record["status"] = "interrupted" if isinstance(exc, (KeyboardInterrupt, SystemExit)) else "failed"
+            record["error"] = f"{type(exc).__name__}: {exc}"
+            raise
+        finally:
+            record["total_seconds"] = time.monotonic() - started
+            record["finished_at_utc"] = datetime.now(timezone.utc).isoformat()
+            try:
+                if telemetry_root is not None:
+                    try:
+                        _atomic_json(telemetry_root / f"{invocation_id}.json", record)
+                    except OSError:
+                        logging.getLogger(__name__).exception("Unable to persist calibration invocation telemetry")
+            finally:
+                if token is not None:
+                    evaluation_budget.finish(
+                        token, status=record["status"],
+                        cache_hit=record["cache_status"] in {"compact_hit", "workdir_hit"},
+                        engine_invoked=record["engine_invoked"], metadata=_finite_budget_metadata(record),
+                    )
 
     return _objective
 
@@ -308,6 +497,37 @@ def _optional_float(value: Any) -> float | None:
     return result if math.isfinite(result) else None
 
 
+def _staged_input_identity(base: Path) -> str:
+    """Hash precisely the non-output files copied into a fresh objective."""
+    if not base.is_dir():
+        raise ValueError("TxtInOut input directory missing")
+    digest = sha256()
+    paths = (path for path in base.rglob("*") if path.is_file())
+    for path in sorted(paths, key=lambda item: item.relative_to(base).as_posix()):
+        relative = path.relative_to(base)
+        # copytree's ignore function applies to both directory and file names.
+        if any(_is_dynamic_swatplus_output(part) for part in relative.parts):
+            continue
+        digest.update(relative.as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _observation_identity(obs: pd.Series) -> str:
+    """Seal scored values and normalized dates in their evaluation order."""
+    digest = sha256()
+    for timestamp, value in zip(pd.to_datetime(obs.index).normalize(), obs, strict=True):
+        digest.update(timestamp.isoformat().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(float(value).hex().encode("ascii"))
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
 def _objective_cache_signature(
     parameter_mode: str,
     *,
@@ -321,8 +541,23 @@ def _objective_cache_signature(
     outlet_gis_id: int | None = None,
     objective_outlet_policy: str | None = None,
     trace_context_sha256: str | None = None,
+    observation_sha256: str | None = None,
+    input_configuration_sha256: str | None = None,
+    include_physical_gate: bool = False,
+    strict_objective_file: bool = True,
+    allow_outlet_autodetect: bool = False,
+    threads: int = 1,
+    policy_adapter_sha256: str | None = None,
 ) -> str:
     payload: dict[str, str] = {
+        "semantic_cache_schema": "2",
+        "policy_adapter_sha256": str(policy_adapter_sha256 or ""),
+        "observation_sha256": str(observation_sha256 or ""),
+        "input_configuration_sha256": str(input_configuration_sha256 or ""),
+        "include_physical_gate": str(include_physical_gate),
+        "strict_objective_file": str(strict_objective_file),
+        "allow_outlet_autodetect": str(allow_outlet_autodetect),
+        "engine_threads": str(max(1, int(threads))),
         "parameter_mode": str(parameter_mode or "lte").strip().lower(),
         "builder_version": str(_builder_version),
         "simulation_start": simulation_start.isoformat() if simulation_start else "",
@@ -347,8 +582,17 @@ def _objective_cache_signature(
         payload["swat_binary_sha256"] = "unavailable"
     for name, path in {
         "real_engine": Path(__file__),
+        "policy_engine": Path(__file__).with_name("policy_engine.py"),
+        "objective_policy": Path(__file__).with_name("objective_policy.py"),
         "parameter_bridge": Path(__file__).parents[1] / "full_mode" / "parameter_bridge.py",
         "routing_fixes": Path(__file__).parents[1] / "full_mode" / "routing_fixes.py",
+        "evaluator": Path(__file__).parents[1] / "output" / "eval.py",
+        "metrics": Path(__file__).parents[1] / "output" / "metrics.py",
+        "output_parser": Path(__file__).parents[1] / "output" / "reader.py",
+        "alignment": Path(__file__).parents[1] / "output" / "plots" / "utils.py",
+        "water_balance_gate": Path(__file__).parents[1] / "full_mode" / "water_balance_gate.py",
+        "parameter_registry": Path(__file__).parents[1] / "params" / "registry.py",
+        "parameter_governance": Path(__file__).parents[1] / "params" / "governance.py",
     }.items():
         try:
             payload[name] = sha256(path.read_bytes()).hexdigest()
@@ -686,10 +930,12 @@ def _write_objective_trace(
         "metrics": {k: float(v) for k, v in metrics.items() if isinstance(v, (int, float))},
         "cache_signature": cache_signature,
     }
+    if "policy_evidence" in diagnostics:
+        payload["policy_evidence"] = diagnostics["policy_evidence"]
     if "candidate_physical_gate" in diagnostics:
         payload["candidate_physical_gate"] = diagnostics.get("candidate_physical_gate")
     payload["payload_sha256"] = _objective_trace_payload_sha256(payload)
-    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    _atomic_json(path, payload)
 
 
 def _objective_trace_payload_sha256(payload: dict[str, Any]) -> str:
@@ -733,5 +979,9 @@ def _load_reusable_objective_trace(
     if not required.issubset(metrics):
         return None
     if not all(isinstance(value, (int, float)) for value in metrics.values()):
+        return None
+    import math
+
+    if not all(math.isfinite(float(metrics[key])) for key in required):
         return None
     return {key: float(value) for key, value in metrics.items()}

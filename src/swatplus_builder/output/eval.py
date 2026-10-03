@@ -10,10 +10,20 @@ from typing import Any, Literal
 import pandas as pd
 
 from swatplus_builder.output.metrics import baseflow_index, kge, log_kge, log_kge_v2, nse, pbias
-from swatplus_builder.output.reader import read_output_file
+from swatplus_builder.output.reader import OutputTable, read_output_file
 
 log = logging.getLogger(__name__)
 _SECONDS_PER_DAY = 86400.0
+
+
+def _evaluation_table(path: Path, tables: dict[Path, OutputTable] | None) -> OutputTable:
+    """Parse each actual source once per evaluation, without a persistent cache."""
+    if tables is None:
+        return read_output_file(path)
+    key = path.resolve()
+    if key not in tables:
+        tables[key] = read_output_file(path)
+    return tables[key]
 
 
 def terminal_channel_ids(txtinout_dir: Path | str) -> list[int]:
@@ -144,13 +154,17 @@ def evaluate_run(
             "'all_terminal_sum'."
         )
 
+    tables: dict[Path, OutputTable] = {}
     if outlet_policy == "all_terminal_sum":
-        sim_df, diagnostics = _read_all_terminal_sum_discharge(sim_channel_path, outlet_gis_id)
+        sim_df, diagnostics = _read_all_terminal_sum_discharge(
+            sim_channel_path, outlet_gis_id, tables=tables
+        )
     else:
         sim_df, diagnostics = _read_sim_discharge(
             sim_channel_path,
             outlet_gis_id,
             allow_dry_autodetect=(outlet_policy == "auto"),
+            tables=tables,
         )
     diagnostics["outlet_policy"] = outlet_policy
     if sim_df.empty:
@@ -180,6 +194,7 @@ def evaluate_run(
                 sim_source,
                 obs_series,
                 requested_outlet_gis_id=int(outlet_gis_id),
+                tables=tables,
             )
             if best is not None:
                 best_gid, best_df, best_nse = best
@@ -260,6 +275,7 @@ def evaluate_run(
                     source_path,
                     obs_series,
                     selected_outlet_gis_id=int(diagnostics.get("selected_outlet_gis_id", outlet_gis_id)),
+                    tables=tables,
                 )
             )
 
@@ -278,6 +294,7 @@ def _terminal_scope_metric_diagnostics(
     obs_series: pd.Series,
     *,
     selected_outlet_gis_id: int,
+    tables: dict[Path, OutputTable] | None = None,
 ) -> dict[str, Any]:
     """Diagnostic-only selected-vs-all terminal metrics for terminal runs."""
 
@@ -292,7 +309,7 @@ def _terminal_scope_metric_diagnostics(
             "terminal_scope_metric_terminal_ids": terminal_ids,
         }
     try:
-        table = read_output_file(sim_source_path)
+        table = _evaluation_table(sim_source_path, tables)
     except Exception as exc:
         return {
             "terminal_scope_metrics_available": False,
@@ -532,6 +549,8 @@ def _candidate_sim_paths(sim_channel_path: Path) -> list[Path]:
 def _read_all_terminal_sum_discharge(
     sim_channel_path: Path,
     outlet_gis_id: int,
+    *,
+    tables: dict[Path, OutputTable] | None = None,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Read a virtual all-terminal outlet formed by summing terminal flows."""
     txtinout_dir = sim_channel_path.parent
@@ -563,7 +582,7 @@ def _read_all_terminal_sum_discharge(
     for cand in _candidate_sim_paths(sim_channel_path):
         if not cand.exists():
             continue
-        table = read_output_file(cand)
+        table = _evaluation_table(cand, tables)
         terminal_series: list[pd.Series] = []
         for gid in terminal_ids:
             terminal_df = _extract_flo_out_rows(table, gid)
@@ -725,6 +744,7 @@ def _read_sim_discharge(
     outlet_gis_id: int,
     *,
     allow_dry_autodetect: bool,
+    tables: dict[Path, OutputTable] | None = None,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Read daily outlet discharge, with optional dry-outlet fallback."""
     txtinout_dir = sim_channel_path.parent
@@ -751,7 +771,7 @@ def _read_sim_discharge(
         if not cand.exists():
             continue
         log.info("Reading simulated timeseries from %s", cand)
-        table = read_output_file(cand)
+        table = _evaluation_table(cand, tables)
         if terminal_ids:
             diagnostics["requested_outlet_is_terminal"] = int(outlet_gis_id) in terminal_ids
         df = _extract_flo_out_rows(table, outlet_gis_id)
@@ -906,6 +926,8 @@ def _select_best_terminal_by_nse(
     sim_source_path: Path,
     obs_series: pd.Series,
     requested_outlet_gis_id: int,
+    *,
+    tables: dict[Path, OutputTable] | None = None,
 ) -> tuple[int, pd.DataFrame, float] | None:
     """Select terminal outlet with best NSE against observed discharge."""
     if not sim_source_path.exists():
@@ -915,7 +937,7 @@ def _select_best_terminal_by_nse(
     if not terminal_ids:
         return None
 
-    table = read_output_file(sim_source_path)
+    table = _evaluation_table(sim_source_path, tables)
     from swatplus_builder.output.plots.utils import align_timeseries
 
     best_gid: int | None = None

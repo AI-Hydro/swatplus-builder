@@ -161,7 +161,7 @@ def _next_actions(flags: list[dict[str, str]], values: dict[str, Any]) -> list[s
         else:
             actions.append("Screen PERCO/LATQ_CO and subsurface routing controls with retained soil provenance evidence.")
     if soil["soil_degraded"]:
-        actions.append("Resolve degraded soil provenance before using ET sensitivity results for research-grade claims.")
+        actions.append("Resolve degraded soil provenance before using ET sensitivity results for Gate-verified claims.")
     return actions
 
 
@@ -241,11 +241,11 @@ def _source_backed_alternatives(flags: list[dict[str, str]], values: dict[str, A
             {
                 "rank": len(alternatives) + 1,
                 "option": "recover_authoritative_soil_provenance_before_et_claims",
-                "source": "Project soil source-priority manifest: gNATSGO raster plus SDA horizons is the only current research-grade-eligible soil source",
+                "source": "Project soil source-priority manifest: gNATSGO raster plus SDA horizons is the only current Gate-verified-eligible soil source",
                 "parameters": [],
                 "fresh_output_required": False,
                 "claim_impact": "soil_fidelity_gate_blocks_research_grade",
-                "rationale": f"Fallback soil fraction is {pct_fallback:.3f}; ET partition sensitivity cannot support research-grade claims with degraded soils.",
+                "rationale": f"Fallback soil fraction is {pct_fallback:.3f}; ET partition sensitivity cannot support Gate-verified claims with degraded soils.",
             }
         )
 

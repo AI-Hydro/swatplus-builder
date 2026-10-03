@@ -279,7 +279,7 @@ def _write_soil_realism_diagnostics(outdir: Path, exc: Exception, *, usgs_id: st
         "source_backed_alternatives": _soil_source_backed_alternatives(),
         "recommended_probe_order": _soil_recommended_probe_order(),
         "next_actions": [
-            "Inspect soil acquisition provenance and fallback ratio before accepting research-grade claims.",
+            "Inspect soil acquisition provenance and fallback ratio before accepting Gate-verified claims.",
             "Prefer authoritative gNATSGO/Soil Data Access coverage or an explicit external soils JSON before rerunning.",
             "Use synthetic or constant representative soils only for diagnostic runs with claim downgrade.",
         ],

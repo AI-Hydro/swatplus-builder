@@ -659,7 +659,7 @@ def trace_mass_balance(
     if "multiple_terminal_outlets_present" in flags:
         notes.append(
             "Multiple terminal outlets are present; verify whether the selected terminal represents the gauge basin "
-            "or whether terminal inventory/aggregation is required before research-grade claims."
+            "or whether terminal inventory/aggregation is required before Gate-verified claims."
         )
     if "routing_unit_outflow_unit_semantics_suspect" in flags and ru_ratio is not None:
         notes.append(
@@ -1048,7 +1048,7 @@ def _routing_source_backed_alternatives(
                 "required_artifacts": ["mass_trace.json", "routing_flow_gates.json", "terminal_trace.json"],
                 "fresh_output_required": False,
                 "claim_impact": "routing_flow_gate_blocks_research_grade",
-                "rationale": f"Closure status `{status}` requires additional context before research-grade claims.",
+                "rationale": f"Closure status `{status}` requires additional context before Gate-verified claims.",
             }
         )
     return alternatives

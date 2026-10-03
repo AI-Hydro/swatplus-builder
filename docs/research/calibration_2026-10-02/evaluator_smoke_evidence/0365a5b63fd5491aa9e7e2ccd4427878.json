@@ -1,0 +1,26 @@
+{
+  "schema": "calibration_invocation_v1",
+  "invocation_id": "0365a5b63fd5491aa9e7e2ccd4427878",
+  "started_at_utc": "2026-10-02T12:29:30.838549+00:00",
+  "params": {},
+  "params_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+  "cache_signature": "317c80413b801e839ec4e66689a48073b5f8d378b652294244514acc2415b577",
+  "cache_status": "miss",
+  "engine_invoked": true,
+  "engine_invocation_basis": "run_swat_call",
+  "threads": 1,
+  "status": "completed",
+  "stage_seconds": {
+    "lock_wait": 0.0008073749486356974,
+    "cache_lookup": 0.00023458292707800865,
+    "staging": 1.3746155421249568,
+    "parameter_preparation": 0.11591304186731577,
+    "engine_and_receipt": 125.49298008298501,
+    "evaluation": 13.759018667042255,
+    "physical_gate": 0.005234166979789734,
+    "trace_publication": 0.00144091690890491,
+    "cleanup": 0.1977330418303609
+  },
+  "total_seconds": 140.9692421250511,
+  "finished_at_utc": "2026-10-02T12:31:51.807201+00:00"
+}

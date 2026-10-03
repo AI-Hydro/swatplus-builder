@@ -49,7 +49,7 @@ from ..governance import (
 from ..governance import (
     weather_fidelity_gate as _weather_fidelity_gate_impl,
 )
-from ..governance.tiers import CLAIM_TIERS
+from ..governance.tiers import CLAIM_TIERS, tier_label
 from ..orchestrate import run_pipeline
 from ..output.et_diagnostics import write_et_partition_diagnostics
 from ..output.landuse_fidelity import build_landuse_fidelity_block
@@ -942,7 +942,7 @@ def _allowed_claim_tier(req: RunUSGSWorkflowRequest) -> tuple[str, str | None, l
     if requested_tier in {"research_grade", "publication_grade"}:
         if req.contract_status not in {"accepted", "executed"} or req.accepted_by not in {"user", "policy"}:
             return "diagnostic", "contract_policy_blocked", notes
-        # enforce research-grade minimum window policy
+        # enforce Gate-verified minimum window policy
         if years < _MIN_YEARS_RESEARCH or int(req.warmup_years) < _MIN_WARMUP_YEARS:
             notes.append("window_short_for_research")
             return "diagnostic", "contract_policy_blocked", notes
@@ -1934,6 +1934,8 @@ def run_usgs_workflow(request: RunUSGSWorkflowRequest) -> RunUSGSWorkflowResult:
         "artifact_dir": str(out),
         "claim_tier": allowed_tier,
         "effective_claim_tier": effective_claim_tier,
+        "claim_tier_label": tier_label(allowed_tier),
+        "effective_claim_tier_label": tier_label(effective_claim_tier),
         "contract_status": request.contract_status,
         "accepted_by": request.accepted_by,
         "gates_passed": gates_passed,
@@ -2183,8 +2185,8 @@ def _render_evidence_summary_md(payload: dict[str, Any]) -> str:
         f"- Run ID: `{payload.get('run_id')}`",
         f"- USGS ID: `{payload.get('usgs_id')}`",
         f"- Success: `{payload.get('success')}`",
-        f"- Requested/allowed claim tier: `{payload.get('claim_tier')}`",
-        f"- Effective claim tier: `{payload.get('effective_claim_tier')}`",
+        f"- Requested/allowed workflow status: {tier_label(payload.get('claim_tier'))} (identifier `{payload.get('claim_tier')}`)",
+        f"- Effective workflow status: {tier_label(payload.get('effective_claim_tier'))} (identifier `{payload.get('effective_claim_tier')}`)",
         f"- Blocker class: `{payload.get('blocker_class') or 'none'}`",
         f"- Contract status: `{payload.get('contract_status') or 'unspecified'}`",
         f"- Accepted by: `{payload.get('accepted_by') or 'unspecified'}`",
@@ -2381,7 +2383,7 @@ def _annotate_parameter_screen_for_physical_context(
     warnings = payload.setdefault("warnings", [])
     warning = (
         "Basin-context screen: ET_DOMINATED physical gate requires PET_CO/ESCO/EPCO "
-        "and ET partition diagnostics before calibration or research-grade claims."
+        "and ET partition diagnostics before calibration or Gate-verified claims."
     )
     if warning not in warnings:
         warnings.append(warning)
@@ -2680,14 +2682,14 @@ def _routing_flow_next_action(
         if terminal_failure_class == "single_terminal_scope_valid":
             return (
                 "Selected terminal scope is supported by terminal inventory; audit SWAT+ channel-rate "
-                "versus basin-yield output semantics before promoting a research-grade routing claim."
+                "versus basin-yield output semantics before promoting a Gate-verified routing claim."
             )
         return (
             "Inspect routing-unit to channel transfer and SWAT+ output unit interpretation; "
             "selected-channel inflow exceeds basin water yield."
         )
     if "multiple_terminal_outlets_present" in flag_set:
-        return "Review terminal outlet inventory and gauge-to-terminal selection before aggregating or claiming research-grade flow."
+        return "Review terminal outlet inventory and gauge-to-terminal selection before aggregating or claiming Gate-verified flow."
     if not calibration_blocking:
-        return "Mass-closure mismatch is retained as a research-grade blocker; diagnostic calibration may proceed."
+        return "Mass-closure mismatch is retained as a Gate-verified blocker; diagnostic calibration may proceed."
     return "Inspect HRU-to-channel transfer, terminal outlet selection, and channel routing before calibration."

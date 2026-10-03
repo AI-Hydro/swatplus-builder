@@ -1,0 +1,4537 @@
+{
+  "status": "passed",
+  "scope": "independent read-only retained-output audit; no live engine",
+  "checks": [
+    {
+      "check": "completed_manifest_and_result",
+      "passed": true
+    },
+    {
+      "check": "source_unchanged_report",
+      "passed": true
+    },
+    {
+      "check": "no_validation",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:calibration_fullvector_preflight.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:calibration_fullvector_trial.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/artifacts/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/artifacts/hashing.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/artifacts/models.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/artifacts/store.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/audit/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/audit/decisions.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/audit/ledger.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/autoresearch/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/autoresearch/loop.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/autoresearch/surrogate.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/bridge_diagnostics.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/calibrator.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/development_comparison.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/diagnostic_calibrator.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/evaluation_budget.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/experiment_design.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/forward.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/locked_benchmark.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/nwis.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/objective_policy.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/policy_engine.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/pyswatplus_runtime.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/real_engine.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/report.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/sensitivity_screen.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/spotpy_adapter.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/surrogate_optimizer.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/cli.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/config.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/db/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/db/mock_datasets.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/db/project.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/db/schema.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/db/seed.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/db/writer.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/decision_data/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/decision_data/faults.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/decision_data/state.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/decision_data/typed.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/diagnostics.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/domains/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/domains/flood_frequency.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/api.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/datasets/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/datasets/base.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/datasets/basin.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/datasets/change.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/datasets/climate.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/datasets/decision_table.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/datasets/definitions.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/datasets/hru_parm_db.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/datasets/init.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/datasets/lum.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/datasets/ops.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/datasets/setup.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/datasets/soils.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/datasets/structural.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/lib.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/output/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/output/aquifer.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/output/base.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/output/channel.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/output/check.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/output/data.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/output/hyd.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/output/losses.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/output/misc.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/output/nutbal.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/output/pest.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/output/plantwx.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/output/reservoir.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/output/setup.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/output/waterallo.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/output/waterbal.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/aquifer.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/base.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/basin.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/change.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/channel.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/climate.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/config.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/connect.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/decision_table.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/dr.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/exco.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/gis.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/gwflow.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/hru.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/hru_parm_db.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/hydrology.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/init.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/link.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/lum.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/ops.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/recall.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/regions.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/reservoir.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/routing_unit.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/salts.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/setup.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/simulation.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/soils.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/structural.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/water_rights.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/soils.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/vardefs.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/wgn.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/actions/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/actions/create_databases.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/actions/get_swatplus_check.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/actions/import_export_data.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/actions/import_gis.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/actions/import_gis_legacy.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/actions/import_weather.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/actions/load_scenarios.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/actions/read_output.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/actions/read_output_legacy.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/actions/reimport_gis.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/actions/run_all.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/actions/setup_project.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/actions/update_datasets.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/actions/update_project.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/actions/write_files.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/aquifer.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/base.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/basin.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/change.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/channel.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/climate.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/config.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/connect.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/decision_table.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/dr.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/exco.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/gwflow.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/hru.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/hru_parm_db.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/hydrology.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/init.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/lum.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/ops.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/recall.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/regions.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/reservoir.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/routing_unit.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/salts.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/simulation.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/soils.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/structural.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/water_rights.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/get-pip.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/helpers/executable_api.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/helpers/table_mapper.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/helpers/utils.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/aquifer.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/auto_complete.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/basin.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/change.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/channel.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/climate.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/config.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/decision_table.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/defaults.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/definitions.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/gwflow.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/hru.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/hru_lte.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/hru_parm_db.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/hydrology.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/init.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/lum.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/ops.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/recall.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/regions.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/reservoir.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/routing_unit.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/salts.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/setup.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/soils.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/structural.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/water_rights.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/swatplus_api.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/swatplus_rest_api.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/errors.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/evidence/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/evidence/integrity.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/evidence/migration.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/evidence/schema.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/examples/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/examples/usgs_basin_workflow.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/full_mode/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/full_mode/crop_management.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/full_mode/parameter_bridge.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/full_mode/routing_fixes.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/full_mode/subsurface_priors.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/full_mode/topology_converter.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/full_mode/verify_conversion.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/full_mode/warmup.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/full_mode/water_balance_gate.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/gis/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/gis/complexity.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/gis/delineation.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/gis/hru.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/gis/landuse.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/gis/nldi_fallback.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/gis/overlay_repair.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/gis/soil.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/gis/tables.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/gis/validate.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/governance/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/governance/gates.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/governance/tiers.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/mcp/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/mcp/server.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/mcp/worker.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/orchestrate.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/dashboard.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/et_diagnostics.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/eval.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/landuse_fidelity.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/mass_diagnostics.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/mass_trace.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/metadata.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/metrics.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/plots/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/plots/fdc.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/plots/forcing_context.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/plots/hydrograph.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/plots/landuse_composition.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/plots/residuals.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/plots/scatter.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/plots/seasonal.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/plots/soil.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/plots/spatial.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/plots/style.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/plots/utils.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/plots/water_balance.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/plots/wrapper.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/reader.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/realism.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/summary.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/terrain_climate_defaults.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/volume_diagnostics.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/weather_forcing.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/params/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/params/governance.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/params/registry.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/ref/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/ref/bootstrap.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/ref/catalog.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/run/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/run/swatplus.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/sensitivity.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/skills/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/skills/swatplus_playbook/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/skills/swatplus_playbook/rules.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/skills/swatplus_playbook/schemas.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/skills/swatplus_playbook/update.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/soil/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/soil/builder.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/soil/gnatsgo.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/soil/models.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/soil/params.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/soil/pc.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/soil/plot.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/soil/sda.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/soil/soilgrids.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/soil/writer.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/tools/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/tools/agent.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/types.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/validation/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/validation/runner.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/weather/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/weather/daymet.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/weather/gridmet.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/weather/synthetic.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/weather/wgn.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/weather/writer.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/workflows/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/workflows/contracts.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/workflows/full_build.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/workflows/usgs_e2e.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:__init__.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:artifacts/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:artifacts/hashing.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:artifacts/models.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:artifacts/store.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:audit/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:audit/decisions.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:audit/ledger.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:autoresearch/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:autoresearch/loop.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:autoresearch/surrogate.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:calibration/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:calibration/bridge_diagnostics.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:calibration/calibrator.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:calibration/development_comparison.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:calibration/diagnostic_calibrator.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:calibration/evaluation_budget.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:calibration/experiment_design.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:calibration/forward.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:calibration/locked_benchmark.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:calibration/nwis.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:calibration/objective_policy.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:calibration/policy_engine.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:calibration/pyswatplus_runtime.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:calibration/real_engine.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:calibration/report.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:calibration/sensitivity_screen.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:calibration/spotpy_adapter.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:calibration/surrogate_optimizer.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:cli.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:config.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:db/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:db/mock_datasets.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:db/project.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:db/schema.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:db/seed.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:db/writer.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:decision_data/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:decision_data/faults.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:decision_data/state.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:decision_data/typed.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:diagnostics.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:domains/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:domains/flood_frequency.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/api.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/datasets/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/datasets/base.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/datasets/basin.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/datasets/change.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/datasets/climate.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/datasets/decision_table.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/datasets/definitions.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/datasets/hru_parm_db.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/datasets/init.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/datasets/lum.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/datasets/ops.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/datasets/setup.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/datasets/soils.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/datasets/structural.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/lib.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/output/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/output/aquifer.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/output/base.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/output/channel.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/output/check.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/output/data.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/output/hyd.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/output/losses.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/output/misc.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/output/nutbal.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/output/pest.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/output/plantwx.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/output/reservoir.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/output/setup.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/output/waterallo.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/output/waterbal.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/project/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/project/aquifer.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/project/base.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/project/basin.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/project/change.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/project/channel.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/project/climate.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/project/config.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/project/connect.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/project/decision_table.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/project/dr.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/project/exco.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/project/gis.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/project/gwflow.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/project/hru.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/project/hru_parm_db.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/project/hydrology.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/project/init.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/project/link.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/project/lum.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/project/ops.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/project/recall.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/project/regions.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/project/reservoir.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/project/routing_unit.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/project/salts.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/project/setup.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/project/simulation.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/project/soils.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/project/structural.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/project/water_rights.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/soils.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/vardefs.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/_swatplus_db/wgn.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/actions/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/actions/create_databases.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/actions/get_swatplus_check.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/actions/import_export_data.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/actions/import_gis.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/actions/import_gis_legacy.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/actions/import_weather.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/actions/load_scenarios.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/actions/read_output.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/actions/read_output_legacy.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/actions/reimport_gis.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/actions/run_all.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/actions/setup_project.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/actions/update_datasets.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/actions/update_project.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/actions/write_files.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/fileio/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/fileio/aquifer.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/fileio/base.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/fileio/basin.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/fileio/change.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/fileio/channel.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/fileio/climate.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/fileio/config.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/fileio/connect.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/fileio/decision_table.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/fileio/dr.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/fileio/exco.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/fileio/gwflow.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/fileio/hru.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/fileio/hru_parm_db.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/fileio/hydrology.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/fileio/init.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/fileio/lum.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/fileio/ops.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/fileio/recall.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/fileio/regions.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/fileio/reservoir.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/fileio/routing_unit.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/fileio/salts.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/fileio/simulation.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/fileio/soils.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/fileio/structural.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/fileio/water_rights.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/get-pip.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/helpers/executable_api.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/helpers/table_mapper.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/helpers/utils.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/rest/aquifer.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/rest/auto_complete.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/rest/basin.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/rest/change.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/rest/channel.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/rest/climate.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/rest/config.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/rest/decision_table.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/rest/defaults.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/rest/definitions.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/rest/gwflow.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/rest/hru.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/rest/hru_lte.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/rest/hru_parm_db.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/rest/hydrology.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/rest/init.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/rest/lum.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/rest/ops.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/rest/recall.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/rest/regions.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/rest/reservoir.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/rest/routing_unit.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/rest/salts.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/rest/setup.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/rest/soils.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/rest/structural.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/rest/water_rights.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/swatplus_api.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:editor/vendored/swatplus_rest_api.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:errors.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:evidence/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:evidence/integrity.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:evidence/migration.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:evidence/schema.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:examples/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:examples/usgs_basin_workflow.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:full_mode/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:full_mode/crop_management.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:full_mode/parameter_bridge.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:full_mode/routing_fixes.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:full_mode/subsurface_priors.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:full_mode/topology_converter.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:full_mode/verify_conversion.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:full_mode/warmup.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:full_mode/water_balance_gate.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:gis/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:gis/complexity.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:gis/delineation.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:gis/hru.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:gis/landuse.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:gis/nldi_fallback.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:gis/overlay_repair.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:gis/soil.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:gis/tables.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:gis/validate.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:governance/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:governance/gates.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:governance/tiers.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:mcp/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:mcp/server.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:mcp/worker.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:orchestrate.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:output/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:output/dashboard.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:output/et_diagnostics.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:output/eval.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:output/landuse_fidelity.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:output/mass_diagnostics.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:output/mass_trace.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:output/metadata.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:output/metrics.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:output/plots/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:output/plots/fdc.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:output/plots/forcing_context.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:output/plots/hydrograph.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:output/plots/landuse_composition.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:output/plots/residuals.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:output/plots/scatter.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:output/plots/seasonal.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:output/plots/soil.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:output/plots/spatial.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:output/plots/style.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:output/plots/utils.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:output/plots/water_balance.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:output/plots/wrapper.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:output/reader.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:output/realism.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:output/summary.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:output/terrain_climate_defaults.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:output/volume_diagnostics.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:output/weather_forcing.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:params/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:params/governance.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:params/registry.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:ref/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:ref/bootstrap.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:ref/catalog.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:run/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:run/swatplus.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:sensitivity.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:skills/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:skills/swatplus_playbook/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:skills/swatplus_playbook/rules.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:skills/swatplus_playbook/schemas.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:skills/swatplus_playbook/update.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:soil/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:soil/builder.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:soil/gnatsgo.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:soil/models.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:soil/params.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:soil/pc.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:soil/plot.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:soil/sda.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:soil/soilgrids.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:soil/writer.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:tools/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:tools/agent.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:types.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:validation/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:validation/runner.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:weather/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:weather/daymet.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:weather/gridmet.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:weather/synthetic.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:weather/wgn.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:weather/writer.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:workflows/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:workflows/contracts.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:workflows/full_build.py",
+      "passed": true
+    },
+    {
+      "check": "executed_package:workflows/usgs_e2e.py",
+      "passed": true
+    },
+    {
+      "check": "trial_script_context",
+      "passed": true
+    },
+    {
+      "check": "preflight_context",
+      "passed": true
+    },
+    {
+      "check": "historical_artifact:screen_path",
+      "passed": true
+    },
+    {
+      "check": "historical_artifact:benchmark_lock_path",
+      "passed": true
+    },
+    {
+      "check": "historical_artifact:benchmark_alignment_path",
+      "passed": true
+    },
+    {
+      "check": "historical_static_seal",
+      "passed": true
+    },
+    {
+      "check": "input_snapshot_seal",
+      "passed": true
+    },
+    {
+      "check": "engine_current_seal",
+      "passed": true
+    },
+    {
+      "check": "adapter_identity",
+      "passed": true
+    },
+    {
+      "check": "objective_identity",
+      "passed": true
+    },
+    {
+      "check": "ledger_bytes_unchanged:dds",
+      "passed": true
+    },
+    {
+      "check": "ledger_manifest_result:dds",
+      "passed": true
+    },
+    {
+      "check": "ledger_stage_counts:dds",
+      "passed": true
+    },
+    {
+      "check": "ledger_bytes_unchanged:gp",
+      "passed": true
+    },
+    {
+      "check": "ledger_manifest_result:gp",
+      "passed": true
+    },
+    {
+      "check": "ledger_stage_counts:gp",
+      "passed": true
+    },
+    {
+      "check": "15_virtual_design_attributions",
+      "passed": true
+    },
+    {
+      "check": "physical_callback_cap",
+      "passed": true
+    },
+    {
+      "check": "attributed_request_cap",
+      "passed": true
+    },
+    {
+      "check": "one_telemetry_per_callback",
+      "passed": true
+    },
+    {
+      "check": "physical_vs_ledger_wrapper_counts",
+      "passed": true
+    },
+    {
+      "check": "no_actual_cache_reuse",
+      "passed": true
+    },
+    {
+      "check": "typed_status:shared_0",
+      "passed": true
+    },
+    {
+      "check": "typed_utility:shared_0",
+      "passed": true
+    },
+    {
+      "check": "receipt_engine:shared_0",
+      "passed": true
+    },
+    {
+      "check": "receipt_execution:shared_0",
+      "passed": true
+    },
+    {
+      "check": "receipt_input:shared_0",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_0:simulation.out",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_0:channel_sd_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_0:basin_sd_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_0:basin_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_0:basin_wb_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_0:hydout_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_0:hydout_aa.txt",
+      "passed": true
+    },
+    {
+      "check": "actual_exact_policy:shared_0",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_0:nse",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_0:kge",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_0:pbias",
+      "passed": true
+    },
+    {
+      "check": "raw_kge_policy:shared_0",
+      "passed": true
+    },
+    {
+      "check": "typed_status:shared_1",
+      "passed": true
+    },
+    {
+      "check": "typed_utility:shared_1",
+      "passed": true
+    },
+    {
+      "check": "receipt_engine:shared_1",
+      "passed": true
+    },
+    {
+      "check": "receipt_execution:shared_1",
+      "passed": true
+    },
+    {
+      "check": "receipt_input:shared_1",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_1:simulation.out",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_1:channel_sd_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_1:basin_sd_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_1:basin_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_1:basin_wb_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_1:hydout_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_1:hydout_aa.txt",
+      "passed": true
+    },
+    {
+      "check": "actual_exact_policy:shared_1",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_1:nse",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_1:kge",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_1:pbias",
+      "passed": true
+    },
+    {
+      "check": "raw_kge_policy:shared_1",
+      "passed": true
+    },
+    {
+      "check": "typed_status:shared_2",
+      "passed": true
+    },
+    {
+      "check": "typed_utility:shared_2",
+      "passed": true
+    },
+    {
+      "check": "receipt_engine:shared_2",
+      "passed": true
+    },
+    {
+      "check": "receipt_execution:shared_2",
+      "passed": true
+    },
+    {
+      "check": "receipt_input:shared_2",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_2:simulation.out",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_2:channel_sd_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_2:basin_sd_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_2:basin_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_2:basin_wb_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_2:hydout_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_2:hydout_aa.txt",
+      "passed": true
+    },
+    {
+      "check": "actual_exact_policy:shared_2",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_2:nse",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_2:kge",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_2:pbias",
+      "passed": true
+    },
+    {
+      "check": "raw_kge_policy:shared_2",
+      "passed": true
+    },
+    {
+      "check": "typed_status:shared_3",
+      "passed": true
+    },
+    {
+      "check": "typed_utility:shared_3",
+      "passed": true
+    },
+    {
+      "check": "receipt_engine:shared_3",
+      "passed": true
+    },
+    {
+      "check": "receipt_execution:shared_3",
+      "passed": true
+    },
+    {
+      "check": "receipt_input:shared_3",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_3:simulation.out",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_3:channel_sd_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_3:basin_sd_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_3:basin_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_3:basin_wb_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_3:hydout_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_3:hydout_aa.txt",
+      "passed": true
+    },
+    {
+      "check": "actual_exact_policy:shared_3",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_3:nse",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_3:kge",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_3:pbias",
+      "passed": true
+    },
+    {
+      "check": "raw_kge_policy:shared_3",
+      "passed": true
+    },
+    {
+      "check": "typed_status:shared_4",
+      "passed": true
+    },
+    {
+      "check": "typed_utility:shared_4",
+      "passed": true
+    },
+    {
+      "check": "receipt_engine:shared_4",
+      "passed": true
+    },
+    {
+      "check": "receipt_execution:shared_4",
+      "passed": true
+    },
+    {
+      "check": "receipt_input:shared_4",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_4:simulation.out",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_4:channel_sd_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_4:basin_sd_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_4:basin_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_4:basin_wb_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_4:hydout_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_4:hydout_aa.txt",
+      "passed": true
+    },
+    {
+      "check": "actual_exact_policy:shared_4",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_4:nse",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_4:kge",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_4:pbias",
+      "passed": true
+    },
+    {
+      "check": "raw_kge_policy:shared_4",
+      "passed": true
+    },
+    {
+      "check": "typed_status:shared_5",
+      "passed": true
+    },
+    {
+      "check": "typed_utility:shared_5",
+      "passed": true
+    },
+    {
+      "check": "receipt_engine:shared_5",
+      "passed": true
+    },
+    {
+      "check": "receipt_execution:shared_5",
+      "passed": true
+    },
+    {
+      "check": "receipt_input:shared_5",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_5:simulation.out",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_5:channel_sd_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_5:basin_sd_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_5:basin_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_5:basin_wb_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_5:hydout_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_5:hydout_aa.txt",
+      "passed": true
+    },
+    {
+      "check": "actual_exact_policy:shared_5",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_5:nse",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_5:kge",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_5:pbias",
+      "passed": true
+    },
+    {
+      "check": "raw_kge_policy:shared_5",
+      "passed": true
+    },
+    {
+      "check": "typed_status:shared_6",
+      "passed": true
+    },
+    {
+      "check": "typed_utility:shared_6",
+      "passed": true
+    },
+    {
+      "check": "receipt_engine:shared_6",
+      "passed": true
+    },
+    {
+      "check": "receipt_execution:shared_6",
+      "passed": true
+    },
+    {
+      "check": "receipt_input:shared_6",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_6:simulation.out",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_6:channel_sd_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_6:basin_sd_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_6:basin_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_6:basin_wb_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_6:hydout_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_6:hydout_aa.txt",
+      "passed": true
+    },
+    {
+      "check": "actual_exact_policy:shared_6",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_6:nse",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_6:kge",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_6:pbias",
+      "passed": true
+    },
+    {
+      "check": "raw_kge_policy:shared_6",
+      "passed": true
+    },
+    {
+      "check": "typed_status:shared_7",
+      "passed": true
+    },
+    {
+      "check": "typed_utility:shared_7",
+      "passed": true
+    },
+    {
+      "check": "receipt_engine:shared_7",
+      "passed": true
+    },
+    {
+      "check": "receipt_execution:shared_7",
+      "passed": true
+    },
+    {
+      "check": "receipt_input:shared_7",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_7:simulation.out",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_7:channel_sd_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_7:basin_sd_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_7:basin_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_7:basin_wb_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_7:hydout_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_7:hydout_aa.txt",
+      "passed": true
+    },
+    {
+      "check": "actual_exact_policy:shared_7",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_7:nse",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_7:kge",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_7:pbias",
+      "passed": true
+    },
+    {
+      "check": "raw_kge_policy:shared_7",
+      "passed": true
+    },
+    {
+      "check": "typed_status:shared_8",
+      "passed": true
+    },
+    {
+      "check": "typed_utility:shared_8",
+      "passed": true
+    },
+    {
+      "check": "receipt_engine:shared_8",
+      "passed": true
+    },
+    {
+      "check": "receipt_execution:shared_8",
+      "passed": true
+    },
+    {
+      "check": "receipt_input:shared_8",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_8:simulation.out",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_8:channel_sd_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_8:basin_sd_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_8:basin_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_8:basin_wb_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_8:hydout_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_8:hydout_aa.txt",
+      "passed": true
+    },
+    {
+      "check": "actual_exact_policy:shared_8",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_8:nse",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_8:kge",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_8:pbias",
+      "passed": true
+    },
+    {
+      "check": "raw_kge_policy:shared_8",
+      "passed": true
+    },
+    {
+      "check": "typed_status:shared_9",
+      "passed": true
+    },
+    {
+      "check": "typed_utility:shared_9",
+      "passed": true
+    },
+    {
+      "check": "receipt_engine:shared_9",
+      "passed": true
+    },
+    {
+      "check": "receipt_execution:shared_9",
+      "passed": true
+    },
+    {
+      "check": "receipt_input:shared_9",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_9:simulation.out",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_9:channel_sd_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_9:basin_sd_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_9:basin_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_9:basin_wb_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_9:hydout_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_9:hydout_aa.txt",
+      "passed": true
+    },
+    {
+      "check": "actual_exact_policy:shared_9",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_9:nse",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_9:kge",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_9:pbias",
+      "passed": true
+    },
+    {
+      "check": "raw_kge_policy:shared_9",
+      "passed": true
+    },
+    {
+      "check": "typed_status:shared_10",
+      "passed": true
+    },
+    {
+      "check": "typed_utility:shared_10",
+      "passed": true
+    },
+    {
+      "check": "receipt_engine:shared_10",
+      "passed": true
+    },
+    {
+      "check": "receipt_execution:shared_10",
+      "passed": true
+    },
+    {
+      "check": "receipt_input:shared_10",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_10:simulation.out",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_10:channel_sd_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_10:basin_sd_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_10:basin_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_10:basin_wb_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_10:hydout_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_10:hydout_aa.txt",
+      "passed": true
+    },
+    {
+      "check": "actual_exact_policy:shared_10",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_10:nse",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_10:kge",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_10:pbias",
+      "passed": true
+    },
+    {
+      "check": "raw_kge_policy:shared_10",
+      "passed": true
+    },
+    {
+      "check": "typed_status:shared_11",
+      "passed": true
+    },
+    {
+      "check": "typed_utility:shared_11",
+      "passed": true
+    },
+    {
+      "check": "receipt_engine:shared_11",
+      "passed": true
+    },
+    {
+      "check": "receipt_execution:shared_11",
+      "passed": true
+    },
+    {
+      "check": "receipt_input:shared_11",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_11:simulation.out",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_11:channel_sd_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_11:basin_sd_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_11:basin_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_11:basin_wb_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_11:hydout_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_11:hydout_aa.txt",
+      "passed": true
+    },
+    {
+      "check": "actual_exact_policy:shared_11",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_11:nse",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_11:kge",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_11:pbias",
+      "passed": true
+    },
+    {
+      "check": "raw_kge_policy:shared_11",
+      "passed": true
+    },
+    {
+      "check": "typed_status:shared_12",
+      "passed": true
+    },
+    {
+      "check": "typed_utility:shared_12",
+      "passed": true
+    },
+    {
+      "check": "receipt_engine:shared_12",
+      "passed": true
+    },
+    {
+      "check": "receipt_execution:shared_12",
+      "passed": true
+    },
+    {
+      "check": "receipt_input:shared_12",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_12:simulation.out",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_12:channel_sd_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_12:basin_sd_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_12:basin_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_12:basin_wb_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_12:hydout_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_12:hydout_aa.txt",
+      "passed": true
+    },
+    {
+      "check": "actual_exact_policy:shared_12",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_12:nse",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_12:kge",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_12:pbias",
+      "passed": true
+    },
+    {
+      "check": "raw_kge_policy:shared_12",
+      "passed": true
+    },
+    {
+      "check": "typed_status:shared_13",
+      "passed": true
+    },
+    {
+      "check": "typed_utility:shared_13",
+      "passed": true
+    },
+    {
+      "check": "receipt_engine:shared_13",
+      "passed": true
+    },
+    {
+      "check": "receipt_execution:shared_13",
+      "passed": true
+    },
+    {
+      "check": "receipt_input:shared_13",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_13:simulation.out",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_13:channel_sd_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_13:basin_sd_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_13:basin_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_13:basin_wb_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_13:hydout_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_13:hydout_aa.txt",
+      "passed": true
+    },
+    {
+      "check": "actual_exact_policy:shared_13",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_13:nse",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_13:kge",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_13:pbias",
+      "passed": true
+    },
+    {
+      "check": "raw_kge_policy:shared_13",
+      "passed": true
+    },
+    {
+      "check": "typed_status:shared_14",
+      "passed": true
+    },
+    {
+      "check": "typed_utility:shared_14",
+      "passed": true
+    },
+    {
+      "check": "receipt_engine:shared_14",
+      "passed": true
+    },
+    {
+      "check": "receipt_execution:shared_14",
+      "passed": true
+    },
+    {
+      "check": "receipt_input:shared_14",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_14:simulation.out",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_14:channel_sd_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_14:basin_sd_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_14:basin_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_14:basin_wb_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_14:hydout_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:shared_14:hydout_aa.txt",
+      "passed": true
+    },
+    {
+      "check": "actual_exact_policy:shared_14",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_14:nse",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_14:kge",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:shared_14:pbias",
+      "passed": true
+    },
+    {
+      "check": "raw_kge_policy:shared_14",
+      "passed": true
+    },
+    {
+      "check": "typed_status:dds_search_0",
+      "passed": true
+    },
+    {
+      "check": "typed_utility:dds_search_0",
+      "passed": true
+    },
+    {
+      "check": "receipt_engine:dds_search_0",
+      "passed": true
+    },
+    {
+      "check": "receipt_execution:dds_search_0",
+      "passed": true
+    },
+    {
+      "check": "receipt_input:dds_search_0",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:dds_search_0:simulation.out",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:dds_search_0:channel_sd_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:dds_search_0:basin_sd_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:dds_search_0:basin_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:dds_search_0:basin_wb_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:dds_search_0:hydout_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:dds_search_0:hydout_aa.txt",
+      "passed": true
+    },
+    {
+      "check": "actual_exact_policy:dds_search_0",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:dds_search_0:nse",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:dds_search_0:kge",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:dds_search_0:pbias",
+      "passed": true
+    },
+    {
+      "check": "raw_kge_policy:dds_search_0",
+      "passed": true
+    },
+    {
+      "check": "typed_status:gp_search_0",
+      "passed": true
+    },
+    {
+      "check": "typed_utility:gp_search_0",
+      "passed": true
+    },
+    {
+      "check": "receipt_engine:gp_search_0",
+      "passed": true
+    },
+    {
+      "check": "receipt_execution:gp_search_0",
+      "passed": true
+    },
+    {
+      "check": "receipt_input:gp_search_0",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:gp_search_0:simulation.out",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:gp_search_0:channel_sd_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:gp_search_0:basin_sd_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:gp_search_0:basin_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:gp_search_0:basin_wb_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:gp_search_0:hydout_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:gp_search_0:hydout_aa.txt",
+      "passed": true
+    },
+    {
+      "check": "actual_exact_policy:gp_search_0",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:gp_search_0:nse",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:gp_search_0:kge",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:gp_search_0:pbias",
+      "passed": true
+    },
+    {
+      "check": "raw_kge_policy:gp_search_0",
+      "passed": true
+    },
+    {
+      "check": "typed_status:dds_fresh_final",
+      "passed": true
+    },
+    {
+      "check": "typed_utility:dds_fresh_final",
+      "passed": true
+    },
+    {
+      "check": "receipt_engine:dds_fresh_final",
+      "passed": true
+    },
+    {
+      "check": "receipt_execution:dds_fresh_final",
+      "passed": true
+    },
+    {
+      "check": "receipt_input:dds_fresh_final",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:dds_fresh_final:simulation.out",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:dds_fresh_final:channel_sd_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:dds_fresh_final:basin_sd_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:dds_fresh_final:basin_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:dds_fresh_final:basin_wb_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:dds_fresh_final:hydout_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:dds_fresh_final:hydout_aa.txt",
+      "passed": true
+    },
+    {
+      "check": "actual_exact_policy:dds_fresh_final",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:dds_fresh_final:nse",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:dds_fresh_final:kge",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:dds_fresh_final:pbias",
+      "passed": true
+    },
+    {
+      "check": "raw_kge_policy:dds_fresh_final",
+      "passed": true
+    },
+    {
+      "check": "typed_status:gp_fresh_final",
+      "passed": true
+    },
+    {
+      "check": "typed_utility:gp_fresh_final",
+      "passed": true
+    },
+    {
+      "check": "receipt_engine:gp_fresh_final",
+      "passed": true
+    },
+    {
+      "check": "receipt_execution:gp_fresh_final",
+      "passed": true
+    },
+    {
+      "check": "receipt_input:gp_fresh_final",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:gp_fresh_final:simulation.out",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:gp_fresh_final:channel_sd_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:gp_fresh_final:basin_sd_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:gp_fresh_final:basin_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:gp_fresh_final:basin_wb_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:gp_fresh_final:hydout_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "receipt_output:gp_fresh_final:hydout_aa.txt",
+      "passed": true
+    },
+    {
+      "check": "actual_exact_policy:gp_fresh_final",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:gp_fresh_final:nse",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:gp_fresh_final:kge",
+      "passed": true
+    },
+    {
+      "check": "actual_raw_metric:gp_fresh_final:pbias",
+      "passed": true
+    },
+    {
+      "check": "raw_kge_policy:gp_fresh_final",
+      "passed": true
+    },
+    {
+      "check": "distinct_successful_run_ids",
+      "passed": true
+    },
+    {
+      "check": "measured_admissible_winner:dds",
+      "passed": true
+    },
+    {
+      "check": "fresh_different_run:dds",
+      "passed": true
+    },
+    {
+      "check": "fresh_parity_report:dds",
+      "passed": true
+    },
+    {
+      "check": "independent_fresh_parity:dds",
+      "passed": true
+    },
+    {
+      "check": "measured_admissible_winner:gp",
+      "passed": true
+    },
+    {
+      "check": "fresh_different_run:gp",
+      "passed": true
+    },
+    {
+      "check": "fresh_parity_report:gp",
+      "passed": true
+    },
+    {
+      "check": "independent_fresh_parity:gp",
+      "passed": true
+    }
+  ],
+  "check_count": 939,
+  "physical_callbacks": 19,
+  "successful_policy_receipts": 19,
+  "attributed_requests": 34,
+  "training_samples": 2191,
+  "validation_scored": false,
+  "shared_finite_count": 15,
+  "shared_feasible_count": 15,
+  "shared_finite_geometry": {
+    "dimension": 14,
+    "npoints": 15,
+    "affine_rank": 15,
+    "distinct": true,
+    "gp_ready": true,
+    "rbf_ready": true,
+    "normalized": [
+      [
+        0.5354521786321189,
+        0.9690818727636469,
+        0.8775601662507952,
+        0.0598548589068318,
+        0.530254395168072,
+        0.18773488356133922,
+        0.43922934096069005,
+        0.6040408449384675,
+        0.6001436918900951,
+        0.24501417024027256,
+        0.6337256462699177,
+        0.23369393720653248,
+        0.459928309101765,
+        0.481495581169711
+      ],
+      [
+        0.8729130159907729,
+        0.5982077175986247,
+        0.9586303627838432,
+        0.9599600336760264,
+        0.4583901960252129,
+        0.798532299578489,
+        0.6004793892656729,
+        0.31521423922941216,
+        0.35936145050585416,
+        0.6823469263333954,
+        0.20883043802443116,
+        0.35007475013799294,
+        0.28067176922265025,
+        0.12110577370646194
+      ],
+      [
+        0.48217739289271594,
+        0.025235625147223526,
+        0.46596822337577304,
+        0.8812880506104855,
+        0.6175592700500727,
+        0.23551374463530106,
+        0.3138560631032303,
+        0.18670616739077991,
+        0.3284345382372889,
+        0.9413257742631417,
+        0.1566005889976343,
+        0.060543936414571495,
+        0.6166353159481949,
+        0.5640202156452628
+      ],
+      [
+        0.4401345819366654,
+        0.503469375418215,
+        0.1093333173236062,
+        0.5998358404330073,
+        0.7667057408700199,
+        0.5417173674346961,
+        0.8039249177917548,
+        0.0072846021496536,
+        0.852341957119608,
+        0.1260191542752959,
+        0.871252754270668,
+        0.40338659291083545,
+        0.473519574778119,
+        0.6203460578225733
+      ],
+      [
+        0.9707496708625742,
+        0.32196031095019967,
+        0.03712998291830975,
+        0.6339684195784309,
+        0.21191012536867543,
+        0.44398338818315786,
+        0.13782668854068716,
+        0.9461060048094436,
+        0.9523499485964614,
+        0.4164143565192417,
+        0.5496189611005421,
+        0.7089522964872796,
+        0.7186744161247629,
+        0.053023033276857444
+      ],
+      [
+        0.8477346408614935,
+        0.1745679834909498,
+        0.8456409500659916,
+        0.8060606274782529,
+        0.1941751892896547,
+        0.7297899119803327,
+        0.0020941972035345424,
+        0.5690857169273563,
+        0.7797727669066775,
+        0.30630127690222947,
+        0.41899915941444377,
+        0.5219565392914813,
+        0.12560898009673388,
+        0.881839699160518
+      ],
+      [
+        0.38008833157268235,
+        0.6574471266873851,
+        0.5895234613459873,
+        0.06980775836164897,
+        0.8580345713224511,
+        0.8776751305982752,
+        0.8886952326053665,
+        0.7426788198063183,
+        0.715367021161031,
+        0.8412921006888071,
+        0.8292123048671807,
+        0.60293911745327,
+        0.22709182598880778,
+        0.9349109623134302
+      ],
+      [
+        0.16130132139744394,
+        0.9051568096837842,
+        0.2517333274364163,
+        0.273976608690044,
+        0.3532296527632422,
+        0.301844919161217,
+        0.23427707465390593,
+        0.3455658690524822,
+        0.5188907685656191,
+        0.16128166102239164,
+        0.7695478641507725,
+        0.8222371025736723,
+        0.8413774340100474,
+        0.1462086525551806
+      ],
+      [
+        0.6299472697522569,
+        0.7136381224143281,
+        0.6152698714642736,
+        0.17516306944687265,
+        0.3092632996577337,
+        0.8404395944988419,
+        0.08523181759763647,
+        0.8975085378933978,
+        0.44412475413004965,
+        0.7722448192860817,
+        0.02016780953192599,
+        0.8753879773801134,
+        0.8769702225554802,
+        0.2885507967465138
+      ],
+      [
+        0.21854604721537754,
+        0.4030549589103775,
+        0.7354733495936026,
+        0.7861386242908642,
+        0.9739313474292115,
+        0.13095752706716368,
+        0.765694299943366,
+        0.724965730271372,
+        0.16577809411028863,
+        0.568185514368797,
+        0.1322568873500988,
+        0.5986531969219224,
+        0.395325401046245,
+        0.2576235294686858
+      ],
+      [
+        0.3246200213861956,
+        0.7485265517101032,
+        0.1543635365372721,
+        0.42814399778664564,
+        0.07685595123664231,
+        0.9952608995334785,
+        0.5692822620929836,
+        0.0716923258916193,
+        0.21265985781784247,
+        0.5289804171824287,
+        0.38713999621767614,
+        0.7441054650849258,
+        0.05764037974799763,
+        0.7311259402698908
+      ],
+      [
+        0.7839204911419845,
+        0.08595919757347383,
+        0.35118272506504683,
+        0.4709018470767971,
+        0.7175007200050101,
+        0.5170176797757204,
+        0.5148901710587314,
+        0.2538681496487802,
+        0.08118005989427832,
+        0.6136172799615687,
+        0.501929379506818,
+        0.9627890341240567,
+        0.5984137355287308,
+        0.41860833284812476
+      ],
+      [
+        0.010643954425126006,
+        0.33865279846157514,
+        0.6807321895724218,
+        0.6921079524337691,
+        0.03595860200797505,
+        0.3793245088066414,
+        0.3921588716760492,
+        0.4570644594978915,
+        0.00389888613381996,
+        0.9144127867192944,
+        0.3111908802475056,
+        0.3137111631173327,
+        0.1873847813293598,
+        0.8427654492405084
+      ],
+      [
+        0.09484095987690017,
+        0.8155193924240688,
+        0.5295273142890037,
+        0.26640809201600646,
+        0.9185750985753706,
+        0.6475299315212748,
+        0.9717474433147266,
+        0.8065272485467734,
+        0.9157158119192697,
+        0.01591239684105628,
+        0.9703068188326452,
+        0.17072712431831638,
+        0.7920944136442216,
+        0.3599785589573374
+      ],
+      [
+        0.6851914227781094,
+        0.20673342862731522,
+        0.3250911750981779,
+        0.3686076230066091,
+        0.5686902448130119,
+        0.026599486666495274,
+        0.6828664828263816,
+        0.5101429929332348,
+        0.5373971714317677,
+        0.3597190564527503,
+        0.7287837359624052,
+        0.0741249253726223,
+        0.9349857574598792,
+        0.798743312479884
+      ]
+    ],
+    "minimum_distance": 1.1387040948712661
+  },
+  "shared_feasible_geometry": {
+    "dimension": 14,
+    "npoints": 15,
+    "affine_rank": 15,
+    "distinct": true,
+    "gp_ready": true,
+    "rbf_ready": true,
+    "normalized": [
+      [
+        0.5354521786321189,
+        0.9690818727636469,
+        0.8775601662507952,
+        0.0598548589068318,
+        0.530254395168072,
+        0.18773488356133922,
+        0.43922934096069005,
+        0.6040408449384675,
+        0.6001436918900951,
+        0.24501417024027256,
+        0.6337256462699177,
+        0.23369393720653248,
+        0.459928309101765,
+        0.481495581169711
+      ],
+      [
+        0.8729130159907729,
+        0.5982077175986247,
+        0.9586303627838432,
+        0.9599600336760264,
+        0.4583901960252129,
+        0.798532299578489,
+        0.6004793892656729,
+        0.31521423922941216,
+        0.35936145050585416,
+        0.6823469263333954,
+        0.20883043802443116,
+        0.35007475013799294,
+        0.28067176922265025,
+        0.12110577370646194
+      ],
+      [
+        0.48217739289271594,
+        0.025235625147223526,
+        0.46596822337577304,
+        0.8812880506104855,
+        0.6175592700500727,
+        0.23551374463530106,
+        0.3138560631032303,
+        0.18670616739077991,
+        0.3284345382372889,
+        0.9413257742631417,
+        0.1566005889976343,
+        0.060543936414571495,
+        0.6166353159481949,
+        0.5640202156452628
+      ],
+      [
+        0.4401345819366654,
+        0.503469375418215,
+        0.1093333173236062,
+        0.5998358404330073,
+        0.7667057408700199,
+        0.5417173674346961,
+        0.8039249177917548,
+        0.0072846021496536,
+        0.852341957119608,
+        0.1260191542752959,
+        0.871252754270668,
+        0.40338659291083545,
+        0.473519574778119,
+        0.6203460578225733
+      ],
+      [
+        0.9707496708625742,
+        0.32196031095019967,
+        0.03712998291830975,
+        0.6339684195784309,
+        0.21191012536867543,
+        0.44398338818315786,
+        0.13782668854068716,
+        0.9461060048094436,
+        0.9523499485964614,
+        0.4164143565192417,
+        0.5496189611005421,
+        0.7089522964872796,
+        0.7186744161247629,
+        0.053023033276857444
+      ],
+      [
+        0.8477346408614935,
+        0.1745679834909498,
+        0.8456409500659916,
+        0.8060606274782529,
+        0.1941751892896547,
+        0.7297899119803327,
+        0.0020941972035345424,
+        0.5690857169273563,
+        0.7797727669066775,
+        0.30630127690222947,
+        0.41899915941444377,
+        0.5219565392914813,
+        0.12560898009673388,
+        0.881839699160518
+      ],
+      [
+        0.38008833157268235,
+        0.6574471266873851,
+        0.5895234613459873,
+        0.06980775836164897,
+        0.8580345713224511,
+        0.8776751305982752,
+        0.8886952326053665,
+        0.7426788198063183,
+        0.715367021161031,
+        0.8412921006888071,
+        0.8292123048671807,
+        0.60293911745327,
+        0.22709182598880778,
+        0.9349109623134302
+      ],
+      [
+        0.16130132139744394,
+        0.9051568096837842,
+        0.2517333274364163,
+        0.273976608690044,
+        0.3532296527632422,
+        0.301844919161217,
+        0.23427707465390593,
+        0.3455658690524822,
+        0.5188907685656191,
+        0.16128166102239164,
+        0.7695478641507725,
+        0.8222371025736723,
+        0.8413774340100474,
+        0.1462086525551806
+      ],
+      [
+        0.6299472697522569,
+        0.7136381224143281,
+        0.6152698714642736,
+        0.17516306944687265,
+        0.3092632996577337,
+        0.8404395944988419,
+        0.08523181759763647,
+        0.8975085378933978,
+        0.44412475413004965,
+        0.7722448192860817,
+        0.02016780953192599,
+        0.8753879773801134,
+        0.8769702225554802,
+        0.2885507967465138
+      ],
+      [
+        0.21854604721537754,
+        0.4030549589103775,
+        0.7354733495936026,
+        0.7861386242908642,
+        0.9739313474292115,
+        0.13095752706716368,
+        0.765694299943366,
+        0.724965730271372,
+        0.16577809411028863,
+        0.568185514368797,
+        0.1322568873500988,
+        0.5986531969219224,
+        0.395325401046245,
+        0.2576235294686858
+      ],
+      [
+        0.3246200213861956,
+        0.7485265517101032,
+        0.1543635365372721,
+        0.42814399778664564,
+        0.07685595123664231,
+        0.9952608995334785,
+        0.5692822620929836,
+        0.0716923258916193,
+        0.21265985781784247,
+        0.5289804171824287,
+        0.38713999621767614,
+        0.7441054650849258,
+        0.05764037974799763,
+        0.7311259402698908
+      ],
+      [
+        0.7839204911419845,
+        0.08595919757347383,
+        0.35118272506504683,
+        0.4709018470767971,
+        0.7175007200050101,
+        0.5170176797757204,
+        0.5148901710587314,
+        0.2538681496487802,
+        0.08118005989427832,
+        0.6136172799615687,
+        0.501929379506818,
+        0.9627890341240567,
+        0.5984137355287308,
+        0.41860833284812476
+      ],
+      [
+        0.010643954425126006,
+        0.33865279846157514,
+        0.6807321895724218,
+        0.6921079524337691,
+        0.03595860200797505,
+        0.3793245088066414,
+        0.3921588716760492,
+        0.4570644594978915,
+        0.00389888613381996,
+        0.9144127867192944,
+        0.3111908802475056,
+        0.3137111631173327,
+        0.1873847813293598,
+        0.8427654492405084
+      ],
+      [
+        0.09484095987690017,
+        0.8155193924240688,
+        0.5295273142890037,
+        0.26640809201600646,
+        0.9185750985753706,
+        0.6475299315212748,
+        0.9717474433147266,
+        0.8065272485467734,
+        0.9157158119192697,
+        0.01591239684105628,
+        0.9703068188326452,
+        0.17072712431831638,
+        0.7920944136442216,
+        0.3599785589573374
+      ],
+      [
+        0.6851914227781094,
+        0.20673342862731522,
+        0.3250911750981779,
+        0.3686076230066091,
+        0.5686902448130119,
+        0.026599486666495274,
+        0.6828664828263816,
+        0.5101429929332348,
+        0.5373971714317677,
+        0.3597190564527503,
+        0.7287837359624052,
+        0.0741249253726223,
+        0.9349857574598792,
+        0.798743312479884
+      ]
+    ],
+    "minimum_distance": 1.1387040948712661
+  },
+  "proposal_diagnostics": [
+    {
+      "proposal_id": 0,
+      "status": "proposed",
+      "method": "initial_shared_design",
+      "total_seconds": 0.00011087488383054733,
+      "fit_seconds": 0.0,
+      "candidate_generation_seconds": 0.0,
+      "sampling_seconds": 0.0,
+      "finite_training_observations": 0,
+      "warnings": [],
+      "error": null
+    },
+    {
+      "proposal_id": 1,
+      "status": "proposed",
+      "method": "initial_shared_design",
+      "total_seconds": 2.8708018362522125e-05,
+      "fit_seconds": 0.0,
+      "candidate_generation_seconds": 0.0,
+      "sampling_seconds": 0.0,
+      "finite_training_observations": 1,
+      "warnings": [],
+      "error": null
+    },
+    {
+      "proposal_id": 2,
+      "status": "proposed",
+      "method": "initial_shared_design",
+      "total_seconds": 4.100007936358452e-05,
+      "fit_seconds": 0.0,
+      "candidate_generation_seconds": 0.0,
+      "sampling_seconds": 0.0,
+      "finite_training_observations": 2,
+      "warnings": [],
+      "error": null
+    },
+    {
+      "proposal_id": 3,
+      "status": "proposed",
+      "method": "initial_shared_design",
+      "total_seconds": 3.245798870921135e-05,
+      "fit_seconds": 0.0,
+      "candidate_generation_seconds": 0.0,
+      "sampling_seconds": 0.0,
+      "finite_training_observations": 3,
+      "warnings": [],
+      "error": null
+    },
+    {
+      "proposal_id": 4,
+      "status": "proposed",
+      "method": "initial_shared_design",
+      "total_seconds": 2.9750168323516846e-05,
+      "fit_seconds": 0.0,
+      "candidate_generation_seconds": 0.0,
+      "sampling_seconds": 0.0,
+      "finite_training_observations": 4,
+      "warnings": [],
+      "error": null
+    },
+    {
+      "proposal_id": 5,
+      "status": "proposed",
+      "method": "initial_shared_design",
+      "total_seconds": 2.995808608829975e-05,
+      "fit_seconds": 0.0,
+      "candidate_generation_seconds": 0.0,
+      "sampling_seconds": 0.0,
+      "finite_training_observations": 5,
+      "warnings": [],
+      "error": null
+    },
+    {
+      "proposal_id": 6,
+      "status": "proposed",
+      "method": "initial_shared_design",
+      "total_seconds": 2.8374837711453438e-05,
+      "fit_seconds": 0.0,
+      "candidate_generation_seconds": 0.0,
+      "sampling_seconds": 0.0,
+      "finite_training_observations": 6,
+      "warnings": [],
+      "error": null
+    },
+    {
+      "proposal_id": 7,
+      "status": "proposed",
+      "method": "initial_shared_design",
+      "total_seconds": 3.3207936212420464e-05,
+      "fit_seconds": 0.0,
+      "candidate_generation_seconds": 0.0,
+      "sampling_seconds": 0.0,
+      "finite_training_observations": 7,
+      "warnings": [],
+      "error": null
+    },
+    {
+      "proposal_id": 8,
+      "status": "proposed",
+      "method": "initial_shared_design",
+      "total_seconds": 3.541703335940838e-05,
+      "fit_seconds": 0.0,
+      "candidate_generation_seconds": 0.0,
+      "sampling_seconds": 0.0,
+      "finite_training_observations": 8,
+      "warnings": [],
+      "error": null
+    },
+    {
+      "proposal_id": 9,
+      "status": "proposed",
+      "method": "initial_shared_design",
+      "total_seconds": 5.783303640782833e-05,
+      "fit_seconds": 0.0,
+      "candidate_generation_seconds": 0.0,
+      "sampling_seconds": 0.0,
+      "finite_training_observations": 9,
+      "warnings": [],
+      "error": null
+    },
+    {
+      "proposal_id": 10,
+      "status": "proposed",
+      "method": "initial_shared_design",
+      "total_seconds": 6.679212674498558e-05,
+      "fit_seconds": 0.0,
+      "candidate_generation_seconds": 0.0,
+      "sampling_seconds": 0.0,
+      "finite_training_observations": 10,
+      "warnings": [],
+      "error": null
+    },
+    {
+      "proposal_id": 11,
+      "status": "proposed",
+      "method": "initial_shared_design",
+      "total_seconds": 3.533298149704933e-05,
+      "fit_seconds": 0.0,
+      "candidate_generation_seconds": 0.0,
+      "sampling_seconds": 0.0,
+      "finite_training_observations": 11,
+      "warnings": [],
+      "error": null
+    },
+    {
+      "proposal_id": 12,
+      "status": "proposed",
+      "method": "initial_shared_design",
+      "total_seconds": 3.4542055800557137e-05,
+      "fit_seconds": 0.0,
+      "candidate_generation_seconds": 0.0,
+      "sampling_seconds": 0.0,
+      "finite_training_observations": 12,
+      "warnings": [],
+      "error": null
+    },
+    {
+      "proposal_id": 13,
+      "status": "proposed",
+      "method": "initial_shared_design",
+      "total_seconds": 2.8708018362522125e-05,
+      "fit_seconds": 0.0,
+      "candidate_generation_seconds": 0.0,
+      "sampling_seconds": 0.0,
+      "finite_training_observations": 13,
+      "warnings": [],
+      "error": null
+    },
+    {
+      "proposal_id": 14,
+      "status": "proposed",
+      "method": "initial_shared_design",
+      "total_seconds": 4.066620022058487e-05,
+      "fit_seconds": 0.0,
+      "candidate_generation_seconds": 0.0,
+      "sampling_seconds": 0.0,
+      "finite_training_observations": 14,
+      "warnings": [],
+      "error": null
+    },
+    {
+      "proposal_id": 15,
+      "status": "proposed",
+      "method": "constrained_gp_thompson",
+      "total_seconds": 1.202069791033864,
+      "fit_seconds": 1.0788217082154006,
+      "candidate_generation_seconds": 0.0066434580367058516,
+      "sampling_seconds": 0.04266000003553927,
+      "finite_training_observations": 15,
+      "warnings": [],
+      "error": null
+    }
+  ],
+  "arm_results": {
+    "dds": {
+      "selected_id": "shared_11",
+      "search_utility": 0.5689949624617686,
+      "verification_status": "fresh_training_reproduced"
+    },
+    "gp": {
+      "selected_id": "gp_search_0",
+      "search_utility": 0.7170389929659058,
+      "verification_status": "fresh_training_reproduced"
+    }
+  },
+  "budgets": {
+    "dds": {
+      "schema": "whole_workflow_objective_requests_v1",
+      "ledger_id": "aca72d9178144d6f8185248e646522f5",
+      "identity_sha256": "cb2a56297156a33401a48d6ddbc85cdbbf8bbb7a3a1ec36ce1e406c6767d7c92",
+      "total_cap": 18,
+      "charged_requests": 17,
+      "used_by_stage": {
+        "design": 15,
+        "validation": 0,
+        "final_training": 1,
+        "search": 1,
+        "screen": 0
+      },
+      "pending_reservations": [],
+      "status_counts": {
+        "failed": 0,
+        "completed": 17,
+        "interrupted": 0
+      },
+      "cache_hits": 0,
+      "engine_wrapper_calls": 17,
+      "engine_call_count_basis": "reported run_swat wrapper attempts; not subprocess launches",
+      "remaining_discretionary": 0,
+      "remaining_final_training": 0,
+      "remaining_validation": 1,
+      "ledger_event_count": 35,
+      "ledger_head_sha256": "c2be708de8e0e977fa4185dfeee0dacec9fc08cc71c118f2709d7a198055466d"
+    },
+    "gp": {
+      "schema": "whole_workflow_objective_requests_v1",
+      "ledger_id": "1e24573eeeee4e2299be62e21feaa474",
+      "identity_sha256": "c0beed4a22f944431328ad28571a9e55547cd52e4aeb5583bf68fc20cd2b5bda",
+      "total_cap": 18,
+      "charged_requests": 17,
+      "used_by_stage": {
+        "design": 15,
+        "validation": 0,
+        "final_training": 1,
+        "search": 1,
+        "screen": 0
+      },
+      "pending_reservations": [],
+      "status_counts": {
+        "failed": 0,
+        "completed": 17,
+        "interrupted": 0
+      },
+      "cache_hits": 15,
+      "engine_wrapper_calls": 2,
+      "engine_call_count_basis": "reported run_swat wrapper attempts; not subprocess launches",
+      "remaining_discretionary": 0,
+      "remaining_final_training": 0,
+      "remaining_validation": 1,
+      "ledger_event_count": 35,
+      "ledger_head_sha256": "a9d46b444e0827c94306b3b0b42487c5b8e22502c9ddda76397a4583629c0989"
+    }
+  },
+  "execution_note": "Reviewer-authored read-only audit executed by the primary agent; no completed second-agent post-run review."
+}

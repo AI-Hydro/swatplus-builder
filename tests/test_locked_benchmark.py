@@ -1720,6 +1720,10 @@ def test_multi_seed_ensemble_fields_populated(monkeypatch, tmp_path: Path) -> No
     )
 
     assert evidence.ensemble_n_seeds == 3
+    secondary = [json.loads(row) for row in
+                 (Path(evidence.history_csv).parent / "secondary_evaluations.jsonl").read_text().splitlines()]
+    assert {row["seed_index"] for row in secondary} == {1, 2}
+    assert all(row["phase"] == "volume" and row["status"] == "evaluated" for row in secondary)
     # With 3 seeds (all returning same metrics), spread should be 0
     assert evidence.ensemble_nse_spread is not None
     assert evidence.ensemble_kge_spread is not None

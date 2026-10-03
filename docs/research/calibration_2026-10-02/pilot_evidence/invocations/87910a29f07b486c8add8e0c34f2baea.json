@@ -1,0 +1,26 @@
+{
+  "schema": "calibration_invocation_v1",
+  "invocation_id": "87910a29f07b486c8add8e0c34f2baea",
+  "started_at_utc": "2026-10-02T13:20:55.846776+00:00",
+  "params": {
+    "PERCO": 1.0,
+    "PET_CO": 1.182866230191236
+  },
+  "params_sha256": "5bd616c1acbf9fbf1fcf261b1bd9a0b597a2d82b601814d7e3836e57930e2838",
+  "cache_signature": "5435d47f0779aa114c77ba672bd23ad0b7117026b4f655959d25fa658495b1aa",
+  "cache_status": "miss",
+  "engine_invoked": true,
+  "engine_invocation_basis": "run_swat_call",
+  "threads": 1,
+  "status": "completed",
+  "stage_seconds": {
+    "lock_wait": 0.00010979082435369492,
+    "staging": 0.05887950002215803,
+    "parameter_preparation": 0.015629749977961183,
+    "engine_and_receipt": 14.395051082829013,
+    "evaluation": 1.4006040419917554,
+    "physical_gate": 0.00037541682831943035
+  },
+  "total_seconds": 15.877595124999061,
+  "finished_at_utc": "2026-10-02T13:21:11.724442+00:00"
+}

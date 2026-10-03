@@ -9,14 +9,14 @@ claims track evidence; that discipline applies to the project's own claims too.
 
 !!! warning "Alpha research software"
     In the dated 2026-07-02 objective-suite snapshot, **0 of 11 complete
-    workflows** were promoted to the package-defined `research_grade` tier.
+    workflows** were promoted to the Gate-verified tier (stored as `research_grade`).
     The gates were not relaxed to manufacture passes. A later focused positive
     case is reported separately below and does not revise that snapshot.
 
 This is not a failure of the pipeline — it is the pipeline working as designed.
 Most basins **build and run** the engine cleanly, and several **calibrate with
 real, independently verified improvement** — and still do not earn a
-research-grade *claim*, because a provenance, physical-realism, outlet-scope, or
+Gate-verified workflow status, because a provenance, physical-realism, outlet-scope, or
 skill gate is not met. A blocked claim is *classified evidence*, not a crash.
 
 ## What is solid today
@@ -39,7 +39,7 @@ sample and not additions to the dated objective-suite snapshot.
 
 | Basin | Benchmark NSE / KGE | Locked verification NSE / KGE | Withheld 2016--2019 NSE / KGE | Package decision |
 |---|---:|---:|---:|---|
-| `01547700` | 0.2875 / 0.3522 | 0.3536 / 0.5856 | 0.3742 / 0.6260 | `research_grade` workflow tier; terrain/lapse-derived subclaims remain blocked |
+| `01547700` | 0.2875 / 0.3522 | 0.3536 / 0.5856 | 0.3742 / 0.6260 | Gate-verified workflow tier (`research_grade`); terrain/lapse-derived subclaims remain blocked |
 | `03349000` | -0.4202 / 0.0841 | -0.0199 / 0.3548 | 0.0087 / 0.3010 | `exploratory`; final skill and transfer requirements did not pass |
 
 The negative control preserves real metric improvement without promoting the

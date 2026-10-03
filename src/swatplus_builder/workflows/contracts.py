@@ -14,6 +14,8 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 
+from ..governance.tiers import tier_label
+
 
 @dataclass
 class WorkflowContract:
@@ -39,9 +41,9 @@ def negotiate_workflow(task: str) -> WorkflowContract:
     usgs = _RE_USGS.search(t)
     tier = "diagnostic"
     lower = t.lower()
-    if "publication" in lower:
+    if "publication" in lower or "calibration verified" in lower:
         tier = "publication_grade"
-    elif "research" in lower:
+    elif "research" in lower or "gate-verified" in lower or "gate verified" in lower:
         tier = "research_grade"
     elif "exploratory" in lower:
         tier = "exploratory"
@@ -102,6 +104,7 @@ def write_contract(contract: WorkflowContract, out_dir: Path) -> tuple[Path, Pat
         f"- usgs_id: `{contract.usgs_id}`",
         f"- start: `{contract.start}`",
         f"- end: `{contract.end}`",
+        f"- workflow_status: {tier_label(contract.claim_tier)}",
         f"- claim_tier: `{contract.claim_tier}`",
         f"- contract_status: `{contract.contract_status}`",
         f"- accepted_by: `{contract.accepted_by}`",

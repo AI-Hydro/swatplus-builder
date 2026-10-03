@@ -11,6 +11,9 @@ nse(obs, sim)
     Nash–Sutcliffe Efficiency [-∞, 1].
 kge(obs, sim)
     Kling–Gupta Efficiency [-∞, 1].
+sqrt_nse(obs, sim), log_nse(obs, sim, epsilon=...)
+    Opt-in unit-stable transformed NSE; invalid discharge raises ValueError,
+    constant observations return NaN, and log-NSE needs a frozen offset.
 baseflow_index(daily_q)
     Baseflow index via the 2-pass Lyne–Hollick digital filter.
 flow_duration_curve_quantiles(daily_q, quantiles)
@@ -31,6 +34,8 @@ __all__ = [
     "kge_components",
     "log_kge",
     "log_kge_v2",
+    "sqrt_nse",
+    "log_nse",
     "pbias",
     "baseflow_index",
     "flow_duration_curve_quantiles",
@@ -200,6 +205,66 @@ def log_kge_v2(obs: Sequence[float], sim: Sequence[float], epsilon_fraction: flo
     obs_mean = _mean([max(float(v), 0.0) for v in obs])
     epsilon = epsilon_fraction * obs_mean if math.isfinite(obs_mean) and obs_mean > 0.0 else 0.01
     return log_kge(obs, sim, epsilon=epsilon)
+
+
+def _nonnegative_flow_pair(
+    obs: Sequence[float], sim: Sequence[float], metric: str,
+) -> tuple[list[float], list[float]]:
+    observed, simulated = list(obs), list(sim)
+    _check_lengths(observed, simulated, metric)
+    try:
+        observed = [float(value) for value in observed]
+        simulated = [float(value) for value in simulated]
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"{metric} requires finite nonnegative discharge.") from exc
+    if any(not math.isfinite(value) or value < 0 for value in observed + simulated):
+        raise ValueError(f"{metric} requires finite nonnegative discharge; values are not clipped.")
+    return observed, simulated
+
+
+def sqrt_nse(obs: Sequence[float], sim: Sequence[float]) -> float:
+    """NSE on square-root discharge, invariant under positive unit conversions.
+
+    Square roots reduce the emphasis on large flow errors; they do not isolate
+    low flows. Zero discharge is retained. Constant observations (including an
+    all-zero series) have undefined NSE and return NaN, even for a perfect fit.
+    Empty, misaligned, negative or non-finite inputs raise ValueError.
+    """
+    observed, simulated = _nonnegative_flow_pair(obs, sim, "sqrt_nse")
+    scale = max(observed + simulated)
+    if scale == 0:
+        return float("nan")
+    # Common normalization avoids squared-error overflow without changing NSE.
+    return nse([math.sqrt(v / scale) for v in observed],
+               [math.sqrt(v / scale) for v in simulated])
+
+
+def log_nse(obs: Sequence[float], sim: Sequence[float], *, epsilon: float) -> float:
+    """NSE on log(Q + epsilon), with a caller-specified frozen positive offset.
+
+    epsilon has discharge units and must be scaled alongside Q when converting
+    units. Calibration callers must derive it from training observations only.
+    This computes log(1 + Q/epsilon); subtracting the common log(epsilon)
+    leaves NSE unchanged and avoids dimensioned logarithms. Zero flows are
+    retained. Constant/all-zero observations return NaN. Invalid inputs raise
+    ValueError; neither negative flows nor NaNs are silently clipped.
+    """
+    observed, simulated = _nonnegative_flow_pair(obs, sim, "log_nse")
+    try:
+        epsilon = float(epsilon)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("log_nse epsilon must be finite and positive.") from exc
+    if not math.isfinite(epsilon) or epsilon <= 0:
+        raise ValueError("log_nse epsilon must be finite and positive.")
+
+    def transform(value: float) -> float:
+        ratio = value / epsilon
+        if math.isfinite(ratio):
+            return math.log1p(ratio)
+        # Safe even when two individually finite values overflow their ratio.
+        return math.log(value) - math.log(epsilon) + math.log1p(epsilon / value)
+
+    return nse([transform(v) for v in observed], [transform(v) for v in simulated])
 
 
 def pbias(obs: Sequence[float], sim: Sequence[float]) -> float:

@@ -119,6 +119,9 @@ multibasin_test/
 demo_runs/
 docs/*
 !docs/
+!docs/research/
+docs/research/*
+!docs/research/calibration_2026-10-02/
 !docs/AGENT_HANDOFF.md
 !docs/AGENT_WORKFLOW.md
 !docs/CALIBRATION_PARAMETER_REGISTRY.md
@@ -163,3 +166,6 @@ PLAYBOOK.md
 .venv-repro/
 outputs/
 swatplus_runs/
+
+# Retained live simulation archives stay local; compact evidence lives in docs/research
+runs/

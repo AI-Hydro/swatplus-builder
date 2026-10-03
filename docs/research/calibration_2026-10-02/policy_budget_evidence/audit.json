@@ -1,0 +1,1279 @@
+{
+  "status": "passed",
+  "check_count": 318,
+  "scope": "root read-only source/receipt/provenance audit, not independent reviewer audit",
+  "checks": [
+    {
+      "check": "frozen_source:calibration_policy_budget_smoke.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/artifacts/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/artifacts/hashing.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/artifacts/models.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/artifacts/store.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/audit/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/audit/decisions.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/audit/ledger.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/autoresearch/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/autoresearch/loop.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/autoresearch/surrogate.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/bridge_diagnostics.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/calibrator.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/diagnostic_calibrator.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/evaluation_budget.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/experiment_design.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/forward.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/locked_benchmark.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/nwis.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/objective_policy.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/policy_engine.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/pyswatplus_runtime.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/real_engine.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/report.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/sensitivity_screen.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/spotpy_adapter.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/calibration/surrogate_optimizer.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/cli.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/config.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/db/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/db/mock_datasets.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/db/project.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/db/schema.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/db/seed.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/db/writer.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/decision_data/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/decision_data/faults.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/decision_data/state.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/decision_data/typed.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/diagnostics.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/domains/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/domains/flood_frequency.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/api.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/datasets/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/datasets/base.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/datasets/basin.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/datasets/change.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/datasets/climate.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/datasets/decision_table.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/datasets/definitions.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/datasets/hru_parm_db.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/datasets/init.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/datasets/lum.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/datasets/ops.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/datasets/setup.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/datasets/soils.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/datasets/structural.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/lib.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/output/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/output/aquifer.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/output/base.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/output/channel.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/output/check.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/output/data.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/output/hyd.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/output/losses.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/output/misc.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/output/nutbal.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/output/pest.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/output/plantwx.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/output/reservoir.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/output/setup.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/output/waterallo.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/output/waterbal.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/aquifer.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/base.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/basin.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/change.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/channel.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/climate.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/config.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/connect.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/decision_table.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/dr.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/exco.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/gis.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/gwflow.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/hru.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/hru_parm_db.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/hydrology.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/init.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/link.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/lum.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/ops.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/recall.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/regions.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/reservoir.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/routing_unit.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/salts.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/setup.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/simulation.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/soils.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/structural.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/project/water_rights.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/soils.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/vardefs.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/_swatplus_db/wgn.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/actions/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/actions/create_databases.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/actions/get_swatplus_check.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/actions/import_export_data.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/actions/import_gis.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/actions/import_gis_legacy.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/actions/import_weather.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/actions/load_scenarios.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/actions/read_output.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/actions/read_output_legacy.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/actions/reimport_gis.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/actions/run_all.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/actions/setup_project.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/actions/update_datasets.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/actions/update_project.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/actions/write_files.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/aquifer.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/base.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/basin.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/change.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/channel.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/climate.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/config.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/connect.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/decision_table.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/dr.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/exco.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/gwflow.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/hru.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/hru_parm_db.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/hydrology.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/init.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/lum.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/ops.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/recall.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/regions.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/reservoir.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/routing_unit.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/salts.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/simulation.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/soils.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/structural.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/fileio/water_rights.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/get-pip.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/helpers/executable_api.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/helpers/table_mapper.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/helpers/utils.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/aquifer.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/auto_complete.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/basin.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/change.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/channel.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/climate.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/config.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/decision_table.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/defaults.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/definitions.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/gwflow.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/hru.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/hru_lte.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/hru_parm_db.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/hydrology.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/init.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/lum.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/ops.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/recall.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/regions.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/reservoir.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/routing_unit.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/salts.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/setup.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/soils.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/structural.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/rest/water_rights.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/swatplus_api.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/editor/vendored/swatplus_rest_api.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/errors.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/evidence/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/evidence/integrity.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/evidence/migration.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/evidence/schema.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/examples/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/examples/usgs_basin_workflow.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/full_mode/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/full_mode/crop_management.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/full_mode/parameter_bridge.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/full_mode/routing_fixes.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/full_mode/subsurface_priors.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/full_mode/topology_converter.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/full_mode/verify_conversion.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/full_mode/warmup.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/full_mode/water_balance_gate.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/gis/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/gis/complexity.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/gis/delineation.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/gis/hru.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/gis/landuse.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/gis/nldi_fallback.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/gis/overlay_repair.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/gis/soil.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/gis/tables.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/gis/validate.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/governance/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/governance/gates.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/governance/tiers.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/mcp/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/mcp/server.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/mcp/worker.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/orchestrate.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/dashboard.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/et_diagnostics.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/eval.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/landuse_fidelity.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/mass_diagnostics.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/mass_trace.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/metadata.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/metrics.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/plots/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/plots/fdc.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/plots/forcing_context.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/plots/hydrograph.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/plots/landuse_composition.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/plots/residuals.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/plots/scatter.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/plots/seasonal.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/plots/soil.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/plots/spatial.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/plots/style.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/plots/utils.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/plots/water_balance.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/plots/wrapper.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/reader.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/realism.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/summary.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/terrain_climate_defaults.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/volume_diagnostics.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/output/weather_forcing.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/params/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/params/governance.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/params/registry.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/ref/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/ref/bootstrap.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/ref/catalog.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/run/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/run/swatplus.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/sensitivity.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/skills/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/skills/swatplus_playbook/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/skills/swatplus_playbook/rules.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/skills/swatplus_playbook/schemas.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/skills/swatplus_playbook/update.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/soil/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/soil/builder.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/soil/gnatsgo.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/soil/models.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/soil/params.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/soil/pc.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/soil/plot.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/soil/sda.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/soil/soilgrids.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/soil/writer.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/tools/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/tools/agent.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/types.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/validation/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/validation/runner.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/weather/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/weather/daymet.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/weather/gridmet.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/weather/synthetic.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/weather/wgn.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/weather/writer.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/workflows/__init__.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/workflows/contracts.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/workflows/full_build.py",
+      "passed": true
+    },
+    {
+      "check": "frozen_source:src/swatplus_builder/workflows/usgs_e2e.py",
+      "passed": true
+    },
+    {
+      "check": "first:valid",
+      "passed": true
+    },
+    {
+      "check": "first:calendar",
+      "passed": true
+    },
+    {
+      "check": "replay:valid",
+      "passed": true
+    },
+    {
+      "check": "replay:calendar",
+      "passed": true
+    },
+    {
+      "check": "fresh:valid",
+      "passed": true
+    },
+    {
+      "check": "fresh:calendar",
+      "passed": true
+    },
+    {
+      "check": "runs/calibration_research_20261002/policy_budget_smoke_v1/shared/44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a/TxtInOut/engine_run_receipt.json:returncode",
+      "passed": true
+    },
+    {
+      "check": "runs/calibration_research_20261002/policy_budget_smoke_v1/shared/44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a/TxtInOut/engine_run_receipt.json:output:simulation.out",
+      "passed": true
+    },
+    {
+      "check": "runs/calibration_research_20261002/policy_budget_smoke_v1/shared/44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a/TxtInOut/engine_run_receipt.json:output:channel_sd_day.txt",
+      "passed": true
+    },
+    {
+      "check": "runs/calibration_research_20261002/policy_budget_smoke_v1/shared/44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a/TxtInOut/engine_run_receipt.json:output:basin_sd_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "runs/calibration_research_20261002/policy_budget_smoke_v1/shared/44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a/TxtInOut/engine_run_receipt.json:output:basin_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "runs/calibration_research_20261002/policy_budget_smoke_v1/shared/44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a/TxtInOut/engine_run_receipt.json:output:basin_wb_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "runs/calibration_research_20261002/policy_budget_smoke_v1/shared/44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a/TxtInOut/engine_run_receipt.json:output:hydout_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "runs/calibration_research_20261002/policy_budget_smoke_v1/shared/44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a/TxtInOut/engine_run_receipt.json:output:hydout_aa.txt",
+      "passed": true
+    },
+    {
+      "check": "runs/calibration_research_20261002/policy_budget_smoke_v1/fresh/44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a/TxtInOut/engine_run_receipt.json:returncode",
+      "passed": true
+    },
+    {
+      "check": "runs/calibration_research_20261002/policy_budget_smoke_v1/fresh/44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a/TxtInOut/engine_run_receipt.json:output:simulation.out",
+      "passed": true
+    },
+    {
+      "check": "runs/calibration_research_20261002/policy_budget_smoke_v1/fresh/44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a/TxtInOut/engine_run_receipt.json:output:channel_sd_day.txt",
+      "passed": true
+    },
+    {
+      "check": "runs/calibration_research_20261002/policy_budget_smoke_v1/fresh/44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a/TxtInOut/engine_run_receipt.json:output:basin_sd_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "runs/calibration_research_20261002/policy_budget_smoke_v1/fresh/44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a/TxtInOut/engine_run_receipt.json:output:basin_cha_day.txt",
+      "passed": true
+    },
+    {
+      "check": "runs/calibration_research_20261002/policy_budget_smoke_v1/fresh/44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a/TxtInOut/engine_run_receipt.json:output:basin_wb_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "runs/calibration_research_20261002/policy_budget_smoke_v1/fresh/44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a/TxtInOut/engine_run_receipt.json:output:hydout_yr.txt",
+      "passed": true
+    },
+    {
+      "check": "runs/calibration_research_20261002/policy_budget_smoke_v1/fresh/44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a/TxtInOut/engine_run_receipt.json:output:hydout_aa.txt",
+      "passed": true
+    },
+    {
+      "check": "two_receipts",
+      "passed": true
+    },
+    {
+      "check": "fresh_separate_run",
+      "passed": true
+    },
+    {
+      "check": "cache_same_run",
+      "passed": true
+    },
+    {
+      "check": "3requests",
+      "passed": true
+    },
+    {
+      "check": "unspent_validation",
+      "passed": true
+    },
+    {
+      "check": "source_unchanged",
+      "passed": true
+    }
+  ]
+}

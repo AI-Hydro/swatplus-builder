@@ -20,7 +20,7 @@ reason and an artifact pointer:
 }
 ```
 
-If the claim you care about (say, "research-grade skill at the gauge") is in
+If the claim you care about (say, "the discharge-skill policy is met at the gauge") is in
 `blocked_claims`, the reason code tells you *which gate* stopped it — and the
 artifact tells you *where to look*.
 
@@ -34,9 +34,16 @@ artifact tells you *where to look*.
 ```
 
 The tier is computed from the gate table, not asserted. "calibration improved
-the baseline" and "the model has research-grade skill" are *separate* claims
+the baseline" and "the discharge-skill policy is met" are *separate* claims
 that gate independently — a run can be allowed the first and blocked on the
 second.
+
+The highest public workflow label is **Gate-verified**, stored as
+`research_grade` for compatibility. It describes the applicable package gates
+for the recorded scope. A Moriasi streamflow assessment is separate: it must
+identify its reference, time step and evaluation period, include all required
+metrics, and distinguish calibration from withheld validation. Passing a
+workflow gate does not establish that assessment.
 
 ## 3. Confirm the metrics are verified, not candidate
 

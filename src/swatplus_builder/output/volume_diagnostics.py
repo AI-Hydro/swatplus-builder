@@ -1956,7 +1956,7 @@ def build_terminal_scope_decision_request(
             "decision_type": decision_type or "selected_outlet_scope_authority_required",
             "question": (
                 "Select the claim-authoritative outlet-scope path before any "
-                f"research-grade rerun for basin {question_basin}."
+                f"Gate-verified rerun for basin {question_basin}."
             ),
             "options": [
                 {
@@ -2601,7 +2601,7 @@ def _source_backed_alternatives(flags: list[dict[str, str]], values: dict[str, A
             {
                 "rank": len(alternatives) + 1,
                 "option": "audit_basin_water_balance_closure_terms",
-                "source": "Project physical-gate policy requires mass/water-balance closure before research-grade claims",
+                "source": "Project physical-gate policy requires mass/water-balance closure before Gate-verified claims",
                 "parameters": [],
                 "required_artifacts": [
                     "physical_gates.json",

@@ -1,0 +1,555 @@
+{
+  "policy": "raw_kge_volume30_explicit_calibration_process_v1",
+  "interpretation": "exploratory two-parameter development pilot; no superiority claim",
+  "search_budget_per_arm": 6,
+  "verification_reserve_per_arm": 1,
+  "physical_call_cap": 11,
+  "attributed_call_cap": 14,
+  "physical_call_count_basis": "attempted evaluator callbacks, including pre-subprocess failures; not confirmed process launches",
+  "process_constraint_interpretation": "signed categorical reported process-pass proxy (-1 pass/+1 fail), not a continuous conservation residual",
+  "physical_calls": [
+    {
+      "evaluation_id": "shared_0",
+      "parameters": {
+        "PERCO": 1.0,
+        "PET_CO": 1.2
+      },
+      "status": "success",
+      "metrics": {
+        "nse": 0.4246114371005443,
+        "kge": 0.6894085438800555,
+        "log_kge": -0.6761636346228093,
+        "log_kge_v2": -0.07119273234037604,
+        "pbias": 0.11445271445361858,
+        "bfi_obs": 0.6954787428792715,
+        "bfi_sim": 0.742246941276711,
+        "physical_gate_passed": 1.0,
+        "calibration_process_gate_passed": 1.0,
+        "selected_terminal_fraction_of_all_terminal_flow": 1.0,
+        "selected_terminal_nse": 0.4246114371005443,
+        "selected_terminal_kge": 0.6894085438800555,
+        "selected_terminal_pbias": 0.11445271445361858,
+        "all_terminal_nse": 0.4246114371005443,
+        "all_terminal_kge": 0.6894085438800555,
+        "all_terminal_pbias": 0.11445271445361858,
+        "all_terminal_volume_gate_passes_diagnostic": 1.0
+      },
+      "utility": 0.6894085438800555,
+      "constraints": {
+        "volume": -0.9961849095182127,
+        "calibration_process": -1.0
+      },
+      "reason": null,
+      "seconds": 20.23716012504883
+    },
+    {
+      "evaluation_id": "shared_1",
+      "parameters": {
+        "PERCO": 0.2575,
+        "PET_CO": 0.9
+      },
+      "status": "success",
+      "metrics": {
+        "nse": -0.850889228580497,
+        "kge": 0.15263967279053747,
+        "log_kge": 0.508340018666309,
+        "log_kge_v2": 0.5123553442121684,
+        "pbias": 5.440022396893623,
+        "bfi_obs": 0.6954787428792715,
+        "bfi_sim": 0.5062594664691721,
+        "physical_gate_passed": 0.0,
+        "calibration_process_gate_passed": 1.0,
+        "selected_terminal_fraction_of_all_terminal_flow": 1.0,
+        "selected_terminal_nse": -0.850889228580497,
+        "selected_terminal_kge": 0.15263967279053747,
+        "selected_terminal_pbias": 5.440022396893623,
+        "all_terminal_nse": -0.850889228580497,
+        "all_terminal_kge": 0.15263967279053747,
+        "all_terminal_pbias": 5.440022396893623,
+        "all_terminal_volume_gate_passes_diagnostic": 1.0
+      },
+      "utility": 0.15263967279053747,
+      "constraints": {
+        "volume": -0.8186659201035459,
+        "calibration_process": -1.0
+      },
+      "reason": null,
+      "seconds": 16.536693167174235
+    },
+    {
+      "evaluation_id": "shared_2",
+      "parameters": {
+        "PERCO": 0.7525,
+        "PET_CO": 1.1
+      },
+      "status": "success",
+      "metrics": {
+        "nse": -0.45853286321261955,
+        "kge": 0.3023690120395305,
+        "log_kge": 0.5077220672163252,
+        "log_kge_v2": 0.5242006533836705,
+        "pbias": 2.9241787589094375,
+        "bfi_obs": 0.6954787428792715,
+        "bfi_sim": 0.5537018060473095,
+        "physical_gate_passed": 0.0,
+        "calibration_process_gate_passed": 1.0,
+        "selected_terminal_fraction_of_all_terminal_flow": 1.0,
+        "selected_terminal_nse": -0.45853286321261955,
+        "selected_terminal_kge": 0.3023690120395305,
+        "selected_terminal_pbias": 2.9241787589094375,
+        "all_terminal_nse": -0.45853286321261955,
+        "all_terminal_kge": 0.3023690120395305,
+        "all_terminal_pbias": 2.9241787589094375,
+        "all_terminal_volume_gate_passes_diagnostic": 1.0
+      },
+      "utility": 0.3023690120395305,
+      "constraints": {
+        "volume": -0.9025273747030187,
+        "calibration_process": -1.0
+      },
+      "reason": null,
+      "seconds": 16.979138208087534
+    },
+    {
+      "evaluation_id": "dds_search_0",
+      "parameters": {
+        "PERCO": 0.861007222430425,
+        "PET_CO": 1.191094731074587
+      },
+      "status": "success",
+      "metrics": {
+        "nse": -0.22913066219602962,
+        "kge": 0.4066029749006801,
+        "log_kge": 0.36910672828969393,
+        "log_kge_v2": 0.4273598546775411,
+        "pbias": 1.7276926770936532,
+        "bfi_obs": 0.6954787428792715,
+        "bfi_sim": 0.585564110036644,
+        "physical_gate_passed": 0.0,
+        "calibration_process_gate_passed": 1.0,
+        "selected_terminal_fraction_of_all_terminal_flow": 1.0,
+        "selected_terminal_nse": -0.22913066219602962,
+        "selected_terminal_kge": 0.4066029749006801,
+        "selected_terminal_pbias": 1.7276926770936532,
+        "all_terminal_nse": -0.22913066219602962,
+        "all_terminal_kge": 0.4066029749006801,
+        "all_terminal_pbias": 1.7276926770936532,
+        "all_terminal_volume_gate_passes_diagnostic": 1.0
+      },
+      "utility": 0.4066029749006801,
+      "constraints": {
+        "volume": -0.9424102440968782,
+        "calibration_process": -1.0
+      },
+      "reason": null,
+      "seconds": 16.37283020792529
+    },
+    {
+      "evaluation_id": "dds_search_1",
+      "parameters": {
+        "PERCO": 1.0,
+        "PET_CO": 1.182866230191236
+      },
+      "status": "success",
+      "metrics": {
+        "nse": 0.4245988687750184,
+        "kge": 0.6896228598371872,
+        "log_kge": -0.6571161744897054,
+        "log_kge_v2": -0.06445554304264256,
+        "pbias": 0.24039394050013826,
+        "bfi_obs": 0.6954787428792715,
+        "bfi_sim": 0.7423563299344825,
+        "physical_gate_passed": 1.0,
+        "calibration_process_gate_passed": 1.0,
+        "selected_terminal_fraction_of_all_terminal_flow": 1.0,
+        "selected_terminal_nse": 0.4245988687750184,
+        "selected_terminal_kge": 0.6896228598371872,
+        "selected_terminal_pbias": 0.24039394050013826,
+        "all_terminal_nse": 0.4245988687750184,
+        "all_terminal_kge": 0.6896228598371872,
+        "all_terminal_pbias": 0.24039394050013826,
+        "all_terminal_volume_gate_passes_diagnostic": 1.0
+      },
+      "utility": 0.6896228598371872,
+      "constraints": {
+        "volume": -0.9919868686499954,
+        "calibration_process": -1.0
+      },
+      "reason": null,
+      "seconds": 15.968544000061229
+    },
+    {
+      "evaluation_id": "dds_search_2",
+      "parameters": {
+        "PERCO": 1.0,
+        "PET_CO": 1.1719182875190628
+      },
+      "status": "success",
+      "metrics": {
+        "nse": 0.4242781376553989,
+        "kge": 0.6894834341109672,
+        "log_kge": -0.6610995070159553,
+        "log_kge_v2": -0.06433921288529132,
+        "pbias": 0.32183027527638414,
+        "bfi_obs": 0.6954787428792715,
+        "bfi_sim": 0.7424277179500737,
+        "physical_gate_passed": 1.0,
+        "calibration_process_gate_passed": 1.0,
+        "selected_terminal_fraction_of_all_terminal_flow": 1.0,
+        "selected_terminal_nse": 0.4242781376553989,
+        "selected_terminal_kge": 0.6894834341109672,
+        "selected_terminal_pbias": 0.32183027527638414,
+        "all_terminal_nse": 0.4242781376553989,
+        "all_terminal_kge": 0.6894834341109672,
+        "all_terminal_pbias": 0.32183027527638414,
+        "all_terminal_volume_gate_passes_diagnostic": 1.0
+      },
+      "utility": 0.6894834341109672,
+      "constraints": {
+        "volume": -0.9892723241574538,
+        "calibration_process": -1.0
+      },
+      "reason": null,
+      "seconds": 16.10533508309163
+    },
+    {
+      "evaluation_id": "gp_search_0",
+      "parameters": {
+        "PERCO": 0.7222639873977446,
+        "PET_CO": 1.0655364154719007
+      },
+      "status": "success",
+      "metrics": {
+        "nse": -0.5043519873053661,
+        "kge": 0.2834632793525148,
+        "log_kge": 0.5243650717253836,
+        "log_kge_v2": 0.536390208502003,
+        "pbias": 3.3238303621484286,
+        "bfi_obs": 0.6954787428792715,
+        "bfi_sim": 0.54812161307755,
+        "physical_gate_passed": 0.0,
+        "calibration_process_gate_passed": 1.0,
+        "selected_terminal_fraction_of_all_terminal_flow": 1.0,
+        "selected_terminal_nse": -0.5043519873053661,
+        "selected_terminal_kge": 0.2834632793525148,
+        "selected_terminal_pbias": 3.3238303621484286,
+        "all_terminal_nse": -0.5043519873053661,
+        "all_terminal_kge": 0.2834632793525148,
+        "all_terminal_pbias": 3.3238303621484286,
+        "all_terminal_volume_gate_passes_diagnostic": 1.0
+      },
+      "utility": 0.2834632793525148,
+      "constraints": {
+        "volume": -0.8892056545950524,
+        "calibration_process": -1.0
+      },
+      "reason": null,
+      "seconds": 15.910079374909401
+    },
+    {
+      "evaluation_id": "gp_search_1",
+      "parameters": {
+        "PERCO": 0.9441712513758345,
+        "PET_CO": 1.160190272585028
+      },
+      "status": "success",
+      "metrics": {
+        "nse": 0.07388688906302887,
+        "kge": 0.5541661524486927,
+        "log_kge": 0.14185161154000747,
+        "log_kge_v2": 0.2691472108751777,
+        "pbias": 1.499971043578319,
+        "bfi_obs": 0.6954787428792715,
+        "bfi_sim": 0.6432621503939424,
+        "physical_gate_passed": 1.0,
+        "calibration_process_gate_passed": 1.0,
+        "selected_terminal_fraction_of_all_terminal_flow": 1.0,
+        "selected_terminal_nse": 0.07388688906302887,
+        "selected_terminal_kge": 0.5541661524486927,
+        "selected_terminal_pbias": 1.499971043578319,
+        "all_terminal_nse": 0.07388688906302887,
+        "all_terminal_kge": 0.5541661524486927,
+        "all_terminal_pbias": 1.499971043578319,
+        "all_terminal_volume_gate_passes_diagnostic": 1.0
+      },
+      "utility": 0.5541661524486927,
+      "constraints": {
+        "volume": -0.9500009652140561,
+        "calibration_process": -1.0
+      },
+      "reason": null,
+      "seconds": 16.521895250072703
+    },
+    {
+      "evaluation_id": "gp_search_2",
+      "parameters": {
+        "PERCO": 0.9974208631432864,
+        "PET_CO": 1.191316128525054
+      },
+      "status": "success",
+      "metrics": {
+        "nse": 0.4245438708552426,
+        "kge": 0.6894794869653638,
+        "log_kge": -0.6610838736785056,
+        "log_kge_v2": -0.06573693909123035,
+        "pbias": 0.17903224038994023,
+        "bfi_obs": 0.6954787428792715,
+        "bfi_sim": 0.742303024028189,
+        "physical_gate_passed": 1.0,
+        "calibration_process_gate_passed": 1.0,
+        "selected_terminal_fraction_of_all_terminal_flow": 1.0,
+        "selected_terminal_nse": 0.4245438708552426,
+        "selected_terminal_kge": 0.6894794869653638,
+        "selected_terminal_pbias": 0.17903224038994023,
+        "all_terminal_nse": 0.4245438708552426,
+        "all_terminal_kge": 0.6894794869653638,
+        "all_terminal_pbias": 0.17903224038994023,
+        "all_terminal_volume_gate_passes_diagnostic": 1.0
+      },
+      "utility": 0.6894794869653638,
+      "constraints": {
+        "volume": -0.9940322586536686,
+        "calibration_process": -1.0
+      },
+      "reason": null,
+      "seconds": 15.917346375063062
+    },
+    {
+      "evaluation_id": "dds_fresh_final",
+      "parameters": {
+        "PERCO": 1.0,
+        "PET_CO": 1.182866230191236
+      },
+      "status": "success",
+      "metrics": {
+        "nse": 0.4245988687750184,
+        "kge": 0.6896228598371872,
+        "log_kge": -0.6571161744897054,
+        "log_kge_v2": -0.06445554304264256,
+        "pbias": 0.24039394050013826,
+        "bfi_obs": 0.6954787428792715,
+        "bfi_sim": 0.7423563299344825,
+        "physical_gate_passed": 1.0,
+        "calibration_process_gate_passed": 1.0,
+        "selected_terminal_fraction_of_all_terminal_flow": 1.0,
+        "selected_terminal_nse": 0.4245988687750184,
+        "selected_terminal_kge": 0.6896228598371872,
+        "selected_terminal_pbias": 0.24039394050013826,
+        "all_terminal_nse": 0.4245988687750184,
+        "all_terminal_kge": 0.6896228598371872,
+        "all_terminal_pbias": 0.24039394050013826,
+        "all_terminal_volume_gate_passes_diagnostic": 1.0
+      },
+      "utility": 0.6896228598371872,
+      "constraints": {
+        "volume": -0.9919868686499954,
+        "calibration_process": -1.0
+      },
+      "reason": null,
+      "seconds": 18.332059249980375
+    },
+    {
+      "evaluation_id": "gp_fresh_final",
+      "parameters": {
+        "PERCO": 0.9974208631432864,
+        "PET_CO": 1.191316128525054
+      },
+      "status": "success",
+      "metrics": {
+        "nse": 0.4245438708552426,
+        "kge": 0.6894794869653638,
+        "log_kge": -0.6610838736785056,
+        "log_kge_v2": -0.06573693909123035,
+        "pbias": 0.17903224038994023,
+        "bfi_obs": 0.6954787428792715,
+        "bfi_sim": 0.742303024028189,
+        "physical_gate_passed": 1.0,
+        "calibration_process_gate_passed": 1.0,
+        "selected_terminal_fraction_of_all_terminal_flow": 1.0,
+        "selected_terminal_nse": 0.4245438708552426,
+        "selected_terminal_kge": 0.6894794869653638,
+        "selected_terminal_pbias": 0.17903224038994023,
+        "all_terminal_nse": 0.4245438708552426,
+        "all_terminal_kge": 0.6894794869653638,
+        "all_terminal_pbias": 0.17903224038994023,
+        "all_terminal_volume_gate_passes_diagnostic": 1.0
+      },
+      "utility": 0.6894794869653638,
+      "constraints": {
+        "volume": -0.9940322586536686,
+        "calibration_process": -1.0
+      },
+      "reason": null,
+      "seconds": 17.62516108294949
+    }
+  ],
+  "arms": {
+    "dds": {
+      "search_evaluation_ids": [
+        "shared_0",
+        "shared_1",
+        "shared_2",
+        "dds_search_0",
+        "dds_search_1",
+        "dds_search_2"
+      ],
+      "parameters": {
+        "PERCO": 1.0,
+        "PET_CO": 1.182866230191236
+      },
+      "search_metrics": {
+        "nse": 0.4245988687750184,
+        "kge": 0.6896228598371872,
+        "log_kge": -0.6571161744897054,
+        "log_kge_v2": -0.06445554304264256,
+        "pbias": 0.24039394050013826,
+        "bfi_obs": 0.6954787428792715,
+        "bfi_sim": 0.7423563299344825,
+        "physical_gate_passed": 1.0,
+        "calibration_process_gate_passed": 1.0,
+        "selected_terminal_fraction_of_all_terminal_flow": 1.0,
+        "selected_terminal_nse": 0.4245988687750184,
+        "selected_terminal_kge": 0.6896228598371872,
+        "selected_terminal_pbias": 0.24039394050013826,
+        "all_terminal_nse": 0.4245988687750184,
+        "all_terminal_kge": 0.6896228598371872,
+        "all_terminal_pbias": 0.24039394050013826,
+        "all_terminal_volume_gate_passes_diagnostic": 1.0
+      },
+      "fresh_final_metrics": {
+        "nse": 0.4245988687750184,
+        "kge": 0.6896228598371872,
+        "log_kge": -0.6571161744897054,
+        "log_kge_v2": -0.06445554304264256,
+        "pbias": 0.24039394050013826,
+        "bfi_obs": 0.6954787428792715,
+        "bfi_sim": 0.7423563299344825,
+        "physical_gate_passed": 1.0,
+        "calibration_process_gate_passed": 1.0,
+        "selected_terminal_fraction_of_all_terminal_flow": 1.0,
+        "selected_terminal_nse": 0.4245988687750184,
+        "selected_terminal_kge": 0.6896228598371872,
+        "selected_terminal_pbias": 0.24039394050013826,
+        "all_terminal_nse": 0.4245988687750184,
+        "all_terminal_kge": 0.6896228598371872,
+        "all_terminal_pbias": 0.24039394050013826,
+        "all_terminal_volume_gate_passes_diagnostic": 1.0
+      },
+      "fresh_final_admissible": true,
+      "fresh_final_evaluation_id": "dds_fresh_final",
+      "fresh_final_matches_search": true,
+      "fresh_final_comparison": {
+        "nse": true,
+        "kge": true,
+        "pbias": true,
+        "admissibility": true
+      },
+      "verification_status": "fresh_training_reproduced",
+      "fresh_minus_search": {
+        "nse": 0.0,
+        "kge": 0.0,
+        "pbias": 0.0
+      },
+      "fresh_final_constraints": {
+        "volume": -0.9919868686499954,
+        "calibration_process": -1.0
+      },
+      "selected_constraints": {
+        "volume": -0.9919868686499954,
+        "calibration_process": -1.0
+      },
+      "attributed_calls": 7
+    },
+    "gp": {
+      "search_evaluation_ids": [
+        "shared_0",
+        "shared_1",
+        "shared_2",
+        "gp_search_0",
+        "gp_search_1",
+        "gp_search_2"
+      ],
+      "proposal_methods": [
+        "initial_latin_design",
+        "initial_latin_design",
+        "initial_latin_design",
+        "constrained_gp_thompson",
+        "constrained_gp_thompson",
+        "constrained_gp_thompson"
+      ],
+      "parameters": {
+        "PERCO": 0.9974208631432864,
+        "PET_CO": 1.191316128525054
+      },
+      "search_utility": 0.6894794869653638,
+      "search_metrics": {
+        "nse": 0.4245438708552426,
+        "kge": 0.6894794869653638,
+        "log_kge": -0.6610838736785056,
+        "log_kge_v2": -0.06573693909123035,
+        "pbias": 0.17903224038994023,
+        "bfi_obs": 0.6954787428792715,
+        "bfi_sim": 0.742303024028189,
+        "physical_gate_passed": 1.0,
+        "calibration_process_gate_passed": 1.0,
+        "selected_terminal_fraction_of_all_terminal_flow": 1.0,
+        "selected_terminal_nse": 0.4245438708552426,
+        "selected_terminal_kge": 0.6894794869653638,
+        "selected_terminal_pbias": 0.17903224038994023,
+        "all_terminal_nse": 0.4245438708552426,
+        "all_terminal_kge": 0.6894794869653638,
+        "all_terminal_pbias": 0.17903224038994023,
+        "all_terminal_volume_gate_passes_diagnostic": 1.0
+      },
+      "fresh_final_metrics": {
+        "nse": 0.4245438708552426,
+        "kge": 0.6894794869653638,
+        "log_kge": -0.6610838736785056,
+        "log_kge_v2": -0.06573693909123035,
+        "pbias": 0.17903224038994023,
+        "bfi_obs": 0.6954787428792715,
+        "bfi_sim": 0.742303024028189,
+        "physical_gate_passed": 1.0,
+        "calibration_process_gate_passed": 1.0,
+        "selected_terminal_fraction_of_all_terminal_flow": 1.0,
+        "selected_terminal_nse": 0.4245438708552426,
+        "selected_terminal_kge": 0.6894794869653638,
+        "selected_terminal_pbias": 0.17903224038994023,
+        "all_terminal_nse": 0.4245438708552426,
+        "all_terminal_kge": 0.6894794869653638,
+        "all_terminal_pbias": 0.17903224038994023,
+        "all_terminal_volume_gate_passes_diagnostic": 1.0
+      },
+      "fresh_final_admissible": true,
+      "fresh_final_evaluation_id": "gp_fresh_final",
+      "fresh_final_matches_search": true,
+      "fresh_final_comparison": {
+        "nse": true,
+        "kge": true,
+        "pbias": true,
+        "admissibility": true
+      },
+      "verification_status": "fresh_training_reproduced",
+      "fresh_minus_search": {
+        "nse": 0.0,
+        "kge": 0.0,
+        "pbias": 0.0
+      },
+      "fresh_final_constraints": {
+        "volume": -0.9940322586536686,
+        "calibration_process": -1.0
+      },
+      "selected_constraints": {
+        "volume": -0.9940322586536686,
+        "calibration_process": -1.0
+      },
+      "attributed_calls": 7
+    }
+  },
+  "status": "completed",
+  "elapsed_seconds": 187.88631950016133,
+  "shared_physical_calls": 3,
+  "actual_physical_calls": 11,
+  "attributed_calls": 14,
+  "attribution": "Shared initial runs physically executed once and charged to each arm; no other cross-arm cache reuse"
+}

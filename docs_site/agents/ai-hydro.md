@@ -119,7 +119,7 @@ command for every run — record it for reproducibility.
 The package enforces claim governance regardless of which agent or platform
 drives it. Even from AI-Hydro, the agent cannot:
 
-- Upgrade a result to `research_grade` without passing all gates.
+- Grant Gate-verified status (`research_grade`) without passing the applicable gates for its claim and scope.
 - Report calibrated metrics without an independent locked-verification rerun.
 - Expand calibration parameters beyond the approved registry.
 

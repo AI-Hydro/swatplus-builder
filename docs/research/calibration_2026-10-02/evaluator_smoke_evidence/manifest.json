@@ -1,0 +1,57 @@
+{
+  "purpose": "evaluator smoke test, not optimization or promotion",
+  "basin_root": "/Users/mgalib/Documents/PyQSwatPlus/swatplus-builder/runs/pe1/usgs_12054000",
+  "source_input_sha256": "d5da6e7645004e4404c42fcfd7816625feb600ffa4344908be2280fffc09ade6",
+  "alignment_sha256": "76646625c910354e5e48ffe44030fc51b93ba87537d1fb4adc05c585851aa523",
+  "engine_sha256": "5c1936b04f4065f196aaa297d8b43ec3d4450c93d85923e33c3fba25419d2c1d",
+  "score_dates": [
+    "2010-01-01",
+    "2015-12-31"
+  ],
+  "status": "passed",
+  "metrics": {
+    "nse": 0.4246114371005443,
+    "kge": 0.6894085438800555,
+    "log_kge": -0.6761636346228093,
+    "log_kge_v2": -0.07119273234037604,
+    "pbias": 0.11445271445361858,
+    "bfi_obs": 0.6954787428792715,
+    "bfi_sim": 0.742246941276711,
+    "physical_gate_passed": 1.0,
+    "calibration_process_gate_passed": 1.0,
+    "selected_terminal_fraction_of_all_terminal_flow": 1.0,
+    "selected_terminal_nse": 0.4246114371005443,
+    "selected_terminal_kge": 0.6894085438800555,
+    "selected_terminal_pbias": 0.11445271445361858,
+    "all_terminal_nse": 0.4246114371005443,
+    "all_terminal_kge": 0.6894085438800555,
+    "all_terminal_pbias": 0.11445271445361858,
+    "all_terminal_volume_gate_passes_diagnostic": 1.0
+  },
+  "fresh_metrics": {
+    "nse": 0.4246114371005443,
+    "kge": 0.6894085438800555,
+    "log_kge": -0.6761636346228093,
+    "log_kge_v2": -0.07119273234037604,
+    "pbias": 0.11445271445361858,
+    "bfi_obs": 0.6954787428792715,
+    "bfi_sim": 0.742246941276711,
+    "physical_gate_passed": 1.0,
+    "calibration_process_gate_passed": 1.0,
+    "selected_terminal_fraction_of_all_terminal_flow": 1.0,
+    "selected_terminal_nse": 0.4246114371005443,
+    "selected_terminal_kge": 0.6894085438800555,
+    "selected_terminal_pbias": 0.11445271445361858,
+    "all_terminal_nse": 0.4246114371005443,
+    "all_terminal_kge": 0.6894085438800555,
+    "all_terminal_pbias": 0.11445271445361858,
+    "all_terminal_volume_gate_passes_diagnostic": 1.0
+  },
+  "engine_wrapper_calls": 2,
+  "cache_hits": 1,
+  "call_seconds": [
+    0.002216000109910965,
+    140.9692421250511,
+    116.29746258305386
+  ]
+}

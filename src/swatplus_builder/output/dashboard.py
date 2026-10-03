@@ -353,7 +353,56 @@ def _collect_all_data(run_dir: Path) -> dict[str, Any]:
         log.debug("Audit trail unavailable for %s: %s", run_dir, exc)
         data["audit"] = {"error": str(exc)[:300]}
 
+    # Assess the complete alignment, never the browser's downsampled plot.
+    # This is a derived numeric assessment, not a sealed workflow claim.
+    from .streamflow_performance import assess_streamflow_performance
+
+    data["streamflow_performance"] = assess_streamflow_performance({})
+    if calibrated_alignment is not None:
+        data["streamflow_performance"] = _assess_alignment_performance(calibrated_alignment)
+    data["streamflow_validation_performance"] = assess_streamflow_performance(
+        data.get("calibration_validation_metrics", {}),
+        timestep="daily", evaluation_role="reported validation period",
+        period_start=(data.get("calibration_validation_period") or [None, None])[0],
+        period_end=(data.get("calibration_validation_period") or [None, None])[1],
+    )
     return data
+
+
+def _assess_alignment_performance(path: Path) -> dict[str, Any]:
+    """Derive numeric criteria from every calibration alignment row.
+
+    Source binding is descriptive, not a substitute for receipt verification.
+    Never call this independent validation: the alignment is calibration data.
+    """
+    import csv
+    import hashlib
+
+    from .streamflow_performance import assess_streamflow_performance, assess_streamflow_series
+
+    raw = path.read_bytes()
+    try:
+        import io
+
+        rows = list(csv.DictReader(io.StringIO(raw.decode("utf-8"))))
+        columns = set(rows[0]) if rows else set()
+        date_key = next((key for key in ("date", "datetime", "time", "", "Unnamed: 0") if key in columns), None)
+        if date_key is None:
+            raise ValueError("missing alignment date column")
+        dates = [row[date_key] for row in rows]
+        result = assess_streamflow_series(
+            [row["obs"] for row in rows], [row["sim"] for row in rows], dates=dates,
+            timestep="daily", period_start=str(dates[0])[:10] if dates else None,
+            period_end=str(dates[-1])[:10] if dates else None,
+            evaluation_role="calibration alignment; independent validation not established",
+        )
+    except (UnicodeError, KeyError, ValueError, TypeError, csv.Error):
+        result = assess_streamflow_performance({})
+        result["reasons"].append("unreadable_alignment")
+    result["source"] = str(path)
+    result["source_sha256"] = hashlib.sha256(raw).hexdigest()
+    result["authority"] = "dashboard-derived numeric assessment; workflow claim unchanged"
+    return result
 
 
 def _build_seasonal(alignment: dict[str, Any]) -> dict[str, Any] | None:
@@ -421,6 +470,9 @@ def _render_html(data: dict[str, Any]) -> str:
     """Render the complete self-contained dashboard HTML."""
     # Prevent artifact text containing ``</script>`` from terminating the JSON
     # script element and becoming executable HTML.
+    from ..governance.tiers import TIER_LABELS
+
+    data = {**data, "tier_labels": TIER_LABELS}
     data_json = json.dumps(data, default=str, indent=None).replace("</", "<\\/")
     usgs_id = str(data.get("usgs_id", ""))
     masthead_uri = _dashboard_masthead_data_uri()
@@ -731,10 +783,14 @@ def _javascript() -> str:
     if (dec === undefined) dec = 3;
     return Number(n).toFixed(dec);
   }
+  function tierLabel(tier) {
+    return D.tier_labels[tier] || 'Not evaluated';
+  }
   function tierBadge(tier) {
     const t = String(tier || '').toLowerCase();
-    if (t === 'research_grade') return '<span class="badge badge-success" title="Identifier research_grade: every package gate passed. This is a package tier, not a published performance class.">Gate verified</span>';
-    if (t === 'publication_grade') return '<span class="badge badge-info">Publication Grade</span>';
+    if (t === 'research_grade') return '<span class="badge badge-success" title="Identifier research_grade: all applicable contract gates passed. Workflow verification is separate from Moriasi performance criteria.">Gate-verified</span>';
+    if (t === 'publication_grade') return '<span class="badge badge-info" title="Legacy publication_grade identifier: intermediate verification; no journal approval or Moriasi rating implied.">Calibration verified</span>';
+    if (t === 'blocked') return '<span class="badge badge-danger">Blocked</span>';
     if (t === 'diagnostic') return '<span class="badge badge-warning">Diagnostic</span>';
     if (t === 'exploratory') return '<span class="badge badge-neutral">Exploratory</span>';
     return '<span class="badge badge-neutral">Exploratory</span>';
@@ -864,6 +920,23 @@ def _javascript() -> str:
   html += '</div>';
   html += '<div class="hero-usgs" style="margin-top:12px;">Metric authority: ' + esc(metricAuthorityLabel) + '</div>';
   html += '</div>';
+
+  for (const [label, assessment] of [
+      ['Calibration alignment', D.streamflow_performance],
+      ['Reported validation period', D.streamflow_validation_performance]]) {
+    const a = assessment || {status:'not_evaluated'};
+    const statusText = ({met:'Met', not_met:'Not met', not_evaluated:'Not evaluated'})[a.status] || 'Not evaluated';
+    html += '<div class="notice"><strong>Moriasi 2015 numeric streamflow criteria: ' + esc(statusText) + '</strong> · ' + esc(label);
+    if (a.period_start && a.period_end) html += ' · ' + esc(a.timestep) + ', ' + esc(a.period_start) + ' → ' + esc(a.period_end);
+    if (a.n_pairs != null) html += ' · ' + esc(a.n_pairs) + ' matched pairs';
+    const pm = a.metrics || {};
+    html += '<br>R²: ' + fmtNum(pm.r2) + '; NSE: ' + fmtNum(pm.nse) + '; PBIAS: ' + fmtNum(pm.pbias, 1) + '%.';
+    html += ' Required: R² &gt; 0.60, NSE &gt; 0.50, |PBIAS| ≤ 15%.';
+    html += '<br>Numeric criteria only; graphical and contextual assessment remain necessary. Workflow status is assessed separately.';
+    if (a.evaluation_role) html += '<br>Scope: ' + esc(a.evaluation_role);
+    if (a.reasons && a.reasons.length) html += '<br>Assessment unavailable: ' + esc(a.reasons.join(', '));
+    html += '</div>';
+  }
 
   // ── View navigation ──────────────────────────────────────────────────
   html += '<nav class="tabs" aria-label="Dashboard views">';
@@ -1682,7 +1755,8 @@ def _javascript() -> str:
       ['End', D.end_date],
       ['Warmup Years', D.warmup_years],
       ['Run Status', D.status],
-      ['Claim Tier', D.effective_claim_tier || D.claim_tier],
+      ['Workflow status', tierLabel(D.effective_claim_tier || D.claim_tier)],
+      ['Stored tier identifier', D.effective_claim_tier || D.claim_tier],
       ['Blocker', D.blocker_class || 'none'],
       ['Physical Gates', D.physical_gates_status],
       ['Routing Gates', D.routing_gates_status],
@@ -1727,7 +1801,8 @@ def _javascript() -> str:
       ['Generated At', D.generated_at],
       ['Execution Status', D.execution_status || 'unknown'],
       ['Scientific Status', D.governance_evaluated ? D.status : 'NOT EVALUATED'],
-      ['Claim Tier', D.effective_claim_tier || D.claim_tier],
+      ['Workflow status', tierLabel(D.effective_claim_tier || D.claim_tier)],
+      ['Stored tier identifier', D.effective_claim_tier || D.claim_tier],
       ['Gates Passed', (D.gates_passed || []).join(', ') || 'none'],
       ['Gates Failed', (D.gates_failed || []).join(', ') || 'none'],
     ];

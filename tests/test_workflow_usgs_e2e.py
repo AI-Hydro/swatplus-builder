@@ -2676,7 +2676,7 @@ def test_locked_calibrated_txtinout_mass_closure_is_warning(monkeypatch, tmp_pat
     assert result["research_grade_blocking"] is True
     assert result["closure_status"] == "fail_mass_closure"
     assert result["recommended_next_action"] == (
-        "Mass-closure mismatch is retained as a research-grade blocker; diagnostic calibration may proceed."
+        "Mass-closure mismatch is retained as a Gate-verified blocker; diagnostic calibration may proceed."
     )
 
 

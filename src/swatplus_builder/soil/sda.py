@@ -36,7 +36,7 @@ def fetch_sda_mukeys_for_geometry(
     Planetary Computer gNATSGO raster service is unavailable. It can recover
     real SDA horizon profiles for a representative mukey, but it does not
     preserve rasterized soil heterogeneity and therefore cannot support a
-    research-grade soil provenance claim by itself.
+    Gate-verified soil provenance claim by itself.
     """
     if geometry.is_empty:
         return []

@@ -1,0 +1,19 @@
+{
+  "schema": "calibration_invocation_v1",
+  "invocation_id": "6c3ae814b4ac42c89032e475a433c356",
+  "started_at_utc": "2026-10-02T12:31:51.811329+00:00",
+  "params": {},
+  "params_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+  "cache_signature": "317c80413b801e839ec4e66689a48073b5f8d378b652294244514acc2415b577",
+  "cache_status": "compact_hit",
+  "engine_invoked": false,
+  "engine_invocation_basis": "run_swat_call",
+  "threads": 1,
+  "status": "completed",
+  "stage_seconds": {
+    "lock_wait": 0.001104291994124651,
+    "cache_lookup": 0.0007214159704744816
+  },
+  "total_seconds": 0.002216000109910965,
+  "finished_at_utc": "2026-10-02T12:31:51.813384+00:00"
+}

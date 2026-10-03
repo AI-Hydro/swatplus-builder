@@ -228,7 +228,7 @@ class RunWorkflowRequest(BaseModel):
     hru_mode: Literal["dominant_only", "full_overlay"] = Field(
         "dominant_only",
         description=(
-            "HRU construction mode. Use full_overlay for research-grade land-use fidelity probes; "
+            "HRU construction mode. Use full_overlay for Gate-verified land-use fidelity probes; "
             "dominant_only remains the default first-run mode."
         ),
     )
@@ -242,7 +242,7 @@ class RunWorkflowRequest(BaseModel):
         "diagnostic",
         description=(
             "Requested claim tier (exploratory | diagnostic | research_grade). "
-            "The package may downgrade it based on runtime gates; the agent cannot override."
+            "research_grade is displayed as Gate-verified, not a published performance rating. The package may downgrade it based on runtime gates; the agent cannot override."
         ),
     )
     out_dir: str | None = Field(
